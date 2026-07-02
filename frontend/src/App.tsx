@@ -14,6 +14,7 @@ const DANCE_STEP_MS = 100
 const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 100
 const COMPLETION_TOAST_MS = 2600
 const RESULTS_REVEAL_DELAY_MS = 950
+const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 const EMPTY_STATS: StatsSummary = {
@@ -341,6 +342,7 @@ function App() {
   const gameIdRef = useRef('')
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
+  const copyFeedbackTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
   const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
   const isAccessPromptOpen = accessState === null
@@ -722,7 +724,17 @@ function App() {
     try {
       await copyTextToClipboard(createShareText(completedResult))
       setCompletedResult({ ...completedResult, copied: true })
-      showToast('Copied')
+
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current)
+      }
+
+      copyFeedbackTimerRef.current = window.setTimeout(() => {
+        setCompletedResult((previousResult) =>
+          previousResult ? { ...previousResult, copied: false } : previousResult,
+        )
+        copyFeedbackTimerRef.current = null
+      }, COPY_FEEDBACK_MS)
     } catch (error) {
       console.warn('Could not copy result', error)
       showToast('Copy failed')
@@ -818,6 +830,10 @@ function App() {
 
       if (resultsRevealTimerRef.current !== null) {
         window.clearTimeout(resultsRevealTimerRef.current)
+      }
+
+      if (copyFeedbackTimerRef.current !== null) {
+        window.clearTimeout(copyFeedbackTimerRef.current)
       }
     }
   }, [])
@@ -1340,10 +1356,24 @@ function ResultsDialog({
         </div>
         <p className="results-note">Random and history plays are not tracked.</p>
 
-        <button className="results-copy-button" type="button" onClick={onCopy}>
-          <span>{result.copied ? 'Copied:' : 'Copy:'}</span>
-          <span className="results-copy-button__emoji">{emojiRows}</span>
-        </button>
+        <div className="results-copy-area">
+          <button
+            aria-label="Copy emoji results"
+            className="results-copy-button"
+            type="button"
+            onClick={onCopy}
+          >
+            <span className="results-copy-button__emoji">{emojiRows}</span>
+          </button>
+          <span
+            aria-live="polite"
+            aria-hidden={!result.copied}
+            className="results-copy-feedback"
+            data-visible={result.copied}
+          >
+            Copied!
+          </span>
+        </div>
       </section>
     </div>
   )

@@ -19,31 +19,54 @@ const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
 const AVATAR_CONFIG_VERSION = 1
-const AVATAR_GESTURES = [
-  { label: 'Any pose', value: 'random' },
-  { label: 'Wave', value: 'waveLongArm' },
-  { label: 'Point', value: 'point' },
+const AVATAR_HAIR_OPTIONS = [
+  { label: 'None', value: 'none' },
+  { label: 'Hat', value: 'hat' },
+  ...createVariantOptions(63),
+] as const
+const AVATAR_CLOTHES_OPTIONS = createVariantOptions(25)
+const AVATAR_GESTURE_OPTIONS = [
+  { label: 'Hand', value: 'hand' },
   { label: 'Phone', value: 'handPhone' },
   { label: 'OK', value: 'ok' },
+  { label: 'Long OK', value: 'okLongArm' },
+  { label: 'Point', value: 'point' },
+  { label: 'Long point', value: 'pointLongArm' },
+  { label: 'Wave', value: 'waveLongArm' },
+  { label: 'Two-arm wave', value: 'waveLongArms' },
+  { label: 'Wave OK', value: 'waveOkLongArms' },
+  { label: 'Wave point', value: 'wavePointLongArms' },
 ] as const
 const AVATAR_GLASSES_OPTIONS = [
   { label: 'None', value: 'none' },
-  { label: 'Style 1', value: 'variant01' },
-  { label: 'Style 2', value: 'variant02' },
-  { label: 'Style 3', value: 'variant03' },
-  { label: 'Style 4', value: 'variant04' },
-  { label: 'Style 5', value: 'variant05' },
-  { label: 'Style 6', value: 'variant06' },
-  { label: 'Style 7', value: 'variant07' },
-  { label: 'Style 8', value: 'variant08' },
-  { label: 'Style 9', value: 'variant09' },
-  { label: 'Style 10', value: 'variant10' },
-  { label: 'Style 11', value: 'variant11' },
+  ...createVariantOptions(11),
 ] as const
-const AVATAR_PRESENCE_OPTIONS = [
-  { label: 'Any', value: 'random' },
-  { label: 'Always', value: 'always' },
-  { label: 'Never', value: 'never' },
+const AVATAR_BEARD_OPTIONS = [{ label: 'None', value: 'none' }, ...createVariantOptions(12)]
+const AVATAR_CLOTHES_GRAPHIC_OPTIONS = [
+  { label: 'None', value: 'none' },
+  { label: 'Electric', value: 'electric' },
+  { label: 'Galaxy', value: 'galaxy' },
+  { label: 'Saturn', value: 'saturn' },
+] as const
+const AVATAR_EYEBROWS_OPTIONS = createVariantOptions(13)
+const AVATAR_EYES_OPTIONS = createVariantOptions(5)
+const AVATAR_MOUTH_OPTIONS = createVariantOptions(30)
+const AVATAR_NOSE_OPTIONS = createVariantOptions(20)
+const AVATAR_FEATURES = [
+  { key: 'hairVariant', label: 'Hair', options: AVATAR_HAIR_OPTIONS },
+  { key: 'clothesVariant', label: 'Clothes', options: AVATAR_CLOTHES_OPTIONS },
+  { key: 'gestureVariant', label: 'Pose', options: AVATAR_GESTURE_OPTIONS },
+  { key: 'glassesVariant', label: 'Glasses', options: AVATAR_GLASSES_OPTIONS },
+  { key: 'beardVariant', label: 'Facial hair', options: AVATAR_BEARD_OPTIONS },
+  {
+    key: 'clothesGraphicVariant',
+    label: 'Shirt graphic',
+    options: AVATAR_CLOTHES_GRAPHIC_OPTIONS,
+  },
+  { key: 'eyebrowsVariant', label: 'Eyebrows', options: AVATAR_EYEBROWS_OPTIONS },
+  { key: 'eyesVariant', label: 'Eyes', options: AVATAR_EYES_OPTIONS },
+  { key: 'noseVariant', label: 'Nose', options: AVATAR_NOSE_OPTIONS },
+  { key: 'mouthVariant', label: 'Mouth', options: AVATAR_MOUTH_OPTIONS },
 ] as const
 const DICE_FRAME_INTERVAL_MS = 22
 const DICE_FIRST_ROLL_FRAME = 6
@@ -137,19 +160,15 @@ type Settings = {
   highContrast: boolean
   onscreenKeyboardOnly: boolean
 }
-type AvatarGesture = (typeof AVATAR_GESTURES)[number]['value']
-type AvatarGlasses = (typeof AVATAR_GLASSES_OPTIONS)[number]['value']
-type AvatarPresence = (typeof AVATAR_PRESENCE_OPTIONS)[number]['value']
+type AvatarOption = {
+  label: string
+  value: string
+}
+type AvatarFeatureKey = (typeof AVATAR_FEATURES)[number]['key']
 type AvatarConfig = {
   version: typeof AVATAR_CONFIG_VERSION
   seed: string
-  flip: 'none' | 'horizontal'
-  rotate: number
-  gestureVariant: AvatarGesture
-  glassesVariant: AvatarGlasses
-  beard: AvatarPresence
-  clothesGraphic: AvatarPresence
-}
+} & Record<AvatarFeatureKey, string>
 type GuestAccess = {
   kind: 'guest'
 }
@@ -206,6 +225,16 @@ const defaultSettings: Settings = {
   onscreenKeyboardOnly: false,
 }
 
+function createVariantOptions(count: number): AvatarOption[] {
+  return Array.from({ length: count }, (_, index) => {
+    const displayNumber = index + 1
+    return {
+      label: `Style ${displayNumber}`,
+      value: `variant${String(displayNumber).padStart(2, '0')}`,
+    }
+  })
+}
+
 function hashNumber(value: string) {
   let hash = 2166136261
 
@@ -234,58 +263,43 @@ function getRandomItem<Item>(items: readonly Item[]) {
   return items[getRandomIndex(items.length)]
 }
 
-function getRandomToken() {
-  try {
-    if (!window.crypto?.getRandomValues) throw new Error('Crypto unavailable')
-    const bytes = new Uint8Array(8)
-    window.crypto.getRandomValues(bytes)
-    return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('')
-  } catch {
-    return Math.random().toString(36).slice(2, 14)
-  }
+function getDefaultAvatarFeatureValue(
+  options: readonly AvatarOption[],
+  seedHash: number,
+  offset: number,
+) {
+  return options[(seedHash + offset) % options.length]?.value ?? ''
 }
 
-function clampNumber(value: unknown, min: number, max: number, fallback: number) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
-  return Math.min(max, Math.max(min, value))
-}
-
-function isOption<Value extends string>(
-  options: readonly Value[],
+function isAvatarOptionValue(
+  options: readonly AvatarOption[],
   value: unknown,
-): value is Value {
-  return typeof value === 'string' && options.includes(value as Value)
+): value is string {
+  return typeof value === 'string' && options.some((option) => option.value === value)
 }
 
 function createDefaultAvatarConfig(displayName = ''): AvatarConfig {
   const seedHash = hashNumber(displayName.trim().toLowerCase() || 'wordbee')
-
-  return {
-    beard: 'random',
-    clothesGraphic: 'random',
-    flip: 'none',
-    gestureVariant: 'random',
-    glassesVariant: 'none',
-    rotate: 0,
+  const avatar = {
     seed: `wb-${seedHash.toString(36)}`,
     version: AVATAR_CONFIG_VERSION,
-  }
+  } as AvatarConfig
+
+  AVATAR_FEATURES.forEach((feature, index) => {
+    avatar[feature.key] = getDefaultAvatarFeatureValue(feature.options, seedHash, index * 7)
+  })
+
+  return avatar
 }
 
 function createRandomAvatarConfig(previousAvatar: AvatarConfig): AvatarConfig {
-  const flipOptions = ['none', 'horizontal'] as const
-  const presencePool = ['random', 'random', 'always', 'never'] as const
+  const nextAvatar = { ...previousAvatar }
 
-  return {
-    ...previousAvatar,
-    beard: getRandomItem(presencePool),
-    clothesGraphic: getRandomItem(presencePool),
-    flip: getRandomItem(flipOptions),
-    gestureVariant: getRandomItem(AVATAR_GESTURES).value,
-    glassesVariant: getRandomItem(AVATAR_GLASSES_OPTIONS).value,
-    rotate: getRandomIndex(13) - 6,
-    seed: `wb-${getRandomToken()}`,
-  }
+  AVATAR_FEATURES.forEach((feature) => {
+    nextAvatar[feature.key] = getRandomItem(feature.options).value
+  })
+
+  return nextAvatar
 }
 
 function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfig {
@@ -296,63 +310,68 @@ function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfi
   }
 
   const storedAvatar = rawAvatar as Partial<AvatarConfig>
-  const gestureValues = AVATAR_GESTURES.map(({ value }) => value)
-  const glassesValues = AVATAR_GLASSES_OPTIONS.map(({ value }) => value)
-  const presenceValues = AVATAR_PRESENCE_OPTIONS.map(({ value }) => value)
-
-  return {
-    beard: isOption(presenceValues, storedAvatar.beard)
-      ? storedAvatar.beard
-      : defaultAvatar.beard,
-    clothesGraphic: isOption(presenceValues, storedAvatar.clothesGraphic)
-      ? storedAvatar.clothesGraphic
-      : defaultAvatar.clothesGraphic,
-    flip: storedAvatar.flip === 'horizontal' ? 'horizontal' : 'none',
-    gestureVariant: isOption(gestureValues, storedAvatar.gestureVariant)
-      ? storedAvatar.gestureVariant
-      : defaultAvatar.gestureVariant,
-    glassesVariant: isOption(glassesValues, storedAvatar.glassesVariant)
-      ? storedAvatar.glassesVariant
-      : defaultAvatar.glassesVariant,
-    rotate: clampNumber(storedAvatar.rotate, -15, 15, defaultAvatar.rotate),
+  const avatar: AvatarConfig = {
+    ...defaultAvatar,
     seed:
       typeof storedAvatar.seed === 'string' && storedAvatar.seed.trim()
         ? storedAvatar.seed.slice(0, 80)
         : defaultAvatar.seed,
     version: AVATAR_CONFIG_VERSION,
   }
+
+  AVATAR_FEATURES.forEach((feature) => {
+    const storedValue = storedAvatar[feature.key]
+
+    if (isAvatarOptionValue(feature.options, storedValue)) {
+      avatar[feature.key] = storedValue
+    }
+  })
+
+  return avatar
 }
 
-function setProbability(
+function setOptionalAvatarVariant(
   params: URLSearchParams,
-  parameterName: string,
-  value: AvatarPresence,
+  variantParameter: string,
+  probabilityParameter: string,
+  value: string,
 ) {
-  if (value === 'random') return
-  params.set(parameterName, value === 'always' ? '100' : '0')
+  if (value === 'none') {
+    params.set(probabilityParameter, '0')
+    return
+  }
+
+  params.set(probabilityParameter, '100')
+  params.set(variantParameter, value)
 }
 
 function createAvatarUrl(avatar: AvatarConfig, size = 256) {
   const params = new URLSearchParams({
-    flip: avatar.flip,
-    rotate: String(avatar.rotate),
+    clothesVariant: avatar.clothesVariant,
+    eyebrowsVariant: avatar.eyebrowsVariant,
+    eyesVariant: avatar.eyesVariant,
+    gestureProbability: '100',
+    gestureVariant: avatar.gestureVariant,
+    mouthVariant: avatar.mouthVariant,
+    noseVariant: avatar.noseVariant,
     seed: avatar.seed,
     size: String(size),
   })
 
-  if (avatar.gestureVariant !== 'random') {
-    params.set('gestureVariant', avatar.gestureVariant)
-  }
-
-  setProbability(params, 'beardProbability', avatar.beard)
-  setProbability(params, 'clothesGraphicProbability', avatar.clothesGraphic)
-
-  if (avatar.glassesVariant === 'none') {
-    params.set('glassesProbability', '0')
-  } else {
-    params.set('glassesProbability', '100')
-    params.set('glassesVariant', avatar.glassesVariant)
-  }
+  setOptionalAvatarVariant(params, 'hairVariant', 'hairProbability', avatar.hairVariant)
+  setOptionalAvatarVariant(params, 'beardVariant', 'beardProbability', avatar.beardVariant)
+  setOptionalAvatarVariant(
+    params,
+    'glassesVariant',
+    'glassesProbability',
+    avatar.glassesVariant,
+  )
+  setOptionalAvatarVariant(
+    params,
+    'clothesGraphicVariant',
+    'clothesGraphicProbability',
+    avatar.clothesGraphicVariant,
+  )
 
   return `${AVATAR_API_URL}?${params.toString()}`
 }
@@ -1756,10 +1775,7 @@ function AvatarBuilder({
     setDraftAvatar(initialAvatar)
   }, [initialAvatar])
 
-  const updateDraftAvatar = <Key extends keyof AvatarConfig>(
-    key: Key,
-    value: AvatarConfig[Key],
-  ) => {
+  const updateDraftAvatar = (key: AvatarFeatureKey, value: string) => {
     setDraftAvatar((previousAvatar) => ({
       ...previousAvatar,
       [key]: value,
@@ -1783,82 +1799,15 @@ function AvatarBuilder({
       </div>
 
       <div className="avatar-builder__controls">
-        <label className="avatar-control">
-          <span className="avatar-control__label">Pose</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar('gestureVariant', event.target.value as AvatarGesture)
-            }
-            value={draftAvatar.gestureVariant}
-          >
-            {AVATAR_GESTURES.map((gesture) => (
-              <option key={gesture.value} value={gesture.value}>
-                {gesture.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="avatar-control">
-          <span className="avatar-control__label">Glasses</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar('glassesVariant', event.target.value as AvatarGlasses)
-            }
-            value={draftAvatar.glassesVariant}
-          >
-            {AVATAR_GLASSES_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="avatar-control">
-          <span className="avatar-control__label">Facial hair</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar('beard', event.target.value as AvatarPresence)
-            }
-            value={draftAvatar.beard}
-          >
-            {AVATAR_PRESENCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="avatar-control">
-          <span className="avatar-control__label">Shirt graphic</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar('clothesGraphic', event.target.value as AvatarPresence)
-            }
-            value={draftAvatar.clothesGraphic}
-          >
-            {AVATAR_PRESENCE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="avatar-control">
-          <span className="avatar-control__label">Flip</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar('flip', event.target.value as AvatarConfig['flip'])
-            }
-            value={draftAvatar.flip}
-          >
-            <option value="none">None</option>
-            <option value="horizontal">Horizontal</option>
-          </select>
-        </label>
+        {AVATAR_FEATURES.map((feature) => (
+          <AvatarFeatureSelector
+            key={feature.key}
+            label={feature.label}
+            onChange={(value) => updateDraftAvatar(feature.key, value)}
+            options={feature.options}
+            value={draftAvatar[feature.key]}
+          />
+        ))}
       </div>
 
       <div className="avatar-builder__actions">
@@ -1873,6 +1822,58 @@ function AvatarBuilder({
           type="button"
         >
           {saveLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AvatarFeatureSelector({
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  label: string
+  onChange: (value: string) => void
+  options: readonly AvatarOption[]
+  value: string
+}) {
+  const currentIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  )
+  const currentOption = options[currentIndex] ?? options[0]
+
+  const selectOffset = (offset: number) => {
+    const nextIndex = (currentIndex + offset + options.length) % options.length
+    const nextValue = options[nextIndex]?.value
+
+    if (nextValue) {
+      onChange(nextValue)
+    }
+  }
+
+  return (
+    <div className="avatar-feature">
+      <span className="avatar-feature__label">{label}</span>
+      <div className="avatar-feature__selector">
+        <button
+          aria-label={`Previous ${label}`}
+          className="avatar-feature__button"
+          onClick={() => selectOffset(-1)}
+          type="button"
+        >
+          <span aria-hidden="true">&lt;</span>
+        </button>
+        <span className="avatar-feature__value">{currentOption?.label}</span>
+        <button
+          aria-label={`Next ${label}`}
+          className="avatar-feature__button"
+          onClick={() => selectOffset(1)}
+          type="button"
+        >
+          <span aria-hidden="true">&gt;</span>
         </button>
       </div>
     </div>

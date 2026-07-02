@@ -855,7 +855,11 @@ function App() {
   const [familyStatsError, setFamilyStatsError] = useState('')
   const [isFamilyStatsLoading, setIsFamilyStatsLoading] = useState(false)
   const [isFamilyStatsOpen, setIsFamilyStatsOpen] = useState(false)
-  const [isFamilyDailyStatusLoading, setIsFamilyDailyStatusLoading] = useState(false)
+  const [isFamilyDailyStatusLoading, setIsFamilyDailyStatusLoading] = useState(
+    accessState?.kind === 'friends-family',
+  )
+  const [isSessionBlocked, setIsSessionBlocked] = useState(false)
+  const [todayStatusReloadKey, setTodayStatusReloadKey] = useState(0)
   const [completedResult, setCompletedResult] = useState<GameResult | null>(null)
   const [isResultsOpen, setIsResultsOpen] = useState(false)
   const gameIdRef = useRef('')
@@ -944,17 +948,61 @@ function App() {
     setFamilyStats(null)
     setFamilyStatsError('')
     setIsFamilyStatsOpen(false)
+    setIsFamilyDailyStatusLoading(false)
+    setIsSessionBlocked(false)
     resetCurrentGame()
   }, [clientSessionId, friendsFamilyToken, resetCurrentGame])
 
+  const handleAccessLogin = useCallback(
+    (nextAccessState: FriendsFamilyAccess) => {
+      setAccessState(nextAccessState)
+      setIsSessionBlocked(false)
+      setIsFamilyDailyStatusLoading(true)
+      setFamilyStats(null)
+      setFamilyStatsError('')
+      setIsSettingsOpen(false)
+      setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+    },
+    [],
+  )
+
+  const reclaimCurrentSession = useCallback(async () => {
+    if (!friendsFamilyToken) return
+
+    try {
+      await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          claimSession: true,
+          clientSessionId,
+          token: friendsFamilyToken,
+        }),
+      })
+      setIsSessionBlocked(false)
+      setIsFamilyDailyStatusLoading(true)
+      setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+    } catch (error) {
+      console.warn('Could not make this session active', error)
+      showToast('Could not make this session active')
+    }
+  }, [clientSessionId, friendsFamilyToken, showToast])
+
   const handleSessionBlocked = useCallback(
     (error: unknown) => {
-      if (error instanceof ApiError && error.status === 409) {
-        setAccessState(null)
+      if (
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.message === 'Session is active elsewhere'
+      ) {
         setFamilyStats(null)
         setIsFamilyStatsOpen(false)
+        setIsFamilyDailyStatusLoading(false)
+        setIsSessionBlocked(true)
         resetCurrentGame()
-        showToast('Signed out on this device')
+        showToast('Active in another tab or device')
         return true
       }
 
@@ -1172,13 +1220,15 @@ function App() {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            date: puzzle.date,
-            guess,
-            reveal: isLastRow,
-          }),
-        },
-      )
+	          body: JSON.stringify({
+	            clientSessionId,
+	            date: puzzle.date,
+	            friendsFamilyToken,
+	            guess,
+	            reveal: isLastRow,
+	          }),
+	        },
+	      )
 
       if (
         !Array.isArray(responseBody.scores) ||
@@ -1193,11 +1243,19 @@ function App() {
         didWin: responseBody.didWin,
         answer: responseBody.answer,
       }
-    } catch (error) {
-      setIsRevealing(false)
-      shakeRow(row)
-      showToast(error instanceof Error ? error.message : 'Could not check guess')
-      return
+	    } catch (error) {
+	      setIsRevealing(false)
+	      if (handleSessionBlocked(error)) {
+	        return
+	      }
+
+	      if (error instanceof ApiError && error.message === 'Already completed today') {
+	        setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+	      }
+
+	      shakeRow(row)
+	      showToast(error instanceof Error ? error.message : 'Could not check guess')
+	      return
     }
 
     const { didWin, scores } = guessResult
@@ -1296,11 +1354,14 @@ function App() {
       setCurrentColumn(0)
     }, REVEAL_DONE_MS)
   }, [
-    board,
-    currentColumn,
-    currentRow,
-    puzzle,
-    puzzleError,
+	    board,
+	    clientSessionId,
+	    currentColumn,
+	    currentRow,
+	    friendsFamilyToken,
+	    handleSessionBlocked,
+	    puzzle,
+	    puzzleError,
     shakeRow,
     showResultAfterPause,
     showToast,
@@ -1308,7 +1369,7 @@ function App() {
 
 	  const handleKey = useCallback(
 	    (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
-	      if (status !== 'playing' || isRevealing) return
+	      if (status !== 'playing' || isRevealing || isSessionBlocked) return
 	      if (isFamilyDailyStatusLoading) return
 	      if (!puzzle) {
 	        showToast(puzzleError || 'Loading daily answer')
@@ -1331,9 +1392,10 @@ function App() {
       }
     },
     [
-	      addLetter,
-	      isFamilyDailyStatusLoading,
-	      isRevealing,
+		      addLetter,
+		      isFamilyDailyStatusLoading,
+		      isRevealing,
+	      isSessionBlocked,
       removeLetter,
       revealGuess,
       settings.onscreenKeyboardOnly,
@@ -1412,10 +1474,11 @@ function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!puzzle || !friendsFamilyToken) {
-      return
-    }
+	  useEffect(() => {
+	    if (!puzzle || !friendsFamilyToken) {
+	      setIsFamilyDailyStatusLoading(false)
+	      return
+	    }
 
     let isMounted = true
 
@@ -1481,13 +1544,14 @@ function App() {
       isMounted = false
     }
   }, [
-    clientSessionId,
-    completedResult?.saved,
-    friendsFamilyToken,
-    handleSessionBlocked,
-    puzzle,
-    resetCurrentGame,
-  ])
+	    clientSessionId,
+	    completedResult?.saved,
+	    friendsFamilyToken,
+	    handleSessionBlocked,
+	    puzzle,
+	    resetCurrentGame,
+	    todayStatusReloadKey,
+	  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1551,9 +1615,10 @@ function App() {
 	          }),
 	        })
 
-        if (!isMounted) return
+	        if (!isMounted) return
+	        setIsSessionBlocked(false)
 
-        setAccessState((previousAccess) => {
+	        setAccessState((previousAccess) => {
           if (previousAccess?.kind !== 'friends-family' || previousAccess.token !== token) {
             return previousAccess
           }
@@ -1565,14 +1630,12 @@ function App() {
             token,
           }
         })
-      } catch (error) {
-        console.warn('Could not verify friends and family access', error)
-
-        if (isMounted) {
-          setAccessState(null)
-          showToast('Sign in again')
-        }
-      }
+	      } catch (error) {
+	        if (isMounted && !handleSessionBlocked(error)) {
+	          console.warn('Could not verify friends and family access', error)
+	          showToast('Could not verify sign-in')
+	        }
+	      }
     }
 
     verifyAccess()
@@ -1580,10 +1643,10 @@ function App() {
 	    return () => {
 	      isMounted = false
 	    }
-	  }, [clientSessionId, friendsFamilyToken, showToast])
+	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked, showToast])
 
 	  useEffect(() => {
-	    if (!friendsFamilyToken) return
+	    if (!friendsFamilyToken || isSessionBlocked) return
 
 	    const verifyActiveSession = async () => {
 	      try {
@@ -1608,7 +1671,7 @@ function App() {
 	    }, 15000)
 
 	    return () => window.clearInterval(intervalId)
-	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked])
+	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked, isSessionBlocked])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -1622,8 +1685,8 @@ function App() {
     return () => mediaQuery.removeEventListener('change', onChange)
   }, [])
 
-  useEffect(() => {
-    if (!isSettingsOpen) return
+	  useEffect(() => {
+	    if (!isSettingsOpen) return
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -1636,9 +1699,22 @@ function App() {
       }
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isAvatarBuilderOpen, isSettingsOpen])
+	    window.addEventListener('keydown', onKeyDown)
+	    return () => window.removeEventListener('keydown', onKeyDown)
+	  }, [isAvatarBuilderOpen, isSettingsOpen])
+
+	  useEffect(() => {
+	    if (!isAvatarBuilderOpen) return
+
+	    const onKeyDown = (event: KeyboardEvent) => {
+	      if (event.key === 'Escape') {
+	        setIsAvatarBuilderOpen(false)
+	      }
+	    }
+
+	    window.addEventListener('keydown', onKeyDown)
+	    return () => window.removeEventListener('keydown', onKeyDown)
+	  }, [isAvatarBuilderOpen])
 
   useEffect(() => {
     if (!isFamilyStatsOpen) return
@@ -1663,9 +1739,18 @@ function App() {
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="wordbee-toast-layer" aria-live="polite" aria-atomic="true">
-        {toast && <div className="wordbee-toast">{toast}</div>}
-      </div>
+	      <div className="wordbee-toast-layer" aria-live="polite" aria-atomic="true">
+	        {toast && <div className="wordbee-toast">{toast}</div>}
+	      </div>
+
+	      {isSessionBlocked && accessState?.kind === 'friends-family' && (
+	        <div className="session-blocker" role="status">
+	          <span>This profile is active in another tab or device.</span>
+	          <button onClick={() => void reclaimCurrentSession()} type="button">
+	            Use this session
+	          </button>
+	        </div>
+	      )}
 
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left">
@@ -1783,11 +1868,14 @@ function App() {
 
       {isSettingsOpen && (
         <SettingsDialog
-          accessState={accessState}
-          clientSessionId={clientSessionId}
-          effectiveDarkTheme={isDarkTheme}
-          onAccessLogin={(nextAccessState) => setAccessState(nextAccessState)}
-          onAvatarChange={() => setIsAvatarBuilderOpen(true)}
+	          accessState={accessState}
+	          clientSessionId={clientSessionId}
+	          effectiveDarkTheme={isDarkTheme}
+	          onAccessLogin={handleAccessLogin}
+	          onAvatarChange={() => {
+	            setIsSettingsOpen(false)
+	            setIsAvatarBuilderOpen(true)
+	          }}
           onClose={() => setIsSettingsOpen(false)}
           onSignOut={signOut}
           onSettingChange={updateSetting}
@@ -1830,7 +1918,7 @@ function App() {
         <AccessDialog
           clientSessionId={clientSessionId}
           onGuest={() => setAccessState({ kind: 'guest' })}
-          onLogin={(nextAccessState) => setAccessState(nextAccessState)}
+          onLogin={handleAccessLogin}
         />
       )}
 
@@ -2478,10 +2566,10 @@ function ResultsDialog({
           </button>
         )}
 
-        <div className="results-secondary-actions">
-          <a href="/random">Play random</a>
-          <a href="/history">Play past words</a>
-        </div>
+	        <div className="results-secondary-actions">
+	          <button disabled type="button">Play random</button>
+	          <button disabled type="button">Play past words</button>
+	        </div>
         <p className="results-note">Random and history plays are not tracked.</p>
 
         <div className="results-copy-area">
@@ -2590,7 +2678,7 @@ function FamilyStatsDialog({
       >
         <div className="family-stats-header">
           <div>
-            <h2 id="family-stats-title">Family stats</h2>
+	            <h2 id="family-stats-title">Friends & family stats</h2>
             <p>Daily play only. Random and past-word games are not tracked.</p>
           </div>
           <button className="settings-close" type="button" aria-label="Close" onClick={onClose}>

@@ -178,6 +178,43 @@
   transform-origin: center bottom;
 }
 
+.session-blocker {
+  position: fixed;
+  z-index: 2600;
+  top: calc(var(--header-height) + 10px);
+  left: 50%;
+  width: min(420px, calc(100vw - 28px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--result-panel-bg);
+  color: var(--color-tone-1);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.24);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 17px;
+  transform: translateX(-50%);
+}
+
+.session-blocker button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 11px;
+  background: var(--color-correct);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .wordbee-inline-icon {
   width: 24px;
   height: 24px;
@@ -1310,17 +1347,25 @@
   margin-top: 24px;
 }
 
-.results-secondary-actions a {
+.results-secondary-actions a,
+.results-secondary-actions button {
   min-height: 46px;
   border: 1px solid var(--settings-border);
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
   color: var(--color-tone-1);
+  font-family: inherit;
   font-size: 15px;
   font-weight: 800;
   text-decoration: none;
+}
+
+.results-secondary-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .results-note {

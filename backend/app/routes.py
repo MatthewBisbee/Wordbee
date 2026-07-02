@@ -14,6 +14,7 @@ from .game import is_valid_guess, normalize_guess, score_guess
 from .notifications import publish_completion_notification
 from .stats import (
     get_family_dashboard,
+    get_family_result_for_user,
     get_family_today_status,
     get_stats,
     save_completed_game,
@@ -164,6 +165,22 @@ def guess():
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
+
+    friends_family_token = payload.get("friendsFamilyToken")
+    if friends_family_token:
+        friends_family_identity = verify_friends_family_token(
+            friends_family_token,
+            client_session_id=payload.get("clientSessionId"),
+        )
+        if friends_family_identity is None:
+            return jsonify({"error": "Session is active elsewhere"}), 409
+
+        existing_result = get_family_result_for_user(
+            user_id=friends_family_identity["userId"],
+            puzzle_date=answer_record["puzzle_date"],
+        )
+        if existing_result is not None:
+            return jsonify({"error": "Already completed today"}), 409
 
     normalized_guess = normalize_guess(payload.get("guess"), answer_record["answer_length"])
     if normalized_guess is None:

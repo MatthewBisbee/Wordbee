@@ -2,7 +2,7 @@
 
 This directory contains the Flask + SQLite backend.
 
-The current backend fetches and caches the daily answer, exposes the game metadata API, scores guesses, validates friends-and-family access, preserves each fetched answer by date in SQLite, and tracks family-only daily stats.
+The current backend fetches and caches the daily answer, exposes the game metadata API, scores guesses, validates friends-and-family access, preserves each fetched answer by date in SQLite, and tracks friends-and-family-only daily stats.
 
 Current responsibilities:
 

@@ -15,10 +15,10 @@ TRUTHY_VALUES = {"1", "true", "yes", "on"}
 def publish_completion_notification(
     *,
     board: list[list[str]],
-    display_name: object,
+    friends_family_identity: object,
     guesses_used: int,
 ) -> dict[str, Any]:
-    canonical_name = normalize_display_name(display_name)
+    canonical_name = get_friends_family_display_name(friends_family_identity)
     if not canonical_name:
         return {"sent": False, "reason": "not_friends_family"}
 
@@ -86,6 +86,16 @@ def create_emoji_grid(board: list[list[str]]) -> str:
 
 def format_guess_count(guesses_used: int) -> str:
     return f"{guesses_used} {'guess' if guesses_used == 1 else 'guesses'}"
+
+
+def get_friends_family_display_name(friends_family_identity: object) -> str:
+    if not isinstance(friends_family_identity, dict):
+        return ""
+
+    if friends_family_identity.get("kind") != "friends-family":
+        return ""
+
+    return normalize_display_name(friends_family_identity.get("displayName"))
 
 
 def normalize_display_name(display_name: object) -> str:

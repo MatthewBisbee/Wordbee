@@ -155,9 +155,7 @@ def results():
     if saved_result["created"]:
         notification_result = publish_completion_notification(
             board=saved_result["board"],
-            display_name=(
-                friends_family_identity["displayName"] if friends_family_identity else ""
-            ),
+            friends_family_identity=friends_family_identity,
             guesses_used=int(payload.get("guessesUsed") or 0),
         )
 

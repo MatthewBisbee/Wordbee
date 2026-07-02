@@ -126,17 +126,9 @@
   transform-origin: center;
 }
 
-.wordbee-icon-button:hover .wordbee-inline-icon {
-  transform: translateY(-1px) rotate(-5deg) scale(1.08);
-}
-
-.wordbee-icon-button:active .wordbee-inline-icon {
-  transform: translateY(1px) rotate(5deg) scale(0.92);
-}
-
 .wordbee-inline-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -144,9 +136,50 @@
 }
 
 .wordbee-inline-icon .game-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   display: block;
+}
+
+.wordbee-icon-button--menu:hover .menu-line--top {
+  transform: translateX(2px);
+}
+
+.wordbee-icon-button--menu:hover .menu-line--middle {
+  transform: translateX(-1px);
+}
+
+.wordbee-icon-button--menu:hover .menu-line--bottom {
+  transform: translateX(1px);
+}
+
+.menu-line {
+  transition: transform 180ms ease;
+}
+
+.stats-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.wordbee-icon-button--stats:hover .stats-bar--short {
+  animation: stats-bar-short 900ms ease-in-out infinite alternate;
+}
+
+.wordbee-icon-button--stats:hover .stats-bar--tall {
+  animation: stats-bar-tall 840ms ease-in-out infinite alternate;
+}
+
+.wordbee-icon-button--stats:hover .stats-bar--mid {
+  animation: stats-bar-mid 980ms ease-in-out infinite alternate;
+}
+
+.wordbee-icon-button--settings:hover .wordbee-inline-icon {
+  transform: rotate(45deg);
+}
+
+.wordbee-icon-button:active .wordbee-inline-icon {
+  transform: scale(0.9);
 }
 
 .wordbee-game {
@@ -502,58 +535,120 @@
   inset: 0;
   z-index: 1800;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   overflow-y: auto;
-  padding: 22px 0;
-  background: var(--result-panel-bg);
+  box-sizing: border-box;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.45);
 }
 
 .results-panel {
-  width: min(620px, 100%);
-  min-height: 100%;
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(820px, calc(100dvh - 36px));
   box-sizing: border-box;
-  padding: 0 28px 28px;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 22px;
+  background: var(--result-panel-bg);
   color: var(--color-tone-1);
+  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.28);
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
-.results-badge {
-  width: 86px;
-  height: 86px;
-  margin: 0 auto 16px;
-  border-radius: 12px;
-  display: flex;
+.results-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--color-correct) 42%, transparent);
-}
-
-.results-badge .wordbee-inline-icon,
-.results-badge .game-icon {
-  width: 48px;
-  height: 48px;
-}
-
-.results-title {
-  margin: 0;
-  color: var(--color-tone-1);
-  font-size: clamp(42px, 10vw, 64px);
-  font-weight: 800;
-  line-height: 1;
-  text-align: center;
-}
-
-.results-subtitle {
-  margin: 10px 0 30px;
+  padding: 0;
+  background: transparent;
   color: var(--result-muted);
-  font-size: 16px;
-  font-weight: 700;
-  text-align: center;
+  cursor: pointer;
+}
+
+.results-close .wordbee-inline-icon,
+.results-close .game-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.definition-panel {
+  border-bottom: 1px solid var(--settings-border);
+  padding-bottom: 20px;
+  padding-right: 26px;
+}
+
+.definition-panel__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.definition-panel__heading strong {
+  color: var(--color-tone-1);
+  font-size: clamp(32px, 8vw, 44px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.definition-panel__heading em {
+  color: var(--result-muted);
+  font-size: 17px;
+  line-height: 22px;
+}
+
+.definition-panel__part {
+  display: block;
+  margin-top: 6px;
+  color: var(--result-muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.definition-panel p {
+  margin: 14px 0 0;
+  color: var(--color-tone-1);
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.definition-panel blockquote {
+  margin: 12px 0 0;
+  border-left: 3px solid var(--color-correct);
+  padding-left: 12px;
+  color: var(--result-muted);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 21px;
+}
+
+.definition-panel__synonyms {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  color: var(--result-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.definition-panel__synonyms span:first-child {
+  color: var(--color-tone-1);
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .results-section {
-  margin-top: 28px;
+  margin-top: 22px;
 }
 
 .results-section h3 {
@@ -701,19 +796,20 @@
   text-align: center;
 }
 
-.results-share-button {
-  width: min(400px, 100%);
-  min-height: 58px;
+.results-copy-button {
+  width: min(360px, 100%);
+  min-height: 92px;
   margin: 24px auto 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: 8px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 8px;
+  padding: 14px 20px;
   background: var(--color-correct);
   color: #fff;
-  font-size: 20px;
   font-weight: 800;
   cursor: pointer;
   transition:
@@ -721,19 +817,25 @@
     transform 160ms ease;
 }
 
-.results-share-button:hover {
+.results-copy-button > span:first-child {
+  font-size: 18px;
+  line-height: 22px;
+}
+
+.results-copy-button__emoji {
+  white-space: pre-line;
+  font-size: 22px;
+  line-height: 1.05;
+  letter-spacing: 2px;
+}
+
+.results-copy-button:hover {
   filter: brightness(1.05);
   transform: translateY(-1px);
 }
 
-.results-share-button:active {
+.results-copy-button:active {
   transform: translateY(1px) scale(0.98);
-}
-
-.results-share-icon {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
 }
 
 @media (min-width: 768px) {
@@ -748,7 +850,7 @@
 
 @media (max-width: 370px), (max-height: 640px) {
   .results-panel {
-    padding: 0 18px 22px;
+    padding: 18px;
   }
 
   .results-stat-grid {
@@ -793,6 +895,36 @@
   40% {
     opacity: 1;
     transform: scale(1.1);
+  }
+}
+
+@keyframes stats-bar-short {
+  from {
+    transform: scaleY(1);
+  }
+
+  to {
+    transform: scaleY(1.45);
+  }
+}
+
+@keyframes stats-bar-tall {
+  from {
+    transform: scaleY(1);
+  }
+
+  to {
+    transform: scaleY(0.7);
+  }
+}
+
+@keyframes stats-bar-mid {
+  from {
+    transform: scaleY(1);
+  }
+
+  to {
+    transform: scaleY(1.25);
   }
 }
 

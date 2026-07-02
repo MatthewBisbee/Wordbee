@@ -3,6 +3,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from .daily_answer import get_daily_answer, get_puzzle_date
+from .definitions import get_definition
 from .game import is_valid_guess, normalize_guess, score_guess
 from .stats import get_stats, save_completed_game
 
@@ -101,9 +102,11 @@ def results():
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
-    response = {"stats": stats_record}
-    if payload.get("outcome") == "lost":
-        response["answer"] = answer_record["answer"]
+    response = {
+        "answer": answer_record["answer"],
+        "definition": get_definition(answer_record["answer"]),
+        "stats": stats_record,
+    }
 
     return jsonify(response)
 

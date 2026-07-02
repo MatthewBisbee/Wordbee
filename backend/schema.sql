@@ -29,3 +29,15 @@ ON completed_games (mode, completed_at);
 
 CREATE INDEX IF NOT EXISTS idx_completed_games_puzzle_date
 ON completed_games (puzzle_date);
+
+CREATE TABLE IF NOT EXISTS word_definitions (
+  word TEXT PRIMARY KEY,
+  phonetic TEXT,
+  part_of_speech TEXT,
+  definition TEXT NOT NULL,
+  example TEXT,
+  synonyms_json TEXT NOT NULL,
+  source_url TEXT,
+  fetched_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);

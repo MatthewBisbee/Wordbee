@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import closeIconMarkup from './assets/icons/icon-close.svg?raw'
 import forumIconMarkup from './assets/icons/icon-forum.svg?raw'
-import helpIconMarkup from './assets/icons/icon-help.svg?raw'
 import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
 import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
 import statsIconMarkup from './assets/icons/icon-stats.svg?raw'
@@ -47,6 +46,15 @@ type GuessResponse = {
   didWin: boolean
   answer?: string
 }
+type DefinitionSummary = {
+  word: string
+  phonetic: string
+  partOfSpeech: string
+  definition: string
+  example: string
+  synonyms: string[]
+  sourceUrl: string
+}
 type StatsSummary = {
   played: number
   winPercentage: number
@@ -57,6 +65,7 @@ type StatsSummary = {
 type ResultsResponse = {
   stats: StatsSummary
   answer?: string
+  definition?: DefinitionSummary
 }
 type GameResult = {
   outcome: GameStatus
@@ -65,6 +74,7 @@ type GameResult = {
   stats: StatsSummary
   answer?: string
   copied: boolean
+  definition?: DefinitionSummary
   saved: boolean
 }
 type Settings = {
@@ -193,10 +203,8 @@ function getCompletedBoard(board: Tile[][], activeRow: number, scores: Evaluated
     .concat([scores])
 }
 
-function createShareText(result: GameResult, puzzle: PuzzleMetadata | null) {
-  const score = result.outcome === 'won' ? result.guessesUsed.toString() : 'X'
-  const heading = `Wordbee ${puzzle?.date ?? ''} ${score}/${MAX_GUESSES}`.trim()
-  const rows = result.board.map((row) =>
+function createShareText(result: GameResult) {
+  return result.board.map((row) =>
     row
       .map((state) => {
         if (state === 'correct') return '🟩'
@@ -204,9 +212,32 @@ function createShareText(result: GameResult, puzzle: PuzzleMetadata | null) {
         return '⬜'
       })
       .join(''),
-  )
+  ).join('\n')
+}
 
-  return [heading, '', ...rows].join('\n')
+async function copyTextToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return
+  } catch {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.readOnly = true
+    textArea.style.position = 'fixed'
+    textArea.style.left = '0'
+    textArea.style.top = '0'
+    textArea.style.opacity = '0'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+
+    const copied = document.execCommand('copy')
+    textArea.remove()
+
+    if (!copied) {
+      throw new Error('Clipboard unavailable')
+    }
+  }
 }
 
 function getDistributionMax(stats: StatsSummary) {
@@ -444,6 +475,7 @@ function App() {
         setGameResult({
           ...baseResult,
           answer: result.answer || answer,
+          definition: result.definition,
           saved: true,
           stats: result.stats,
         })
@@ -669,14 +701,14 @@ function App() {
     if (!gameResult) return
 
     try {
-      await navigator.clipboard.writeText(createShareText(gameResult, puzzle))
+      await copyTextToClipboard(createShareText(gameResult))
       setGameResult({ ...gameResult, copied: true })
       showToast('Copied')
     } catch (error) {
       console.warn('Could not copy result', error)
       showToast('Copy failed')
     }
-  }, [gameResult, puzzle, showToast])
+  }, [gameResult, showToast])
 
   useEffect(() => {
     let isMounted = true
@@ -821,7 +853,11 @@ function App() {
 
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left">
-          <button className="wordbee-icon-button" type="button" aria-label="Menu">
+          <button
+            className="wordbee-icon-button wordbee-icon-button--menu"
+            type="button"
+            aria-label="Menu"
+          >
             <InlineIcon markup={menuIconMarkup} />
           </button>
         </div>
@@ -829,14 +865,15 @@ function App() {
         <h1 className="wordbee-title">Wordbee</h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
-          <button className="wordbee-icon-button" type="button" aria-label="Statistics">
+          <button
+            className="wordbee-icon-button wordbee-icon-button--stats"
+            type="button"
+            aria-label="Statistics"
+          >
             <InlineIcon markup={statsIconMarkup} />
           </button>
-          <button className="wordbee-icon-button" type="button" aria-label="Help">
-            <InlineIcon markup={helpIconMarkup} />
-          </button>
           <button
-            className="wordbee-icon-button"
+            className="wordbee-icon-button wordbee-icon-button--settings"
             type="button"
             aria-label="Settings"
             aria-haspopup="dialog"
@@ -905,6 +942,7 @@ function App() {
 
       {gameResult && (
         <ResultsDialog
+          onClose={() => setGameResult(null)}
           onCopy={copyResult}
           result={gameResult}
         />
@@ -965,32 +1003,30 @@ function Keyboard({
 }
 
 function ResultsDialog({
+  onClose,
   onCopy,
   result,
 }: {
+  onClose: () => void
   onCopy: () => void
   result: GameResult
 }) {
   const distributionMax = getDistributionMax(result.stats)
-  const title = result.outcome === 'won' ? 'Nice solve' : 'Good run'
-  const subtitle =
-    result.outcome === 'won'
-      ? `Solved in ${result.guessesUsed}`
-      : result.answer
-        ? `Answer: ${result.answer}`
-        : 'Answer saved for reveal'
+  const emojiRows = createShareText(result)
 
   return (
-    <div className="results-backdrop" aria-live="polite">
-      <section className="results-panel" aria-labelledby="results-title">
-        <div className="results-badge" aria-hidden="true">
-          <InlineIcon markup={statsIconMarkup} />
-        </div>
-
-        <h2 className="results-title" id="results-title">
-          {title}
-        </h2>
-        <p className="results-subtitle">{subtitle}</p>
+    <div className="results-backdrop" aria-live="polite" onClick={onClose} role="presentation">
+      <section
+        aria-label="Completed game summary"
+        aria-modal="true"
+        className="results-panel"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <button className="results-close" type="button" aria-label="Close" onClick={onClose}>
+          <InlineIcon markup={closeIconMarkup} />
+        </button>
+        <DefinitionPanel definition={result.definition} fallbackWord={result.answer} />
 
         <section className="results-section" aria-labelledby="summary-title">
           <h3 id="summary-title">Statistics</h3>
@@ -1052,12 +1088,43 @@ function ResultsDialog({
         </div>
         <p className="results-note">Random and history plays are not tracked.</p>
 
-        <button className="results-share-button" type="button" onClick={onCopy}>
-          {result.copied ? 'Copied' : 'Share'}
-          <ShareGlyph />
+        <button className="results-copy-button" type="button" onClick={onCopy}>
+          <span>{result.copied ? 'Copied:' : 'Copy:'}</span>
+          <span className="results-copy-button__emoji">{emojiRows}</span>
         </button>
       </section>
     </div>
+  )
+}
+
+function DefinitionPanel({
+  definition,
+  fallbackWord,
+}: {
+  definition?: DefinitionSummary
+  fallbackWord?: string
+}) {
+  const displayWord = definition?.word || fallbackWord || 'Wordbee'
+  const synonyms = definition?.synonyms ?? []
+
+  return (
+    <section className="definition-panel" aria-label="Answer definition">
+      <div className="definition-panel__heading">
+        <strong>{displayWord}</strong>
+        {definition?.phonetic && <em>{definition.phonetic}</em>}
+      </div>
+      {definition?.partOfSpeech && (
+        <span className="definition-panel__part">{definition.partOfSpeech}</span>
+      )}
+      <p>{definition?.definition || 'Definition unavailable for now.'}</p>
+      {definition?.example && <blockquote>{definition.example}</blockquote>}
+      {synonyms.length > 0 && (
+        <div className="definition-panel__synonyms">
+          <span>Synonyms</span>
+          <span>{synonyms.join(', ')}</span>
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -1183,14 +1250,6 @@ function InlineIcon({ markup }: { markup: string }) {
       className="wordbee-inline-icon"
       dangerouslySetInnerHTML={{ __html: markup }}
     />
-  )
-}
-
-function ShareGlyph() {
-  return (
-    <svg aria-hidden="true" className="results-share-icon" viewBox="0 0 24 24">
-      <path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .3 1.3l-6.2 3.1a3 3 0 1 0 0 3.2l6.2 3.1A3 3 0 0 0 15 16v.17A3 3 0 1 0 18 14a3 3 0 0 0-1.7.52l-6.2-3.1a3 3 0 0 0 0-2.84l6.2-3.1A3 3 0 0 0 18 8Zm0-5a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM6 12a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm12 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" />
-    </svg>
   )
 }
 

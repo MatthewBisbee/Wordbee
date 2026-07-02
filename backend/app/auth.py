@@ -6,15 +6,19 @@ import hmac
 import json
 import os
 import re
+import secrets
 from datetime import UTC, datetime
 from typing import Any
+
+from .db import connect
 
 
 CODE_ENV_KEY = "WORDBEE_FRIENDS_FAMILY_CODES"
 TOKEN_KIND = "friends-family"
-TOKEN_VERSION = 1
+TOKEN_VERSION = 2
 FIRST_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z' -]{0,39}$")
 CODE_ID_PATTERN = re.compile(r"[^A-Za-z0-9_-]+")
+CLIENT_SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,96}$")
 
 
 def validate_friends_family_code(raw_code: object) -> dict[str, str] | None:
@@ -34,6 +38,7 @@ def create_friends_family_session(
     code: object,
     first_name: object,
     last_initial: object,
+    client_session_id: object = None,
 ) -> dict[str, Any]:
     configured_code = validate_friends_family_code(code)
     if configured_code is None:
@@ -41,23 +46,37 @@ def create_friends_family_session(
 
     normalized_first_name = normalize_first_name(first_name)
     normalized_last_initial = normalize_last_initial(last_initial)
-    identity = create_identity(normalized_first_name, normalized_last_initial)
+    normalized_client_session_id = normalize_client_session_id(client_session_id)
+    code_id = configured_code["codeId"]
+    user = upsert_friends_family_user(
+        code_id=code_id,
+        first_name=normalized_first_name,
+        last_initial=normalized_last_initial,
+        client_session_id=normalized_client_session_id,
+    )
     payload = {
         "kind": TOKEN_KIND,
         "version": TOKEN_VERSION,
-        "codeId": configured_code["codeId"],
-        "firstName": identity["firstName"],
-        "lastInitial": identity["lastInitial"],
+        "codeId": code_id,
+        "userId": user["userId"],
+        "sessionId": user["sessionId"],
+        "firstName": user["firstName"],
+        "lastInitial": user["lastInitial"],
         "issuedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
 
     return {
-        "identity": identity,
+        "identity": public_identity(user),
         "token": encode_token(payload),
     }
 
 
-def verify_friends_family_token(raw_token: object) -> dict[str, str] | None:
+def verify_friends_family_token(
+    raw_token: object,
+    *,
+    client_session_id: object = None,
+    claim_client_session: bool = False,
+) -> dict[str, str] | None:
     if not isinstance(raw_token, str) or "." not in raw_token:
         return None
 
@@ -84,7 +103,98 @@ def verify_friends_family_token(raw_token: object) -> dict[str, str] | None:
     except ValueError:
         return None
 
-    return create_identity(first_name, last_initial)
+    user_id = payload.get("userId")
+    session_id = payload.get("sessionId")
+    if not isinstance(user_id, str) or not isinstance(session_id, str):
+        return None
+
+    normalized_client_session_id = normalize_client_session_id(client_session_id)
+
+    with connect() as connection:
+        user_row = connection.execute(
+            """
+            SELECT id, code_id, first_name, last_initial, display_name,
+                   active_session_id, active_client_session_id
+            FROM friends_family_users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+        if user_row is None:
+            return None
+
+        if user_row["active_session_id"] != session_id:
+            return None
+
+        if user_row["code_id"] != payload.get("codeId"):
+            return None
+
+        if user_row["first_name"] != first_name or user_row["last_initial"] != last_initial:
+            return None
+
+        active_client_session_id = user_row["active_client_session_id"]
+        if normalized_client_session_id:
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+
+            if claim_client_session:
+                connection.execute(
+                    """
+                    UPDATE friends_family_users
+                    SET active_client_session_id = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (normalized_client_session_id, now, user_id),
+                )
+                active_client_session_id = normalized_client_session_id
+            elif active_client_session_id and active_client_session_id != normalized_client_session_id:
+                return None
+
+            connection.execute(
+                """
+                UPDATE friends_family_sessions
+                SET client_session_id = ?, last_seen_at = ?
+                WHERE id = ?
+                """,
+                (normalized_client_session_id, now, session_id),
+            )
+
+    return {
+        "kind": TOKEN_KIND,
+        "userId": user_row["id"],
+        "codeId": user_row["code_id"],
+        "displayName": user_row["display_name"],
+        "firstName": user_row["first_name"],
+        "lastInitial": user_row["last_initial"],
+    }
+
+
+def sign_out_friends_family_session(
+    raw_token: object,
+    *,
+    client_session_id: object = None,
+) -> bool:
+    identity = verify_friends_family_token(
+        raw_token,
+        client_session_id=client_session_id,
+        claim_client_session=False,
+    )
+    if identity is None:
+        return False
+
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE friends_family_users
+            SET active_session_id = NULL,
+                active_client_session_id = NULL,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (datetime.now(UTC).isoformat(timespec="seconds"), identity["userId"]),
+        )
+
+    return True
 
 
 def get_configured_codes() -> list[dict[str, str]]:
@@ -131,6 +241,17 @@ def normalize_code(raw_code: object) -> str:
     return raw_code.strip()
 
 
+def normalize_client_session_id(raw_client_session_id: object) -> str:
+    if not isinstance(raw_client_session_id, str):
+        return ""
+
+    client_session_id = raw_client_session_id.strip()
+    if not CLIENT_SESSION_PATTERN.fullmatch(client_session_id):
+        return ""
+
+    return client_session_id
+
+
 def normalize_code_id(raw_code_id: str, index: int) -> str:
     code_id = CODE_ID_PATTERN.sub("-", raw_code_id.strip()).strip("-").lower()
     return (code_id or f"group-{index + 1}")[:48]
@@ -156,6 +277,84 @@ def normalize_last_initial(raw_last_initial: object) -> str:
         raise ValueError("Enter one last initial")
 
     return last_initial.upper()
+
+
+def upsert_friends_family_user(
+    *,
+    code_id: str,
+    first_name: str,
+    last_initial: str,
+    client_session_id: str,
+) -> dict[str, str]:
+    user_id = create_user_id(code_id, first_name, last_initial)
+    session_id = create_session_id()
+    display_name = f"{first_name} {last_initial}"
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO friends_family_users (
+              id, code_id, first_name, last_initial, display_name,
+              active_session_id, active_client_session_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              display_name = excluded.display_name,
+              active_session_id = excluded.active_session_id,
+              active_client_session_id = excluded.active_client_session_id,
+              updated_at = excluded.updated_at
+            """,
+            (
+                user_id,
+                code_id,
+                first_name,
+                last_initial,
+                display_name,
+                session_id,
+                client_session_id,
+                now,
+                now,
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO friends_family_sessions (
+              id, user_id, client_session_id, created_at, last_seen_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (session_id, user_id, client_session_id, now, now),
+        )
+
+    return {
+        "kind": TOKEN_KIND,
+        "userId": user_id,
+        "codeId": code_id,
+        "sessionId": session_id,
+        "displayName": display_name,
+        "firstName": first_name,
+        "lastInitial": last_initial,
+    }
+
+
+def public_identity(user: dict[str, str]) -> dict[str, str]:
+    return {
+        "kind": TOKEN_KIND,
+        "userId": user["userId"],
+        "displayName": user["displayName"],
+        "firstName": user["firstName"],
+        "lastInitial": user["lastInitial"],
+    }
+
+
+def create_user_id(code_id: str, first_name: str, last_initial: str) -> str:
+    raw_id = f"{code_id}:{first_name.lower()}:{last_initial.upper()}"
+    return hashlib.sha256(raw_id.encode("utf-8")).hexdigest()[:32]
+
+
+def create_session_id() -> str:
+    return secrets.token_urlsafe(24)
 
 
 def capitalize_name_part(name_part: str) -> str:

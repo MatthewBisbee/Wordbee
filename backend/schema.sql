@@ -30,6 +30,55 @@ ON completed_games (mode, completed_at);
 CREATE INDEX IF NOT EXISTS idx_completed_games_puzzle_date
 ON completed_games (puzzle_date);
 
+CREATE TABLE IF NOT EXISTS friends_family_users (
+  id TEXT PRIMARY KEY,
+  code_id TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_initial TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  active_session_id TEXT,
+  active_client_session_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (code_id, first_name, last_initial)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_users_code_name
+ON friends_family_users (code_id, first_name, last_initial);
+
+CREATE TABLE IF NOT EXISTS friends_family_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  client_session_id TEXT,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES friends_family_users (id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_sessions_user_created
+ON friends_family_sessions (user_id, created_at);
+
+CREATE TABLE IF NOT EXISTS friends_family_daily_results (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  puzzle_date TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  guesses_used INTEGER NOT NULL,
+  starter_word TEXT NOT NULL,
+  guesses_json TEXT NOT NULL,
+  board_json TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
+  UNIQUE (user_id, puzzle_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_daily_results_user_date
+ON friends_family_daily_results (user_id, puzzle_date);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_daily_results_date
+ON friends_family_daily_results (puzzle_date);
+
 CREATE TABLE IF NOT EXISTS word_definitions (
   word TEXT PRIMARY KEY,
   phonetic TEXT,

@@ -17,6 +17,7 @@ const RESULTS_REVEAL_DELAY_MS = 950
 const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
+const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
 const AVATAR_CONFIG_VERSION = 1
 const AVATAR_HAIR_OPTIONS = [
@@ -101,9 +102,15 @@ const STATS_BAR_CONFIG = [
 ]
 const EMPTY_STATS: StatsSummary = {
   played: 0,
+  wins: 0,
   winPercentage: 0,
+  averageGuesses: 0,
   currentStreak: 0,
   maxStreak: 0,
+  currentWinStreak: 0,
+  bestWinStreak: 0,
+  currentPlayStreak: 0,
+  bestPlayStreak: 0,
   guessDistribution: {
     1: 0,
     2: 0,
@@ -112,6 +119,7 @@ const EMPTY_STATS: StatsSummary = {
     5: 0,
     6: 0,
   },
+  topStarters: [],
 }
 
 type TileState = 'empty' | 'tbd' | 'correct' | 'present' | 'absent'
@@ -140,20 +148,65 @@ type DefinitionSummary = {
 }
 type StatsSummary = {
   played: number
+  wins: number
   winPercentage: number
+  averageGuesses: number
   currentStreak: number
   maxStreak: number
+  currentWinStreak: number
+  bestWinStreak: number
+  currentPlayStreak: number
+  bestPlayStreak: number
   guessDistribution: Record<number, number>
+  topStarters: StarterStat[]
+}
+type StarterStat = {
+  word: string
+  count: number
+  percentage: number
+}
+type FamilyDailyResult = {
+  id: string
+  userId: string
+  displayName: string
+  date: string
+  answer?: string
+  outcome: Exclude<GameStatus, 'playing'>
+  guessesUsed: number
+  starterWord: string
+  guesses: string[]
+  board: EvaluatedState[][]
+  completedAt: string
+}
+type FamilyStatsUser = {
+  id: string
+  displayName: string
+  firstName: string
+  lastInitial: string
+  stats: StatsSummary
+  history: FamilyDailyResult[]
+}
+type FamilyStatsDashboard = {
+  currentUserId: string
+  users: FamilyStatsUser[]
+}
+type FamilyTodayStatus = {
+  completed: boolean
+  result?: FamilyDailyResult
+  stats: StatsSummary
+  definition?: DefinitionSummary
 }
 type ResultsResponse = {
   stats: StatsSummary
   answer?: string
   definition?: DefinitionSummary
+  result?: FamilyDailyResult
 }
 type GameResult = {
   outcome: GameStatus
   guessesUsed: number
   board: EvaluatedState[][]
+  guesses: string[]
   stats: StatsSummary
   answer?: string
   copied: boolean
@@ -161,7 +214,6 @@ type GameResult = {
   saved: boolean
 }
 type Settings = {
-  hardMode: boolean
   darkThemeOverride: boolean | null
   highContrast: boolean
   onscreenKeyboardOnly: boolean
@@ -180,6 +232,7 @@ type GuestAccess = {
 }
 type FriendsFamilyIdentity = {
   kind: 'friends-family'
+  userId: string
   displayName: string
   firstName: string
   lastInitial: string
@@ -208,6 +261,7 @@ type Tile = {
 type CompletedResultInput = {
   answer?: string
   board: EvaluatedState[][]
+  guesses: string[]
   guessesUsed: number
   outcome: GameStatus
 }
@@ -225,7 +279,6 @@ const statePriority: Record<EvaluatedState, number> = {
 }
 
 const defaultSettings: Settings = {
-  hardMode: false,
   darkThemeOverride: null,
   highContrast: false,
   onscreenKeyboardOnly: false,
@@ -449,6 +502,7 @@ function loadAccessState(): AccessState | null {
 
     if (
       storedAccess.kind === 'friends-family' &&
+      typeof storedAccess.userId === 'string' &&
       typeof storedAccess.displayName === 'string' &&
       typeof storedAccess.firstName === 'string' &&
       typeof storedAccess.lastInitial === 'string' &&
@@ -459,6 +513,7 @@ function loadAccessState(): AccessState | null {
       return {
         avatar: sanitizeAvatarConfig(storedAccess.avatar, displayName),
         kind: 'friends-family',
+        userId: storedAccess.userId.slice(0, 80),
         displayName,
         firstName: storedAccess.firstName.slice(0, 40),
         lastInitial: storedAccess.lastInitial.slice(0, 1),
@@ -486,6 +541,16 @@ function createBoard() {
   )
 }
 
+class ApiError extends Error {
+  status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
   const response = await fetch(url, init)
   const responseText = await response.text()
@@ -495,17 +560,39 @@ async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
     try {
       responseBody = JSON.parse(responseText) as { error?: string }
     } catch {
-      throw new Error(
+      throw new ApiError(
         response.ok ? 'Invalid server response' : 'API server unavailable. Check the dev terminal.',
+        response.status,
       )
     }
   }
 
   if (!response.ok) {
-    throw new Error(responseBody.error || 'API server unavailable')
+    throw new ApiError(responseBody.error || 'API server unavailable', response.status)
   }
 
   return responseBody as ResponseBody
+}
+
+function getClientSessionId() {
+  try {
+    const storedSessionId = window.sessionStorage.getItem(CLIENT_SESSION_STORAGE_KEY)
+    if (storedSessionId) return storedSessionId
+
+    const sessionId = createRandomId()
+    window.sessionStorage.setItem(CLIENT_SESSION_STORAGE_KEY, sessionId)
+    return sessionId
+  } catch {
+    return createRandomId()
+  }
+}
+
+function createRandomId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID()
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function createGameId(date: string) {
@@ -521,6 +608,47 @@ function getCompletedBoard(board: Tile[][], activeRow: number, scores: Evaluated
     .slice(0, activeRow)
     .map((row) => row.map((tile) => tile.state as EvaluatedState))
     .concat([scores])
+}
+
+function getCompletedGuesses(board: Tile[][], activeRow: number) {
+  return board
+    .slice(0, activeRow + 1)
+    .map((row) => row.map((tile) => tile.letter).join(''))
+}
+
+function hydrateBoardFromResult(result: FamilyDailyResult) {
+  const nextBoard = createBoard()
+
+  result.guesses.forEach((guess, rowIndex) => {
+    const rowStates = result.board[rowIndex] ?? []
+
+    guess.split('').forEach((letter, tileIndex) => {
+      nextBoard[rowIndex][tileIndex] = {
+        animation: 'idle',
+        letter,
+        state: rowStates[tileIndex] ?? 'absent',
+      }
+    })
+  })
+
+  return nextBoard
+}
+
+function getKeyboardStateFromResult(result: FamilyDailyResult) {
+  return result.guesses.reduce<Record<string, EvaluatedState>>((nextState, guess, rowIndex) => {
+    guess.split('').forEach((letter, tileIndex) => {
+      const state = result.board[rowIndex]?.[tileIndex]
+      if (!state) return
+
+      const normalizedLetter = letter.toLowerCase()
+      const previousState = nextState[normalizedLetter]
+      if (previousState && statePriority[previousState] >= statePriority[state]) return
+
+      nextState[normalizedLetter] = state
+    })
+
+    return nextState
+  }, {})
 }
 
 function createShareText(result: GameResult) {
@@ -562,46 +690,6 @@ async function copyTextToClipboard(text: string) {
 
 function getDistributionMax(stats: StatsSummary) {
   return Math.max(1, ...Object.values(stats.guessDistribution))
-}
-
-function getHardModeViolation(board: Tile[][], activeRow: number, guess: string) {
-  const requiredPositions = new Map<number, string>()
-  const requiredCounts = new Map<string, number>()
-
-  board.slice(0, activeRow).forEach((row) => {
-    const rowCounts = new Map<string, number>()
-
-    row.forEach((tile, index) => {
-      if (tile.state === 'correct') {
-        requiredPositions.set(index, tile.letter)
-      }
-
-      if (tile.state === 'correct' || tile.state === 'present') {
-        rowCounts.set(tile.letter, (rowCounts.get(tile.letter) ?? 0) + 1)
-      }
-    })
-
-    rowCounts.forEach((count, letter) => {
-      requiredCounts.set(letter, Math.max(requiredCounts.get(letter) ?? 0, count))
-    })
-  })
-
-  for (const [index, letter] of requiredPositions) {
-    if (guess[index] !== letter) {
-      return `${letter} must be in position ${index + 1}`
-    }
-  }
-
-  for (const [letter, count] of requiredCounts) {
-    const guessedCount = guess.split('').filter((guessedLetter) => guessedLetter === letter)
-      .length
-
-    if (guessedCount < count) {
-      return count === 1 ? `Guess must contain ${letter}` : `Guess must contain ${count} ${letter}s`
-    }
-  }
-
-  return null
 }
 
 function getStatsTrigger(target: EventTarget | null) {
@@ -763,15 +851,25 @@ function App() {
   const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
   const [puzzleError, setPuzzleError] = useState('')
   const [stats, setStats] = useState<StatsSummary>(EMPTY_STATS)
+  const [familyStats, setFamilyStats] = useState<FamilyStatsDashboard | null>(null)
+  const [familyStatsError, setFamilyStatsError] = useState('')
+  const [isFamilyStatsLoading, setIsFamilyStatsLoading] = useState(false)
+  const [isFamilyStatsOpen, setIsFamilyStatsOpen] = useState(false)
+  const [isFamilyDailyStatusLoading, setIsFamilyDailyStatusLoading] = useState(false)
   const [completedResult, setCompletedResult] = useState<GameResult | null>(null)
   const [isResultsOpen, setIsResultsOpen] = useState(false)
   const gameIdRef = useRef('')
+  const clientSessionIdRef = useRef('')
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
   const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
   const isAccessPromptOpen = accessState === null
+  if (!clientSessionIdRef.current) {
+    clientSessionIdRef.current = getClientSessionId()
+  }
+  const clientSessionId = clientSessionIdRef.current
 
   useStatsIconAnimation()
 
@@ -808,6 +906,90 @@ function App() {
         : previousAccess,
     )
   }, [])
+
+  const resetCurrentGame = useCallback(() => {
+    setBoard(createBoard())
+    setKeyboardState({})
+    setCurrentRow(0)
+    setCurrentColumn(0)
+    setInvalidRow(null)
+    setWinningRow(null)
+    setStatus('playing')
+    setCompletedResult(null)
+    setIsResultsOpen(false)
+
+    if (puzzle) {
+      gameIdRef.current = createGameId(puzzle.date)
+    }
+  }, [puzzle])
+
+  const signOut = useCallback(() => {
+    const token = friendsFamilyToken
+    if (token) {
+      void requestJson<{ ok: boolean }>('/api/friends-family/sign-out', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientSessionId,
+          token,
+        }),
+      }).catch((error) => {
+        console.warn('Could not sign out server session', error)
+      })
+    }
+
+    setAccessState(null)
+    setFamilyStats(null)
+    setFamilyStatsError('')
+    setIsFamilyStatsOpen(false)
+    resetCurrentGame()
+  }, [clientSessionId, friendsFamilyToken, resetCurrentGame])
+
+  const handleSessionBlocked = useCallback(
+    (error: unknown) => {
+      if (error instanceof ApiError && error.status === 409) {
+        setAccessState(null)
+        setFamilyStats(null)
+        setIsFamilyStatsOpen(false)
+        resetCurrentGame()
+        showToast('Signed out on this device')
+        return true
+      }
+
+      return false
+    },
+    [resetCurrentGame, showToast],
+  )
+
+  const loadFamilyStats = useCallback(async () => {
+    if (!friendsFamilyToken) return
+
+    setIsFamilyStatsLoading(true)
+    setFamilyStatsError('')
+
+    try {
+      const responseBody = await requestJson<FamilyStatsDashboard>('/api/friends-family/stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientSessionId,
+          token: friendsFamilyToken,
+        }),
+      })
+
+      setFamilyStats(responseBody)
+    } catch (error) {
+      if (!handleSessionBlocked(error)) {
+        setFamilyStatsError(error instanceof Error ? error.message : 'Could not load stats')
+      }
+    } finally {
+      setIsFamilyStatsLoading(false)
+    }
+  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked])
 
   const shakeRow = useCallback((row: number) => {
     setInvalidRow(row)
@@ -880,6 +1062,7 @@ function App() {
     async ({
       answer,
       board,
+      guesses,
       guessesUsed,
       outcome,
     }: CompletedResultInput) => {
@@ -887,6 +1070,7 @@ function App() {
         answer,
         board,
         copied: false,
+        guesses,
         guessesUsed,
         outcome,
         saved: false,
@@ -908,28 +1092,41 @@ function App() {
           },
           body: JSON.stringify({
             board,
+            clientSessionId,
             date: puzzle.date,
             friendsFamilyToken,
             gameId: gameIdRef.current,
+            guesses,
             guessesUsed,
-            hardMode: settings.hardMode,
             outcome,
           }),
         })
 
         setStats(result.stats)
+        if (result.result) {
+          setBoard(hydrateBoardFromResult(result.result))
+          setKeyboardState(getKeyboardStateFromResult(result.result))
+          setStatus(result.result.outcome)
+          setWinningRow(result.result.outcome === 'won' ? result.result.guessesUsed - 1 : null)
+        }
         setCompletedResult({
           ...baseResult,
           answer: result.answer || answer,
+          board: result.result?.board ?? baseResult.board,
           definition: result.definition,
+          guesses: result.result?.guesses ?? baseResult.guesses,
+          guessesUsed: result.result?.guessesUsed ?? baseResult.guessesUsed,
+          outcome: result.result?.outcome ?? baseResult.outcome,
           saved: true,
           stats: result.stats,
         })
       } catch (error) {
-        console.warn('Could not save result', error)
+        if (!handleSessionBlocked(error)) {
+          console.warn('Could not save result', error)
+        }
       }
     },
-    [friendsFamilyToken, puzzle, settings.hardMode, stats],
+    [clientSessionId, friendsFamilyToken, handleSessionBlocked, puzzle, stats],
   )
 
   const showResultAfterPause = useCallback(
@@ -960,16 +1157,6 @@ function App() {
 
     const row = currentRow
     const guess = board[row].map((tile) => tile.letter).join('')
-
-    if (settings.hardMode) {
-      const violation = getHardModeViolation(board, row, guess)
-
-      if (violation) {
-        shakeRow(row)
-        showToast(violation)
-        return
-      }
-    }
 
     const isLastRow = row === MAX_GUESSES - 1
 
@@ -1079,6 +1266,7 @@ function App() {
         setWinningRow(row)
         showResultAfterPause({
           board: getCompletedBoard(board, row, scores),
+          guesses: getCompletedGuesses(board, row),
           guessesUsed: row + 1,
           outcome: 'won',
         })
@@ -1096,6 +1284,7 @@ function App() {
         showResultAfterPause({
           answer: guessResult.answer,
           board: getCompletedBoard(board, row, scores),
+          guesses: getCompletedGuesses(board, row),
           guessesUsed: MAX_GUESSES,
           outcome: 'lost',
         })
@@ -1112,17 +1301,17 @@ function App() {
     currentRow,
     puzzle,
     puzzleError,
-    settings.hardMode,
     shakeRow,
     showResultAfterPause,
     showToast,
   ])
 
-  const handleKey = useCallback(
-    (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
-      if (status !== 'playing' || isRevealing) return
-      if (!puzzle) {
-        showToast(puzzleError || 'Loading daily answer')
+	  const handleKey = useCallback(
+	    (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
+	      if (status !== 'playing' || isRevealing) return
+	      if (isFamilyDailyStatusLoading) return
+	      if (!puzzle) {
+	        showToast(puzzleError || 'Loading daily answer')
         return
       }
       if (settings.onscreenKeyboardOnly && source === 'physical') return
@@ -1142,8 +1331,9 @@ function App() {
       }
     },
     [
-      addLetter,
-      isRevealing,
+	      addLetter,
+	      isFamilyDailyStatusLoading,
+	      isRevealing,
       removeLetter,
       revealGuess,
       settings.onscreenKeyboardOnly,
@@ -1223,31 +1413,85 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!puzzle || !friendsFamilyToken) {
+      return
+    }
+
     let isMounted = true
 
-    async function loadStats() {
+    async function loadTodayStatus() {
+      setIsFamilyDailyStatusLoading(true)
+
       try {
-        const responseBody = await requestJson<StatsSummary>('/api/stats')
-        if (isMounted) {
-          setStats(responseBody)
+        const responseBody = await requestJson<FamilyTodayStatus>(
+          '/api/friends-family/today-status',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              clientSessionId,
+              date: puzzle?.date,
+              token: friendsFamilyToken,
+            }),
+          },
+        )
+
+        if (!isMounted) return
+
+        setStats(responseBody.stats)
+
+        if (responseBody.completed && responseBody.result) {
+          const serverResult = responseBody.result
+          setBoard(hydrateBoardFromResult(serverResult))
+          setKeyboardState(getKeyboardStateFromResult(serverResult))
+          setCurrentRow(Math.min(serverResult.guessesUsed, MAX_GUESSES - 1))
+          setCurrentColumn(WORD_LENGTH)
+          setStatus(serverResult.outcome)
+          setWinningRow(serverResult.outcome === 'won' ? serverResult.guessesUsed - 1 : null)
+          setCompletedResult({
+            answer: serverResult.answer,
+            board: serverResult.board,
+            copied: false,
+            definition: responseBody.definition,
+            guesses: serverResult.guesses,
+            guessesUsed: serverResult.guessesUsed,
+            outcome: serverResult.outcome,
+            saved: true,
+            stats: responseBody.stats,
+          })
+        } else if (completedResult?.saved) {
+          resetCurrentGame()
         }
       } catch (error) {
-        console.warn('Could not load stats', error)
+        if (!handleSessionBlocked(error)) {
+          console.warn('Could not load family daily status', error)
+        }
+      } finally {
+        if (isMounted) {
+          setIsFamilyDailyStatusLoading(false)
+        }
       }
     }
 
-    if (puzzle) {
-      loadStats()
-    }
+    loadTodayStatus()
 
     return () => {
       isMounted = false
     }
-  }, [puzzle])
+  }, [
+    clientSessionId,
+    completedResult?.saved,
+    friendsFamilyToken,
+    handleSessionBlocked,
+    puzzle,
+    resetCurrentGame,
+  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isSettingsOpen || isAccessPromptOpen) return
+      if (isSettingsOpen || isAccessPromptOpen || isFamilyStatsOpen || isResultsOpen) return
       handleKey(event.key)
     }
 
@@ -1256,7 +1500,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [handleKey, isAccessPromptOpen, isSettingsOpen])
+  }, [handleKey, isAccessPromptOpen, isFamilyStatsOpen, isResultsOpen, isSettingsOpen])
 
   useEffect(() => {
     return () => {
@@ -1293,15 +1537,19 @@ function App() {
     let isMounted = true
     const token = friendsFamilyToken
 
-    async function verifyAccess() {
-      try {
-        const responseBody = await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ token }),
-        })
+	    async function verifyAccess() {
+	      try {
+	        const responseBody = await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
+	          method: 'POST',
+	          headers: {
+	            'Content-Type': 'application/json',
+	          },
+	          body: JSON.stringify({
+	            claimSession: true,
+	            clientSessionId,
+	            token,
+	          }),
+	        })
 
         if (!isMounted) return
 
@@ -1329,10 +1577,38 @@ function App() {
 
     verifyAccess()
 
-    return () => {
-      isMounted = false
-    }
-  }, [friendsFamilyToken, showToast])
+	    return () => {
+	      isMounted = false
+	    }
+	  }, [clientSessionId, friendsFamilyToken, showToast])
+
+	  useEffect(() => {
+	    if (!friendsFamilyToken) return
+
+	    const verifyActiveSession = async () => {
+	      try {
+	        await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
+	          method: 'POST',
+	          headers: {
+	            'Content-Type': 'application/json',
+	          },
+	          body: JSON.stringify({
+	            claimSession: false,
+	            clientSessionId,
+	            token: friendsFamilyToken,
+	          }),
+	        })
+	      } catch (error) {
+	        handleSessionBlocked(error)
+	      }
+	    }
+
+	    const intervalId = window.setInterval(() => {
+	      void verifyActiveSession()
+	    }, 15000)
+
+	    return () => window.clearInterval(intervalId)
+	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -1363,6 +1639,19 @@ function App() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isAvatarBuilderOpen, isSettingsOpen])
+
+  useEffect(() => {
+    if (!isFamilyStatsOpen) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsFamilyStatsOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isFamilyStatsOpen])
 
   return (
     <div
@@ -1401,13 +1690,21 @@ function App() {
               See results
             </button>
           )}
-          <button
-            className="wordbee-icon-button wordbee-icon-button--stats"
-            type="button"
-            aria-label="Statistics"
-          >
-            <InlineIcon markup={statsIconMarkup} />
-          </button>
+          {accessState?.kind === 'friends-family' && (
+            <button
+              className="wordbee-icon-button wordbee-icon-button--stats"
+              type="button"
+              aria-label="Statistics"
+              aria-haspopup="dialog"
+              aria-expanded={isFamilyStatsOpen}
+              onClick={() => {
+                setIsFamilyStatsOpen(true)
+                void loadFamilyStats()
+              }}
+            >
+              <InlineIcon markup={statsIconMarkup} />
+            </button>
+          )}
           {accessState?.kind === 'friends-family' ? (
             <button
               aria-label={`Settings for ${accessState.displayName}`}
@@ -1487,10 +1784,12 @@ function App() {
       {isSettingsOpen && (
         <SettingsDialog
           accessState={accessState}
+          clientSessionId={clientSessionId}
           effectiveDarkTheme={isDarkTheme}
           onAccessLogin={(nextAccessState) => setAccessState(nextAccessState)}
           onAvatarChange={() => setIsAvatarBuilderOpen(true)}
           onClose={() => setIsSettingsOpen(false)}
+          onSignOut={signOut}
           onSettingChange={updateSetting}
           settings={settings}
         />
@@ -1529,6 +1828,7 @@ function App() {
 
       {accessState === null && (
         <AccessDialog
+          clientSessionId={clientSessionId}
           onGuest={() => setAccessState({ kind: 'guest' })}
           onLogin={(nextAccessState) => setAccessState(nextAccessState)}
         />
@@ -1536,9 +1836,25 @@ function App() {
 
       {completedResult && isResultsOpen && (
         <ResultsDialog
+          canOpenStats={accessState?.kind === 'friends-family'}
           onClose={() => setIsResultsOpen(false)}
           onCopy={copyResult}
+          onOpenStats={() => {
+            setIsFamilyStatsOpen(true)
+            void loadFamilyStats()
+          }}
           result={completedResult}
+        />
+      )}
+
+      {isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
+        <FamilyStatsDialog
+          currentUserId={accessState.userId}
+          dashboard={familyStats}
+          error={familyStatsError}
+          isLoading={isFamilyStatsLoading}
+          onClose={() => setIsFamilyStatsOpen(false)}
+          onReload={() => void loadFamilyStats()}
         />
       )}
     </div>
@@ -1597,9 +1913,11 @@ function Keyboard({
 }
 
 function AccessDialog({
+  clientSessionId,
   onGuest,
   onLogin,
 }: {
+  clientSessionId: string
   onGuest: () => void
   onLogin: (accessState: FriendsFamilyAccess) => void
 }) {
@@ -1614,6 +1932,7 @@ function AccessDialog({
         <h2 id="access-title">Who's playing?</h2>
         <FriendsFamilyAccessForm
           autoFocusCode
+          clientSessionId={clientSessionId}
           guestButtonLabel="I don't have a friends and family code"
           onGuest={onGuest}
           onLogin={onLogin}
@@ -1626,6 +1945,7 @@ function AccessDialog({
 function FriendsFamilyAccessForm({
   autoFocusCode = false,
   className = '',
+  clientSessionId,
   guestButtonLabel,
   hideCodeLabel = false,
   onGuest,
@@ -1633,6 +1953,7 @@ function FriendsFamilyAccessForm({
 }: {
   autoFocusCode?: boolean
   className?: string
+  clientSessionId: string
   guestButtonLabel?: string
   hideCodeLabel?: boolean
   onGuest?: () => void
@@ -1685,6 +2006,7 @@ function FriendsFamilyAccessForm({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          clientSessionId,
           code,
           firstName,
           lastInitial,
@@ -1752,6 +2074,7 @@ function FriendsFamilyAccessForm({
       ) : step === 'profile' ? (
         <>
           <p className="access-confirmed">Code accepted.</p>
+          <p className="access-profile-note">Use this same name to sign in on another device.</p>
           <label className="access-field">
             <span>First name</span>
             <input
@@ -2066,12 +2389,16 @@ function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
 }
 
 function ResultsDialog({
+  canOpenStats = false,
   onClose,
   onCopy,
+  onOpenStats,
   result,
 }: {
+  canOpenStats?: boolean
   onClose: () => void
   onCopy: () => void
+  onOpenStats: () => void
   result: GameResult
 }) {
   const distributionMax = getDistributionMax(result.stats)
@@ -2134,16 +2461,22 @@ function ResultsDialog({
           </div>
         </section>
 
-        <a className="results-link-card results-link-card--stats" href="/stats">
-          <InlineIcon markup={statsIconMarkup} />
-          <span>
-            <strong>Detailed stats</strong>
-            <span>Compare streaks, dates, and solve patterns.</span>
-          </span>
-          <span className="results-link-card__arrow" aria-hidden="true">
-            ›
-          </span>
-        </a>
+        {canOpenStats && (
+          <button
+            className="results-link-card results-link-card--stats"
+            onClick={onOpenStats}
+            type="button"
+          >
+            <InlineIcon markup={statsIconMarkup} />
+            <span>
+              <strong>Detailed stats</strong>
+              <span>Compare streaks, dates, and solve patterns.</span>
+            </span>
+            <span className="results-link-card__arrow" aria-hidden="true">
+              ›
+            </span>
+          </button>
+        )}
 
         <div className="results-secondary-actions">
           <a href="/random">Play random</a>
@@ -2214,20 +2547,238 @@ function StatValue({ label, value }: { label: string; value: number }) {
   )
 }
 
+function FamilyStatsDialog({
+  currentUserId,
+  dashboard,
+  error,
+  isLoading,
+  onClose,
+  onReload,
+}: {
+  currentUserId: string
+  dashboard: FamilyStatsDashboard | null
+  error: string
+  isLoading: boolean
+  onClose: () => void
+  onReload: () => void
+}) {
+  const [selectedUserId, setSelectedUserId] = useState(currentUserId)
+  const users = dashboard?.users ?? []
+  const selectedUser =
+    users.find((user) => user.id === selectedUserId) ??
+    users.find((user) => user.id === currentUserId) ??
+    users[0]
+  const [selectedResultId, setSelectedResultId] = useState('')
+  const selectedResult =
+    selectedUser?.history.find((result) => result.id === selectedResultId) ??
+    selectedUser?.history[0]
+
+  useEffect(() => {
+    if (!selectedUser) return
+    if (selectedUser.history.some((result) => result.id === selectedResultId)) return
+    setSelectedResultId(selectedUser.history[0]?.id ?? '')
+  }, [selectedResultId, selectedUser])
+
+  return (
+    <div className="family-stats-backdrop" onClick={onClose}>
+      <section
+        aria-labelledby="family-stats-title"
+        aria-modal="true"
+        className="family-stats-panel"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="family-stats-header">
+          <div>
+            <h2 id="family-stats-title">Family stats</h2>
+            <p>Daily play only. Random and past-word games are not tracked.</p>
+          </div>
+          <button className="settings-close" type="button" aria-label="Close" onClick={onClose}>
+            <InlineIcon markup={closeIconMarkup} />
+          </button>
+        </div>
+
+        {isLoading && <p className="family-stats-status">Loading stats...</p>}
+        {error && (
+          <div className="family-stats-error">
+            <span>{error}</span>
+            <button type="button" onClick={onReload}>
+              Retry
+            </button>
+          </div>
+        )}
+
+        {users.length > 0 && (
+          <>
+            <div className="family-stats-table-wrap">
+              <table className="family-stats-table">
+                <thead>
+                  <tr>
+                    <th>Player</th>
+                    <th>Wins</th>
+                    <th>Win %</th>
+                    <th>Avg</th>
+                    <th>Win streak</th>
+                    <th>Play streak</th>
+                    <th>Best</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => (
+                    <tr
+                      data-selected={user.id === selectedUser?.id}
+                      key={user.id}
+                      onClick={() => setSelectedUserId(user.id)}
+                    >
+                      <td>
+                        <button type="button">{user.displayName}</button>
+                      </td>
+                      <td>{user.stats.wins}</td>
+                      <td>{user.stats.winPercentage}</td>
+                      <td>{formatAverage(user.stats.averageGuesses)}</td>
+                      <td>{user.stats.currentWinStreak}</td>
+                      <td>{user.stats.currentPlayStreak}</td>
+                      <td>{user.stats.bestWinStreak}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {selectedUser && (
+              <section className="family-profile" aria-label={`${selectedUser.displayName} stats`}>
+                <div className="family-profile__heading">
+                  <h3>{selectedUser.displayName}</h3>
+                  <span>{selectedUser.stats.played} played</span>
+                </div>
+
+                <div className="family-profile-grid">
+                  <StatValue label="Wins" value={selectedUser.stats.wins} />
+                  <StatValue label="Win %" value={selectedUser.stats.winPercentage} />
+                  <StatValue
+                    label="Avg Guesses"
+                    value={Number(formatAverage(selectedUser.stats.averageGuesses))}
+                  />
+                  <StatValue label="Current Win Streak" value={selectedUser.stats.currentWinStreak} />
+                  <StatValue label="Best Win Streak" value={selectedUser.stats.bestWinStreak} />
+                  <StatValue
+                    label="Best Play Streak"
+                    value={selectedUser.stats.bestPlayStreak}
+                  />
+                </div>
+
+                <div className="family-profile-columns">
+                  <section className="starter-list" aria-labelledby="starter-title">
+                    <h4 id="starter-title">Top starters</h4>
+                    {selectedUser.stats.topStarters.length > 0 ? (
+                      <ol>
+                        {selectedUser.stats.topStarters.map((starter) => (
+                          <li key={starter.word}>
+                            <strong>{starter.word}</strong>
+                            <span>
+                              {starter.count} times · {starter.percentage}%
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p>No starter words yet.</p>
+                    )}
+                  </section>
+
+                  <section className="daily-history" aria-labelledby="history-title">
+                    <h4 id="history-title">Daily history</h4>
+                    {selectedUser.history.length > 0 ? (
+                      <div className="daily-history__list">
+                        {selectedUser.history.map((result) => (
+                          <button
+                            data-selected={result.id === selectedResult?.id}
+                            key={result.id}
+                            onClick={() => setSelectedResultId(result.id)}
+                            type="button"
+                          >
+                            <span>{formatHistoryDate(result.date)}</span>
+                            <strong>{formatOutcome(result)}</strong>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p>No completed days yet.</p>
+                    )}
+                  </section>
+                </div>
+
+                {selectedResult && <FamilyResultBoard result={selectedResult} />}
+              </section>
+            )}
+          </>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function FamilyResultBoard({ result }: { result: FamilyDailyResult }) {
+  return (
+    <section className="family-result-board" aria-label={`${result.displayName} ${result.date}`}>
+      <div className="family-result-board__heading">
+        <span>{formatHistoryDate(result.date)}</span>
+        <strong>{formatOutcome(result)}</strong>
+      </div>
+      <div className="family-mini-board">
+        {result.guesses.map((guess, rowIndex) => (
+          <div className="family-mini-board__row" key={`${result.id}-${rowIndex}`}>
+            {guess.split('').map((letter, tileIndex) => (
+              <span
+                data-state={result.board[rowIndex]?.[tileIndex] ?? 'absent'}
+                key={`${result.id}-${rowIndex}-${tileIndex}`}
+              >
+                {letter}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function formatAverage(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+}
+
+function formatHistoryDate(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number)
+  if (!year || !month || !day) return dateValue
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+  }).format(new Date(year, month - 1, day))
+}
+
+function formatOutcome(result: FamilyDailyResult) {
+  return result.outcome === 'won' ? `${result.guessesUsed}/6` : 'X/6'
+}
+
 function SettingsDialog({
   accessState,
+  clientSessionId,
   effectiveDarkTheme,
   onAccessLogin,
   onAvatarChange,
   onClose,
+  onSignOut,
   onSettingChange,
   settings,
 }: {
   accessState: AccessState | null
+  clientSessionId: string
   effectiveDarkTheme: boolean
   onAccessLogin: (accessState: FriendsFamilyAccess) => void
   onAvatarChange: () => void
   onClose: () => void
+  onSignOut: () => void
   onSettingChange: <Key extends keyof Settings>(key: Key, value: Settings[Key]) => void
   settings: Settings
 }) {
@@ -2248,12 +2799,6 @@ function SettingsDialog({
         </div>
 
         <div className="settings-list">
-          <SettingsRow
-            checked={settings.hardMode}
-            description="Any revealed hints must be used in subsequent guesses"
-            label="Hard Mode"
-            onChange={(checked) => onSettingChange('hardMode', checked)}
-          />
           <SettingsRow
             checked={effectiveDarkTheme}
             label="Dark Theme"
@@ -2276,11 +2821,12 @@ function SettingsDialog({
               avatar={accessState.avatar}
               label="Signed in as"
               onAvatarChange={onAvatarChange}
+              onSignOut={onSignOut}
               value={accessState.displayName}
             />
           )}
           {accessState?.kind === 'guest' && (
-            <SettingsAccessSection onLogin={onAccessLogin} />
+            <SettingsAccessSection clientSessionId={clientSessionId} onLogin={onAccessLogin} />
           )}
           <div className="settings-links" aria-label="Project links">
             <a
@@ -2304,14 +2850,17 @@ function SettingsDialog({
 }
 
 function SettingsAccessSection({
+  clientSessionId,
   onLogin,
 }: {
+  clientSessionId: string
   onLogin: (accessState: FriendsFamilyAccess) => void
 }) {
   return (
     <div className="settings-access-section">
       <span className="settings-row__label">Enter friends and family code</span>
       <FriendsFamilyAccessForm
+        clientSessionId={clientSessionId}
         className="access-form--settings"
         hideCodeLabel
         onLogin={onLogin}
@@ -2324,11 +2873,13 @@ function SettingsIdentityRow({
   avatar,
   label,
   onAvatarChange,
+  onSignOut,
   value,
 }: {
   avatar: AvatarConfig
   label: string
   onAvatarChange: () => void
+  onSignOut: () => void
   value: string
 }) {
   return (
@@ -2343,6 +2894,9 @@ function SettingsIdentityRow({
         <span className="settings-identity-value">{value}</span>
         <button className="settings-avatar-button" onClick={onAvatarChange} type="button">
           Change avatar
+        </button>
+        <button className="settings-avatar-button" onClick={onSignOut} type="button">
+          Sign out
         </button>
       </span>
     </div>

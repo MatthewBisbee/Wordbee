@@ -4,6 +4,7 @@ from flask import Blueprint, current_app, jsonify, request
 
 from .auth import (
     create_friends_family_session,
+    sign_out_friends_family_session,
     validate_friends_family_code,
     verify_friends_family_token,
 )
@@ -11,7 +12,12 @@ from .daily_answer import get_daily_answer, get_puzzle_date
 from .definitions import get_definition
 from .game import is_valid_guess, normalize_guess, score_guess
 from .notifications import publish_completion_notification
-from .stats import get_stats, save_completed_game
+from .stats import (
+    get_family_dashboard,
+    get_family_today_status,
+    get_stats,
+    save_completed_game,
+)
 
 
 api = Blueprint("api", __name__)
@@ -69,6 +75,7 @@ def friends_family_login():
     try:
         session = create_friends_family_session(
             code=payload.get("code"),
+            client_session_id=payload.get("clientSessionId"),
             first_name=payload.get("firstName"),
             last_initial=payload.get("lastInitial"),
         )
@@ -81,12 +88,69 @@ def friends_family_login():
 @api.post("/friends-family/verify")
 def friends_family_verify():
     payload = request.get_json(silent=True) or {}
-    identity = verify_friends_family_token(payload.get("token"))
+    identity = verify_friends_family_token(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+        claim_client_session=bool(payload.get("claimSession")),
+    )
 
     if identity is None:
-        return jsonify({"error": "Session expired"}), 401
+        return jsonify({"error": "Session is active elsewhere"}), 409
 
     return jsonify({"identity": identity})
+
+
+@api.post("/friends-family/sign-out")
+def friends_family_sign_out():
+    payload = request.get_json(silent=True) or {}
+    sign_out_friends_family_session(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+    return jsonify({"ok": True})
+
+
+@api.post("/friends-family/today-status")
+def friends_family_today_status():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_friends_family_token(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+    if identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        answer_record = get_daily_answer(puzzle_date)
+        status = get_family_today_status(
+            identity=identity,
+            puzzle_date=answer_record["puzzle_date"],
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    if status["result"] is not None:
+        status["definition"] = get_definition(answer_record["answer"])
+
+    return jsonify(status)
+
+
+@api.post("/friends-family/stats")
+def friends_family_stats():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_friends_family_token(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+    if identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    return jsonify(get_family_dashboard(requesting_user_id=identity["userId"]))
 
 
 @api.post("/guess")
@@ -127,19 +191,30 @@ def guess():
 @api.post("/results")
 def results():
     payload = request.get_json(silent=True) or {}
-    friends_family_identity = verify_friends_family_token(payload.get("friendsFamilyToken"))
+    friends_family_token = payload.get("friendsFamilyToken")
+    friends_family_identity = None
+
+    if friends_family_token:
+        friends_family_identity = verify_friends_family_token(
+            friends_family_token,
+            client_session_id=payload.get("clientSessionId"),
+        )
+        if friends_family_identity is None:
+            return jsonify({"error": "Session is active elsewhere"}), 409
 
     try:
         puzzle_date = get_puzzle_date(payload.get("date"))
         answer_record = get_daily_answer(puzzle_date)
         saved_result = save_completed_game(
+            answer=answer_record["answer"],
             game_id=str(payload.get("gameId") or ""),
             puzzle_date=answer_record["puzzle_date"],
             mode="daily",
             outcome=str(payload.get("outcome") or ""),
             guesses_used=int(payload.get("guessesUsed") or 0),
-            hard_mode=bool(payload.get("hardMode")),
             board=payload.get("board"),
+            guesses=payload.get("guesses"),
+            friends_family_identity=friends_family_identity,
         )
     except (ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
@@ -149,6 +224,7 @@ def results():
     response = {
         "answer": answer_record["answer"],
         "definition": get_definition(answer_record["answer"]),
+        "result": saved_result["result"],
         "stats": saved_result["stats"],
     }
 

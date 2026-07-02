@@ -5,8 +5,8 @@ Wordbee is a self-hosted daily word game for a private friends and family group.
 ## Current Status
 
 - Frontend: playable Vite + React + TypeScript daily word game.
-- Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, friends-and-family avatar setup, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
-- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive and validating friends-and-family access codes server-side.
+- Gameplay: six guesses, five-letter answer, valid-word checks, high-contrast mode, theme settings, friends-and-family avatar setup, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
+- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive, validating friends-and-family access codes server-side, enforcing active sessions, and tracking family-only daily stats.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
 ## Tech Stack
@@ -82,12 +82,11 @@ Friends-and-family access codes and ntfy notification values are configured with
 
 ## Backend Roadmap
 
-The backend currently provides daily answer fetching, SQLite caching, and guess scoring. Planned additions include:
+The backend currently provides daily answer fetching, SQLite caching, guess scoring, friends-and-family sign-in, daily result lockout, ntfy-safe first-save notifications, and family-only stats/history. Planned additions include:
 
-- Guest and friends-and-family Wordbee modes.
 - Session handling with HttpOnly cookies.
-- Daily and all-time leaderboards.
-- SQLite persistence for completed games, guesses, users, and sessions.
+- Broader leaderboard views.
+- Production migration helpers for long-lived deployments.
 
 See the planning docs in `docs/` for more detail.
 

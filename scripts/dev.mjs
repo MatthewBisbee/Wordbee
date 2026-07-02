@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process'
 import http from 'node:http'
+import net from 'node:net'
 
 const backendUrl = 'http://127.0.0.1:5001/api/health'
+const frontendPort = 5173
 const processes = []
 
 let shuttingDown = false
@@ -26,6 +28,18 @@ function trackProcess(childProcess) {
     if (!shuttingDown) {
       shutdown(code || 1)
     }
+  })
+}
+
+function checkPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+
+    server.once('error', () => resolve(false))
+    server.once('listening', () => {
+      server.close(() => resolve(true))
+    })
+    server.listen(port, 'localhost')
   })
 }
 
@@ -81,6 +95,13 @@ function waitForBackend(childProcess) {
     childProcess.once('exit', onExit)
     setTimeout(check, 200)
   })
+}
+
+if (!(await checkPortAvailable(frontendPort))) {
+  console.error(
+    `Frontend port ${frontendPort} is already in use. Stop the old dev server and run npm run dev again.`,
+  )
+  process.exit(1)
 }
 
 const backend = spawn('python3', ['backend/run.py'], {

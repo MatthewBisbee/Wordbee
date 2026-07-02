@@ -16,7 +16,7 @@ const validGuesses = new Set(
     .map((word) => word.trim().toUpperCase())
     .filter(Boolean),
 )
-const SETTINGS_STORAGE_KEY = 'fnf-wordle.settings.v1'
+const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 
 type TileState = 'empty' | 'tbd' | 'correct' | 'present' | 'absent'
 type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
@@ -471,7 +471,7 @@ function App() {
           </button>
         </div>
 
-        <h1 className="wordle-title">Wordle</h1>
+        <h1 className="wordle-title">Wordbee</h1>
 
         <div className="wordle-header__side wordle-header__side--right">
           <button className="wordle-icon-button" type="button" aria-label="Statistics">
@@ -493,7 +493,7 @@ function App() {
         </div>
       </header>
 
-      <main className="wordle-game" aria-label="Wordle game">
+      <main className="wordle-game" aria-label="Wordbee game">
         <section className="wordle-board-container" aria-label="Game board">
           <div className="wordle-board">
             {board.map((row, rowIndex) => (

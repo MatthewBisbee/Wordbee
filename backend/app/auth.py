@@ -1,1 +1,1 @@
-# Future FNF authentication/session logic will live here.
+# Future Wordbee authentication/session logic will live here.

@@ -1,6 +1,6 @@
-# FNF Wordle
+# Wordbee
 
-FNF Wordle is a self-hosted Wordle-style web app for a private family and friends group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
+Wordbee is a self-hosted Wordle-style web app for a private family and friends group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
 
 ## Current Status
 
@@ -71,7 +71,7 @@ The planned backend will eventually provide:
 
 - Daily puzzle selection.
 - Guess validation and scoring.
-- Guest and private FNF modes.
+- Guest and private Wordbee modes.
 - Session handling with HttpOnly cookies.
 - Daily and all-time leaderboards.
 - SQLite persistence for puzzles, games, guesses, users, and sessions.

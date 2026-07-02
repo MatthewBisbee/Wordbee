@@ -1,6 +1,6 @@
-# FNF Wordle Frontend
+# Wordbee Frontend
 
-This is the Vite + React + TypeScript client for FNF Wordle.
+This is the Vite + React + TypeScript client for Wordbee.
 
 ## Scripts
 

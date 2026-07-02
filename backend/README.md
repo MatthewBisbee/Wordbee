@@ -1,4 +1,4 @@
-# Backend
+# Wordbee Backend
 
 This directory is reserved for the planned Flask + SQLite backend.
 
@@ -9,5 +9,5 @@ Planned responsibilities:
 - Serve daily puzzle metadata.
 - Validate guesses server-side.
 - Store games and guesses in SQLite.
-- Support guest play and private FNF sessions.
+- Support guest play and private Wordbee sessions.
 - Expose daily and all-time leaderboard APIs.

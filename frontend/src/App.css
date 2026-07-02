@@ -178,43 +178,6 @@
   transform-origin: center bottom;
 }
 
-.session-blocker {
-  position: fixed;
-  z-index: 2600;
-  top: calc(var(--header-height) + 10px);
-  left: 50%;
-  width: min(420px, calc(100vw - 28px));
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  box-sizing: border-box;
-  border: 1px solid var(--settings-border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: var(--result-panel-bg);
-  color: var(--color-tone-1);
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.24);
-  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
-  font-size: 13px;
-  font-weight: 800;
-  line-height: 17px;
-  transform: translateX(-50%);
-}
-
-.session-blocker button {
-  min-height: 34px;
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 6px;
-  padding: 0 11px;
-  background: var(--color-correct);
-  color: #fff;
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 .wordbee-inline-icon {
   width: 24px;
   height: 24px;
@@ -244,6 +207,96 @@
 
 .menu-line {
   transition: transform 180ms ease;
+}
+
+.wordbee-menu-popover {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% - 4px);
+  left: 0;
+  width: min(280px, calc(100vw - 20px));
+  display: grid;
+  gap: 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--result-panel-bg);
+  color: var(--color-tone-1);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+.wordbee-menu-popover button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-tone-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.wordbee-menu-popover button:hover,
+.wordbee-menu-popover button:focus-visible {
+  background: var(--result-link-bg);
+  outline: 0;
+}
+
+.wordbee-menu-past {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.wordbee-menu-past label {
+  color: var(--result-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.wordbee-menu-past div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 7px;
+}
+
+.wordbee-menu-past input {
+  min-width: 0;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 7px;
+  background: transparent;
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 13px;
+}
+
+.wordbee-menu-past button {
+  min-height: 36px;
+  background: var(--color-correct);
+  color: #fff;
+  text-align: center;
+}
+
+.wordbee-menu-past button:hover,
+.wordbee-menu-past button:focus-visible {
+  background: var(--color-correct);
+  filter: brightness(0.94);
+}
+
+.wordbee-menu-divider {
+  height: 1px;
+  margin: 2px 0;
+  background: var(--settings-border);
 }
 
 .stats-bar {
@@ -1515,6 +1568,34 @@
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+}
+
+.family-stats-tabs,
+.family-user-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.family-stats-tabs button,
+.family-user-tabs button {
+  min-height: 34px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 11px;
+  background: transparent;
+  color: var(--color-tone-1);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.family-stats-tabs button[aria-selected="true"],
+.family-user-tabs button[aria-pressed="true"] {
+  border-color: var(--color-correct);
+  background: var(--result-link-bg);
 }
 
 .family-stats-table-wrap {

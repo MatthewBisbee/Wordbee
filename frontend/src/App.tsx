@@ -127,10 +127,14 @@ type TileState = 'empty' | 'tbd' | 'correct' | 'present' | 'absent'
 type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
 type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 type GameStatus = 'playing' | 'won' | 'lost'
+type PlayMode = 'daily' | 'random' | 'past'
+type FamilyStatsView = 'comparison' | 'profiles'
 type PuzzleMetadata = {
   date: string
   answerLength: number
   confidence: number
+  mode: PlayMode
+  puzzleId?: string
   status: string
 }
 type GuessResponse = {
@@ -204,6 +208,7 @@ type ResultsResponse = {
   result?: FamilyDailyResult
 }
 type GameResult = {
+  mode: PlayMode
   outcome: GameStatus
   guessesUsed: number
   board: EvaluatedState[][]
@@ -654,12 +659,40 @@ function getClientSessionId() {
     const storedSessionId = window.sessionStorage.getItem(CLIENT_SESSION_STORAGE_KEY)
     if (storedSessionId) return storedSessionId
 
+    const legacySessionId = window.localStorage.getItem(CLIENT_SESSION_STORAGE_KEY)
+    if (legacySessionId) {
+      window.sessionStorage.setItem(CLIENT_SESSION_STORAGE_KEY, legacySessionId)
+      window.localStorage.removeItem(CLIENT_SESSION_STORAGE_KEY)
+      return legacySessionId
+    }
+
     const sessionId = createRandomId()
     window.sessionStorage.setItem(CLIENT_SESSION_STORAGE_KEY, sessionId)
     return sessionId
   } catch {
     return createRandomId()
   }
+}
+
+function getDefaultPastDate() {
+  const dateValue = new Date()
+  dateValue.setDate(dateValue.getDate() - 1)
+  return formatDateInput(dateValue)
+}
+
+function formatDateInput(dateValue: Date) {
+  const year = dateValue.getFullYear()
+  const month = String(dateValue.getMonth() + 1).padStart(2, '0')
+  const day = String(dateValue.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function isSessionConflict(error: unknown) {
+  return (
+    error instanceof ApiError &&
+    error.status === 409 &&
+    error.message === 'Session is active elsewhere'
+  )
 }
 
 function createRandomId() {
@@ -921,6 +954,7 @@ function App() {
   const [winningRow, setWinningRow] = useState<number | null>(null)
   const [status, setStatus] = useState<GameStatus>('playing')
   const [isRevealing, setIsRevealing] = useState(false)
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [isAvatarBuilderOpen, setIsAvatarBuilderOpen] = useState(false)
   const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
@@ -930,10 +964,11 @@ function App() {
   const [familyStatsError, setFamilyStatsError] = useState('')
   const [isFamilyStatsLoading, setIsFamilyStatsLoading] = useState(false)
   const [isFamilyStatsOpen, setIsFamilyStatsOpen] = useState(false)
+  const [familyStatsView, setFamilyStatsView] = useState<FamilyStatsView>('comparison')
+  const [pastWordDate, setPastWordDate] = useState(getDefaultPastDate)
   const [isFamilyDailyStatusLoading, setIsFamilyDailyStatusLoading] = useState(
     accessState?.kind === 'friends-family',
   )
-  const [isSessionBlocked, setIsSessionBlocked] = useState(false)
   const [todayStatusReloadKey, setTodayStatusReloadKey] = useState(0)
   const [completedResult, setCompletedResult] = useState<GameResult | null>(null)
   const [isResultsOpen, setIsResultsOpen] = useState(false)
@@ -986,7 +1021,7 @@ function App() {
     )
   }, [])
 
-  const resetCurrentGame = useCallback(() => {
+  const resetGameState = useCallback((nextPuzzle: PuzzleMetadata | null) => {
     setBoard(createBoard())
     setKeyboardState({})
     setCurrentRow(0)
@@ -997,10 +1032,14 @@ function App() {
     setCompletedResult(null)
     setIsResultsOpen(false)
 
-    if (puzzle) {
-      gameIdRef.current = createGameId(puzzle.date)
+    if (nextPuzzle) {
+      gameIdRef.current = createGameId(nextPuzzle.date)
     }
-  }, [puzzle])
+  }, [])
+
+  const resetCurrentGame = useCallback(() => {
+    resetGameState(puzzle)
+  }, [puzzle, resetGameState])
 
   const signOut = useCallback(() => {
     const token = friendsFamilyToken
@@ -1024,14 +1063,13 @@ function App() {
     setFamilyStatsError('')
     setIsFamilyStatsOpen(false)
     setIsFamilyDailyStatusLoading(false)
-    setIsSessionBlocked(false)
+    setIsMenuOpen(false)
     resetCurrentGame()
   }, [clientSessionId, friendsFamilyToken, resetCurrentGame])
 
   const handleAccessLogin = useCallback(
     (nextAccessState: FriendsFamilyAccess) => {
       setAccessState(nextAccessState)
-      setIsSessionBlocked(false)
       setIsFamilyDailyStatusLoading(true)
       setFamilyStats(null)
       setFamilyStatsError('')
@@ -1041,49 +1079,54 @@ function App() {
     [],
   )
 
-  const reclaimCurrentSession = useCallback(async () => {
-    if (!friendsFamilyToken) return
+  const claimCurrentSession = useCallback(async () => {
+    if (!friendsFamilyToken) return null
 
-    try {
-      await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          claimSession: true,
-          clientSessionId,
-          token: friendsFamilyToken,
-        }),
-      })
-      setIsSessionBlocked(false)
-      setIsFamilyDailyStatusLoading(true)
-      setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
-    } catch (error) {
-      console.warn('Could not make this session active', error)
-      showToast('Could not make this session active')
-    }
-  }, [clientSessionId, friendsFamilyToken, showToast])
+    const responseBody = await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        claimSession: true,
+        clientSessionId,
+        token: friendsFamilyToken,
+      }),
+    })
 
-  const handleSessionBlocked = useCallback(
-    (error: unknown) => {
+    setAccessState((previousAccess) => {
       if (
-        error instanceof ApiError &&
-        error.status === 409 &&
-        error.message === 'Session is active elsewhere'
+        previousAccess?.kind !== 'friends-family' ||
+        previousAccess.token !== friendsFamilyToken
       ) {
-        setFamilyStats(null)
-        setIsFamilyStatsOpen(false)
-        setIsFamilyDailyStatusLoading(false)
-        setIsSessionBlocked(true)
-        resetCurrentGame()
-        showToast('Active in another tab or device')
-        return true
+        return previousAccess
       }
 
-      return false
+      return {
+        ...previousAccess,
+        ...responseBody.identity,
+        avatar: previousAccess.avatar,
+        token: friendsFamilyToken,
+      }
+    })
+
+    return responseBody
+  }, [clientSessionId, friendsFamilyToken])
+
+  const requestWithSessionRecovery = useCallback(
+    async <ResponseBody,>(url: string, initFactory: () => RequestInit) => {
+      try {
+        return await requestJson<ResponseBody>(url, initFactory())
+      } catch (error) {
+        if (!isSessionConflict(error) || !friendsFamilyToken) {
+          throw error
+        }
+
+        await claimCurrentSession()
+        return requestJson<ResponseBody>(url, initFactory())
+      }
     },
-    [resetCurrentGame, showToast],
+    [claimCurrentSession, friendsFamilyToken],
   )
 
   const loadFamilyStats = useCallback(async () => {
@@ -1093,26 +1136,164 @@ function App() {
     setFamilyStatsError('')
 
     try {
-      const responseBody = await requestJson<FamilyStatsDashboard>('/api/friends-family/stats', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          clientSessionId,
-          token: friendsFamilyToken,
+      const responseBody = await requestWithSessionRecovery<FamilyStatsDashboard>(
+        '/api/friends-family/stats',
+        () => ({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            clientSessionId,
+            token: friendsFamilyToken,
+          }),
         }),
-      })
+      )
 
       setFamilyStats(responseBody)
     } catch (error) {
-      if (!handleSessionBlocked(error)) {
-        setFamilyStatsError(error instanceof Error ? error.message : 'Could not load stats')
-      }
+      setFamilyStatsError(error instanceof Error ? error.message : 'Could not load stats')
     } finally {
       setIsFamilyStatsLoading(false)
     }
-  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked])
+  }, [clientSessionId, friendsFamilyToken, requestWithSessionRecovery])
+
+  const beginPuzzle = useCallback(
+    (nextPuzzle: PuzzleMetadata) => {
+      setPuzzle(nextPuzzle)
+      setPuzzleError('')
+      setIsMenuOpen(false)
+      setIsFamilyDailyStatusLoading(false)
+      resetGameState(nextPuzzle)
+
+      if (nextPuzzle.mode === 'daily') {
+        setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+      }
+    },
+    [resetGameState],
+  )
+
+  const loadDailyPuzzle = useCallback(async () => {
+    try {
+      const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
+        '/api/today',
+      )
+
+      if (
+        typeof responseBody.date !== 'string' ||
+        responseBody.answerLength !== WORD_LENGTH ||
+        typeof responseBody.confidence !== 'number' ||
+        typeof responseBody.status !== 'string'
+      ) {
+        throw new Error('Unexpected daily answer response')
+      }
+
+      beginPuzzle({
+        date: responseBody.date,
+        answerLength: responseBody.answerLength,
+        confidence: responseBody.confidence,
+        mode: 'daily',
+        status: responseBody.status,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load daily answer'
+      console.warn('Could not load daily answer', error)
+      setPuzzleError(message)
+    }
+  }, [beginPuzzle])
+
+  const startRandomPuzzle = useCallback(async () => {
+    try {
+      const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
+        '/api/puzzle/random',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      )
+
+      if (
+        responseBody.mode !== 'random' ||
+        typeof responseBody.date !== 'string' ||
+        responseBody.answerLength !== WORD_LENGTH ||
+        typeof responseBody.confidence !== 'number' ||
+        typeof responseBody.puzzleId !== 'string' ||
+        typeof responseBody.status !== 'string'
+      ) {
+        throw new Error('Unexpected random puzzle response')
+      }
+
+      beginPuzzle({
+        date: responseBody.date,
+        answerLength: responseBody.answerLength,
+        confidence: responseBody.confidence,
+        mode: 'random',
+        puzzleId: responseBody.puzzleId,
+        status: responseBody.status,
+      })
+    } catch (error) {
+      console.warn('Could not start random puzzle', error)
+      showToast(error instanceof Error ? error.message : 'Could not start random puzzle')
+    }
+  }, [beginPuzzle, showToast])
+
+  const startPastPuzzle = useCallback(
+    async (dateValue: string) => {
+      if (!dateValue) {
+        showToast('Choose a date')
+        return
+      }
+
+      try {
+        const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
+          '/api/puzzle/past',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ date: dateValue }),
+          },
+        )
+
+        if (
+          responseBody.mode !== 'past' ||
+          typeof responseBody.date !== 'string' ||
+          responseBody.answerLength !== WORD_LENGTH ||
+          typeof responseBody.confidence !== 'number' ||
+          typeof responseBody.puzzleId !== 'string' ||
+          typeof responseBody.status !== 'string'
+        ) {
+          throw new Error('Unexpected past puzzle response')
+        }
+
+        beginPuzzle({
+          date: responseBody.date,
+          answerLength: responseBody.answerLength,
+          confidence: responseBody.confidence,
+          mode: 'past',
+          puzzleId: responseBody.puzzleId,
+          status: responseBody.status,
+        })
+      } catch (error) {
+        console.warn('Could not start past puzzle', error)
+        showToast(error instanceof Error ? error.message : 'Could not start past puzzle')
+      }
+    },
+    [beginPuzzle, showToast],
+  )
+
+  const openFamilyStats = useCallback(
+    (view: FamilyStatsView) => {
+      setFamilyStatsView(view)
+      setIsMenuOpen(false)
+      setIsFamilyStatsOpen(true)
+      void loadFamilyStats()
+    },
+    [loadFamilyStats],
+  )
 
   const shakeRow = useCallback((row: number) => {
     setInvalidRow(row)
@@ -1195,6 +1376,7 @@ function App() {
         copied: false,
         guesses,
         guessesUsed,
+        mode: puzzle?.mode ?? 'daily',
         outcome,
         saved: false,
         stats,
@@ -1208,7 +1390,7 @@ function App() {
       }
 
       try {
-        const result = await requestJson<ResultsResponse>('/api/results', {
+        const result = await requestWithSessionRecovery<ResultsResponse>('/api/results', () => ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1217,15 +1399,19 @@ function App() {
             board,
             clientSessionId,
             date: puzzle.date,
-            friendsFamilyToken,
+            friendsFamilyToken: puzzle.mode === 'daily' ? friendsFamilyToken : '',
             gameId: gameIdRef.current,
             guesses,
             guessesUsed,
+            mode: puzzle.mode,
             outcome,
+            puzzleId: puzzle.puzzleId,
           }),
-        })
+        }))
 
-        setStats(result.stats)
+        if (puzzle.mode === 'daily') {
+          setStats(result.stats)
+        }
         if (result.result) {
           setBoard(hydrateBoardFromResult(result.result))
           setKeyboardState(getKeyboardStateFromResult(result.result))
@@ -1239,17 +1425,16 @@ function App() {
           definition: result.definition,
           guesses: result.result?.guesses ?? baseResult.guesses,
           guessesUsed: result.result?.guessesUsed ?? baseResult.guessesUsed,
+          mode: puzzle.mode,
           outcome: result.result?.outcome ?? baseResult.outcome,
           saved: true,
           stats: result.stats,
         })
       } catch (error) {
-        if (!handleSessionBlocked(error)) {
-          console.warn('Could not save result', error)
-        }
+        console.warn('Could not save result', error)
       }
     },
-    [clientSessionId, friendsFamilyToken, handleSessionBlocked, puzzle, stats],
+    [clientSessionId, friendsFamilyToken, puzzle, requestWithSessionRecovery, stats],
   )
 
   const showResultAfterPause = useCallback(
@@ -1268,7 +1453,7 @@ function App() {
 
   const revealGuess = useCallback(async () => {
     if (!puzzle) {
-      showToast(puzzleError || 'Loading daily answer')
+      showToast(puzzleError || 'Loading puzzle')
       return
     }
 
@@ -1288,21 +1473,25 @@ function App() {
     let guessResult: GuessResponse
 
     try {
-      const responseBody = await requestJson<Partial<GuessResponse> & { error?: string }>(
+      const responseBody = await requestWithSessionRecovery<
+        Partial<GuessResponse> & { error?: string }
+      >(
         '/api/guess',
-        {
+        () => ({
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-	          body: JSON.stringify({
-	            clientSessionId,
-	            date: puzzle.date,
-	            friendsFamilyToken,
-	            guess,
-	            reveal: isLastRow,
-	          }),
-	        },
+          body: JSON.stringify({
+            clientSessionId,
+            date: puzzle.date,
+            friendsFamilyToken: puzzle.mode === 'daily' ? friendsFamilyToken : '',
+            guess,
+            mode: puzzle.mode,
+            puzzleId: puzzle.puzzleId,
+            reveal: isLastRow,
+          }),
+        }),
 	      )
 
       if (
@@ -1318,19 +1507,16 @@ function App() {
         didWin: responseBody.didWin,
         answer: responseBody.answer,
       }
-	    } catch (error) {
-	      setIsRevealing(false)
-	      if (handleSessionBlocked(error)) {
-	        return
-	      }
+    } catch (error) {
+      setIsRevealing(false)
 
-	      if (error instanceof ApiError && error.message === 'Already completed today') {
-	        setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
-	      }
+      if (error instanceof ApiError && error.message === 'Already completed today') {
+        setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+      }
 
-	      shakeRow(row)
-	      showToast(error instanceof Error ? error.message : 'Could not check guess')
-	      return
+      shakeRow(row)
+      showToast(error instanceof Error ? error.message : 'Could not check guess')
+      return
     }
 
     const { didWin, scores } = guessResult
@@ -1434,9 +1620,9 @@ function App() {
 	    currentColumn,
 	    currentRow,
 	    friendsFamilyToken,
-	    handleSessionBlocked,
 	    puzzle,
 	    puzzleError,
+    requestWithSessionRecovery,
     shakeRow,
     showResultAfterPause,
     showToast,
@@ -1444,10 +1630,10 @@ function App() {
 
 	  const handleKey = useCallback(
 	    (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
-	      if (status !== 'playing' || isRevealing || isSessionBlocked) return
-	      if (isFamilyDailyStatusLoading) return
+	      if (status !== 'playing' || isRevealing) return
+	      if (puzzle?.mode === 'daily' && isFamilyDailyStatusLoading) return
 	      if (!puzzle) {
-	        showToast(puzzleError || 'Loading daily answer')
+	        showToast(puzzleError || 'Loading puzzle')
         return
       }
       if (settings.onscreenKeyboardOnly && source === 'physical') return
@@ -1470,7 +1656,6 @@ function App() {
 		      addLetter,
 		      isFamilyDailyStatusLoading,
 		      isRevealing,
-	      isSessionBlocked,
       removeLetter,
       revealGuess,
       settings.onscreenKeyboardOnly,
@@ -1505,52 +1690,11 @@ function App() {
   }, [completedResult, showToast])
 
   useEffect(() => {
-    let isMounted = true
+    void loadDailyPuzzle()
+  }, [loadDailyPuzzle])
 
-    async function loadPuzzle() {
-      try {
-        const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
-          '/api/today',
-        )
-
-        if (
-          typeof responseBody.date !== 'string' ||
-          responseBody.answerLength !== WORD_LENGTH ||
-          typeof responseBody.confidence !== 'number' ||
-          typeof responseBody.status !== 'string'
-        ) {
-          throw new Error('Unexpected daily answer response')
-        }
-
-        if (!isMounted) return
-
-        setPuzzle({
-          date: responseBody.date,
-          answerLength: responseBody.answerLength,
-          confidence: responseBody.confidence,
-          status: responseBody.status,
-        })
-        gameIdRef.current = createGameId(responseBody.date)
-        setPuzzleError('')
-      } catch (error) {
-        if (!isMounted) return
-
-        const message = error instanceof Error ? error.message : 'Could not load daily answer'
-        console.warn('Could not load daily answer', error)
-
-        setPuzzleError(message)
-      }
-    }
-
-    loadPuzzle()
-
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-	  useEffect(() => {
-	    if (!puzzle || !friendsFamilyToken) {
+  useEffect(() => {
+	    if (!puzzle || puzzle.mode !== 'daily' || !friendsFamilyToken) {
 	      setIsFamilyDailyStatusLoading(false)
 	      return
 	    }
@@ -1561,9 +1705,9 @@ function App() {
       setIsFamilyDailyStatusLoading(true)
 
       try {
-        const responseBody = await requestJson<FamilyTodayStatus>(
+        const responseBody = await requestWithSessionRecovery<FamilyTodayStatus>(
           '/api/friends-family/today-status',
-          {
+          () => ({
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -1573,7 +1717,7 @@ function App() {
               date: puzzle?.date,
               token: friendsFamilyToken,
             }),
-          },
+          }),
         )
 
         if (!isMounted) return
@@ -1595,6 +1739,7 @@ function App() {
             definition: responseBody.definition,
             guesses: serverResult.guesses,
             guessesUsed: serverResult.guessesUsed,
+            mode: 'daily',
             outcome: serverResult.outcome,
             saved: true,
             stats: responseBody.stats,
@@ -1603,9 +1748,7 @@ function App() {
           resetCurrentGame()
         }
       } catch (error) {
-        if (!handleSessionBlocked(error)) {
-          console.warn('Could not load family daily status', error)
-        }
+        console.warn('Could not load friends and family daily status', error)
       } finally {
         if (isMounted) {
           setIsFamilyDailyStatusLoading(false)
@@ -1622,15 +1765,28 @@ function App() {
 	    clientSessionId,
 	    completedResult?.saved,
 	    friendsFamilyToken,
-	    handleSessionBlocked,
 	    puzzle,
+    requestWithSessionRecovery,
 	    resetCurrentGame,
 	    todayStatusReloadKey,
 	  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isSettingsOpen || isAccessPromptOpen || isFamilyStatsOpen || isResultsOpen) return
+      if (event.key === 'Escape' && isMenuOpen) {
+        setIsMenuOpen(false)
+        return
+      }
+
+      if (
+        isSettingsOpen ||
+        isAccessPromptOpen ||
+        isFamilyStatsOpen ||
+        isResultsOpen ||
+        isMenuOpen
+      ) {
+        return
+      }
       handleKey(event.key)
     }
 
@@ -1639,7 +1795,14 @@ function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [handleKey, isAccessPromptOpen, isFamilyStatsOpen, isResultsOpen, isSettingsOpen])
+  }, [
+    handleKey,
+    isAccessPromptOpen,
+    isFamilyStatsOpen,
+    isMenuOpen,
+    isResultsOpen,
+    isSettingsOpen,
+  ])
 
   useEffect(() => {
     return () => {
@@ -1695,7 +1858,6 @@ function App() {
 	        })
 
 	        if (!isMounted) return
-	        setIsSessionBlocked(false)
 
 	        setAccessState((previousAccess) => {
           if (previousAccess?.kind !== 'friends-family' || previousAccess.token !== token) {
@@ -1709,11 +1871,11 @@ function App() {
             token,
           }
         })
-	      } catch (error) {
-	        if (isMounted && !handleSessionBlocked(error)) {
-	          console.warn('Could not verify friends and family access', error)
-	          showToast('Could not verify sign-in')
-	        }
+      } catch (error) {
+        if (isMounted) {
+          console.warn('Could not verify friends and family access', error)
+          showToast('Could not verify sign-in')
+        }
 	      }
     }
 
@@ -1722,35 +1884,7 @@ function App() {
 	    return () => {
 	      isMounted = false
 	    }
-	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked, showToast])
-
-	  useEffect(() => {
-	    if (!friendsFamilyToken || isSessionBlocked) return
-
-	    const verifyActiveSession = async () => {
-	      try {
-	        await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
-	          method: 'POST',
-	          headers: {
-	            'Content-Type': 'application/json',
-	          },
-	          body: JSON.stringify({
-	            claimSession: false,
-	            clientSessionId,
-	            token: friendsFamilyToken,
-	          }),
-	        })
-	      } catch (error) {
-	        handleSessionBlocked(error)
-	      }
-	    }
-
-	    const intervalId = window.setInterval(() => {
-	      void verifyActiveSession()
-	    }, 15000)
-
-	    return () => window.clearInterval(intervalId)
-	  }, [clientSessionId, friendsFamilyToken, handleSessionBlocked, isSessionBlocked])
+	  }, [clientSessionId, friendsFamilyToken, showToast])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -1822,24 +1956,30 @@ function App() {
 	        {toast && <div className="wordbee-toast">{toast}</div>}
 	      </div>
 
-	      {isSessionBlocked && accessState?.kind === 'friends-family' && (
-	        <div className="session-blocker" role="status">
-	          <span>This profile is active in another tab or device.</span>
-	          <button onClick={() => void reclaimCurrentSession()} type="button">
-	            Use this session
-	          </button>
-	        </div>
-	      )}
-
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left">
           <button
             className="wordbee-icon-button wordbee-icon-button--menu"
             type="button"
+            aria-expanded={isMenuOpen}
             aria-label="Menu"
+            aria-haspopup="menu"
+            onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
           >
             <InlineIcon markup={menuIconMarkup} />
           </button>
+          {isMenuOpen && (
+            <WordbeeMenu
+              canOpenStats={accessState?.kind === 'friends-family'}
+              maxPastDate={getDefaultPastDate()}
+              onDaily={() => void loadDailyPuzzle()}
+              onOpenStats={openFamilyStats}
+              onPast={() => void startPastPuzzle(pastWordDate)}
+              onPastDateChange={setPastWordDate}
+              onRandom={() => void startRandomPuzzle()}
+              pastDate={pastWordDate}
+            />
+          )}
         </div>
 
         <h1 className="wordbee-title">Wordbee</h1>
@@ -1861,10 +2001,7 @@ function App() {
               aria-label="Statistics"
               aria-haspopup="dialog"
               aria-expanded={isFamilyStatsOpen}
-              onClick={() => {
-                setIsFamilyStatsOpen(true)
-                void loadFamilyStats()
-              }}
+              onClick={() => openFamilyStats('comparison')}
             >
               <InlineIcon markup={statsIconMarkup} />
             </button>
@@ -2006,10 +2143,14 @@ function App() {
           canOpenStats={accessState?.kind === 'friends-family'}
           onClose={() => setIsResultsOpen(false)}
           onCopy={copyResult}
-          onOpenStats={() => {
-            setIsFamilyStatsOpen(true)
-            void loadFamilyStats()
+          onOpenPastWords={() => {
+            setIsMenuOpen(true)
+            setIsResultsOpen(false)
           }}
+          onOpenStats={() => {
+            openFamilyStats('comparison')
+          }}
+          onPlayRandom={() => void startRandomPuzzle()}
           result={completedResult}
         />
       )}
@@ -2019,6 +2160,7 @@ function App() {
           currentUserId={accessState.userId}
           dashboard={familyStats}
           error={familyStatsError}
+          initialView={familyStatsView}
           isLoading={isFamilyStatsLoading}
           onClose={() => setIsFamilyStatsOpen(false)}
           onReload={() => void loadFamilyStats()}
@@ -2565,21 +2707,83 @@ function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
   )
 }
 
+function WordbeeMenu({
+  canOpenStats,
+  maxPastDate,
+  onDaily,
+  onOpenStats,
+  onPast,
+  onPastDateChange,
+  onRandom,
+  pastDate,
+}: {
+  canOpenStats: boolean
+  maxPastDate: string
+  onDaily: () => void
+  onOpenStats: (view: FamilyStatsView) => void
+  onPast: () => void
+  onPastDateChange: (dateValue: string) => void
+  onRandom: () => void
+  pastDate: string
+}) {
+  return (
+    <div className="wordbee-menu-popover" role="menu">
+      <button onClick={onDaily} role="menuitem" type="button">
+        Today
+      </button>
+      <button onClick={onRandom} role="menuitem" type="button">
+        Endless random
+      </button>
+      <div className="wordbee-menu-past">
+        <label htmlFor="wordbee-past-date">Play past words</label>
+        <div>
+          <input
+            id="wordbee-past-date"
+            max={maxPastDate}
+            onChange={(event) => onPastDateChange(event.target.value)}
+            type="date"
+            value={pastDate}
+          />
+          <button onClick={onPast} type="button">
+            Play
+          </button>
+        </div>
+      </div>
+      {canOpenStats && (
+        <>
+          <span className="wordbee-menu-divider" />
+          <button onClick={() => onOpenStats('comparison')} role="menuitem" type="button">
+            Stats comparison
+          </button>
+          <button onClick={() => onOpenStats('profiles')} role="menuitem" type="button">
+            Player pages
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ResultsDialog({
   canOpenStats = false,
   onClose,
   onCopy,
+  onOpenPastWords,
   onOpenStats,
+  onPlayRandom,
   result,
 }: {
   canOpenStats?: boolean
   onClose: () => void
   onCopy: () => void
+  onOpenPastWords: () => void
   onOpenStats: () => void
+  onPlayRandom: () => void
   result: GameResult
 }) {
   const distributionMax = getDistributionMax(result.stats)
   const emojiRows = createShareText(result)
+  const isDailyResult = result.mode === 'daily'
 
   return (
     <div className="results-backdrop" aria-live="polite" onClick={onClose} role="presentation">
@@ -2595,50 +2799,54 @@ function ResultsDialog({
         </button>
         <DefinitionPanel definition={result.definition} fallbackWord={result.answer} />
 
-        <section className="results-section" aria-labelledby="summary-title">
-          <h3 id="summary-title">Statistics</h3>
-          <div className="results-stat-grid">
-            <StatValue label="Played" value={result.stats.played} />
-            <StatValue label="Win %" value={result.stats.winPercentage} />
-            <StatValue label="Current Streak" value={result.stats.currentStreak} />
-            <StatValue label="Max Streak" value={result.stats.maxStreak} />
-          </div>
-        </section>
+        {isDailyResult && (
+          <>
+            <section className="results-section" aria-labelledby="summary-title">
+              <h3 id="summary-title">Statistics</h3>
+              <div className="results-stat-grid">
+                <StatValue label="Played" value={result.stats.played} />
+                <StatValue label="Win %" value={result.stats.winPercentage} />
+                <StatValue label="Current Streak" value={result.stats.currentStreak} />
+                <StatValue label="Max Streak" value={result.stats.maxStreak} />
+              </div>
+            </section>
 
-        <section className="results-section" aria-labelledby="distribution-title">
-          <h3 id="distribution-title">Guess Distribution</h3>
-          <div className="distribution-list">
-            {Array.from({ length: MAX_GUESSES }, (_, index) => {
-              const guessNumber = index + 1
-              const count = result.stats.guessDistribution[guessNumber] ?? 0
-              const isCurrentGuess =
-                result.outcome === 'won' && result.guessesUsed === guessNumber
+            <section className="results-section" aria-labelledby="distribution-title">
+              <h3 id="distribution-title">Guess Distribution</h3>
+              <div className="distribution-list">
+                {Array.from({ length: MAX_GUESSES }, (_, index) => {
+                  const guessNumber = index + 1
+                  const count = result.stats.guessDistribution[guessNumber] ?? 0
+                  const isCurrentGuess =
+                    result.outcome === 'won' && result.guessesUsed === guessNumber
 
-              return (
-                <div className="distribution-row" key={guessNumber}>
-                  <span className="distribution-row__label">{guessNumber}</span>
-                  <span
-                    className={[
-                      'distribution-row__bar',
-                      isCurrentGuess ? 'distribution-row__bar--current' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    style={
-                      {
-                        '--bar-width': `${Math.max(8, (count / distributionMax) * 100)}%`,
-                      } as CSSProperties
-                    }
-                  >
-                    {count}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </section>
+                  return (
+                    <div className="distribution-row" key={guessNumber}>
+                      <span className="distribution-row__label">{guessNumber}</span>
+                      <span
+                        className={[
+                          'distribution-row__bar',
+                          isCurrentGuess ? 'distribution-row__bar--current' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                        style={
+                          {
+                            '--bar-width': `${Math.max(8, (count / distributionMax) * 100)}%`,
+                          } as CSSProperties
+                        }
+                      >
+                        {count}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          </>
+        )}
 
-        {canOpenStats && (
+        {canOpenStats && isDailyResult && (
           <button
             className="results-link-card results-link-card--stats"
             onClick={onOpenStats}
@@ -2656,10 +2864,10 @@ function ResultsDialog({
         )}
 
 	        <div className="results-secondary-actions">
-	          <button disabled type="button">Play random</button>
-	          <button disabled type="button">Play past words</button>
+	          <button onClick={onPlayRandom} type="button">Play random</button>
+	          <button onClick={onOpenPastWords} type="button">Play past words</button>
 	        </div>
-        <p className="results-note">Random and history plays are not tracked.</p>
+        <p className="results-note">Random and past plays are not tracked.</p>
 
         <div className="results-copy-area">
           <button
@@ -2728,6 +2936,7 @@ function FamilyStatsDialog({
   currentUserId,
   dashboard,
   error,
+  initialView,
   isLoading,
   onClose,
   onReload,
@@ -2735,11 +2944,13 @@ function FamilyStatsDialog({
   currentUserId: string
   dashboard: FamilyStatsDashboard | null
   error: string
+  initialView: FamilyStatsView
   isLoading: boolean
   onClose: () => void
   onReload: () => void
 }) {
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
+  const [view, setView] = useState<FamilyStatsView>(initialView)
   const users = dashboard?.users ?? []
   const selectedUser =
     users.find((user) => user.id === selectedUserId) ??
@@ -2755,6 +2966,10 @@ function FamilyStatsDialog({
     if (selectedUser.history.some((result) => result.id === selectedResultId)) return
     setSelectedResultId(selectedUser.history[0]?.id ?? '')
   }, [selectedResultId, selectedUser])
+
+  useEffect(() => {
+    setView(initialView)
+  }, [initialView])
 
   return (
     <div className="family-stats-backdrop" onClick={onClose}>
@@ -2787,7 +3002,27 @@ function FamilyStatsDialog({
 
         {users.length > 0 && (
           <>
-            <div className="family-stats-table-wrap">
+            <div className="family-stats-tabs" role="tablist" aria-label="Stats views">
+              <button
+                aria-selected={view === 'comparison'}
+                onClick={() => setView('comparison')}
+                role="tab"
+                type="button"
+              >
+                Comparison
+              </button>
+              <button
+                aria-selected={view === 'profiles'}
+                onClick={() => setView('profiles')}
+                role="tab"
+                type="button"
+              >
+                Player pages
+              </button>
+            </div>
+
+            {view === 'comparison' && (
+              <div className="family-stats-table-wrap">
               <table className="family-stats-table">
                 <thead>
                   <tr>
@@ -2805,7 +3040,10 @@ function FamilyStatsDialog({
                     <tr
                       data-selected={user.id === selectedUser?.id}
                       key={user.id}
-                      onClick={() => setSelectedUserId(user.id)}
+                      onClick={() => {
+                        setSelectedUserId(user.id)
+                        setView('profiles')
+                      }}
                     >
                       <td>
                         <button type="button">{user.displayName}</button>
@@ -2820,10 +3058,24 @@ function FamilyStatsDialog({
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            )}
 
-            {selectedUser && (
+            {view === 'profiles' && selectedUser && (
               <section className="family-profile" aria-label={`${selectedUser.displayName} stats`}>
+                <div className="family-user-tabs" aria-label="Players">
+                  {users.map((user) => (
+                    <button
+                      aria-pressed={user.id === selectedUser.id}
+                      key={user.id}
+                      onClick={() => setSelectedUserId(user.id)}
+                      type="button"
+                    >
+                      {user.displayName}
+                    </button>
+                  ))}
+                </div>
+
                 <div className="family-profile__heading">
                   <h3>{selectedUser.displayName}</h3>
                   <span>{selectedUser.stats.played} played</span>

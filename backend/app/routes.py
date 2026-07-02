@@ -1,27 +1,45 @@
 from __future__ import annotations
 
+import hmac
+import json
+import random
+from datetime import UTC, datetime
+
 from flask import Blueprint, current_app, jsonify, request
 
 from .auth import (
     create_friends_family_session,
+    decode_base64_url,
+    encode_token,
     sign_out_friends_family_session,
+    sign_payload,
     validate_friends_family_code,
     verify_friends_family_token,
 )
 from .daily_answer import get_daily_answer, get_puzzle_date
 from .definitions import get_definition
-from .game import is_valid_guess, normalize_guess, score_guess
+from .game import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification
 from .stats import (
+    EMPTY_STATS,
     get_family_dashboard,
     get_family_result_for_user,
     get_family_today_status,
     get_stats,
+    normalize_board,
+    normalize_guesses,
     save_completed_game,
 )
 
 
 api = Blueprint("api", __name__)
+PLAY_TOKEN_KIND = "wordbee-play-puzzle"
+PLAY_TOKEN_VERSION = 1
+PLAY_MODES = {"random", "past"}
+UNTRACKED_PLAYER = {
+    "userId": "",
+    "displayName": "",
+}
 
 
 @api.get("/health")
@@ -57,6 +75,49 @@ def today():
 @api.get("/stats")
 def stats():
     return jsonify(get_stats())
+
+
+@api.post("/puzzle/random")
+def random_puzzle():
+    answer = random.SystemRandom().choice(tuple(load_valid_guesses()))
+    created_at = datetime.now(UTC).isoformat(timespec="seconds")
+
+    return jsonify(
+        public_play_puzzle(
+            answer=answer,
+            mode="random",
+            puzzle_date=get_puzzle_date().isoformat(),
+            status="untracked",
+            created_at=created_at,
+        )
+    )
+
+
+@api.post("/puzzle/past")
+def past_puzzle():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        if puzzle_date >= get_puzzle_date():
+            return jsonify({"error": "Choose an earlier date"}), 400
+
+        answer_record = get_daily_answer(puzzle_date)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify(
+        public_play_puzzle(
+            answer=answer_record["answer"],
+            mode="past",
+            puzzle_date=answer_record["puzzle_date"],
+            status=answer_record["status"],
+            confidence=answer_record["confidence"],
+            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+    )
 
 
 @api.post("/friends-family/validate-code")
@@ -159,15 +220,15 @@ def guess():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
-        answer_record = get_daily_answer(puzzle_date)
+        answer_record = get_answer_record_for_payload(payload)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
+    puzzle_mode = answer_record["mode"]
     friends_family_token = payload.get("friendsFamilyToken")
-    if friends_family_token:
+    if puzzle_mode == "daily" and friends_family_token:
         friends_family_identity = verify_friends_family_token(
             friends_family_token,
             client_session_id=payload.get("clientSessionId"),
@@ -195,6 +256,7 @@ def guess():
 
     response = {
         "date": answer_record["puzzle_date"],
+        "mode": puzzle_mode,
         "scores": scores,
         "didWin": did_win,
     }
@@ -211,7 +273,12 @@ def results():
     friends_family_token = payload.get("friendsFamilyToken")
     friends_family_identity = None
 
-    if friends_family_token:
+    try:
+        puzzle_mode = get_payload_mode(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if puzzle_mode == "daily" and friends_family_token:
         friends_family_identity = verify_friends_family_token(
             friends_family_token,
             client_session_id=payload.get("clientSessionId"),
@@ -220,19 +287,30 @@ def results():
             return jsonify({"error": "Session is active elsewhere"}), 409
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
-        answer_record = get_daily_answer(puzzle_date)
-        saved_result = save_completed_game(
-            answer=answer_record["answer"],
-            game_id=str(payload.get("gameId") or ""),
-            puzzle_date=answer_record["puzzle_date"],
-            mode="daily",
-            outcome=str(payload.get("outcome") or ""),
-            guesses_used=int(payload.get("guessesUsed") or 0),
-            board=payload.get("board"),
-            guesses=payload.get("guesses"),
-            friends_family_identity=friends_family_identity,
-        )
+        answer_record = get_answer_record_for_payload(payload)
+        if puzzle_mode == "daily":
+            saved_result = save_completed_game(
+                answer=answer_record["answer"],
+                game_id=str(payload.get("gameId") or ""),
+                puzzle_date=answer_record["puzzle_date"],
+                mode="daily",
+                outcome=str(payload.get("outcome") or ""),
+                guesses_used=int(payload.get("guessesUsed") or 0),
+                board=payload.get("board"),
+                guesses=payload.get("guesses"),
+                friends_family_identity=friends_family_identity,
+            )
+        else:
+            saved_result = get_untracked_result(
+                answer=answer_record["answer"],
+                mode=puzzle_mode,
+                puzzle_date=answer_record["puzzle_date"],
+                game_id=str(payload.get("gameId") or ""),
+                outcome=str(payload.get("outcome") or ""),
+                guesses_used=int(payload.get("guessesUsed") or 0),
+                board=payload.get("board"),
+                guesses=payload.get("guesses"),
+            )
     except (ValueError, TypeError) as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -259,6 +337,145 @@ def results():
             )
 
     return jsonify(response)
+
+
+def public_play_puzzle(
+    *,
+    answer: str,
+    mode: str,
+    puzzle_date: str,
+    status: str,
+    created_at: str,
+    confidence: float = 1.0,
+):
+    return {
+        "answerLength": len(answer),
+        "confidence": confidence,
+        "date": puzzle_date,
+        "mode": mode,
+        "puzzleId": encode_token(
+            {
+                "answer": answer.upper(),
+                "createdAt": created_at,
+                "date": puzzle_date,
+                "kind": PLAY_TOKEN_KIND,
+                "mode": mode,
+                "version": PLAY_TOKEN_VERSION,
+            }
+        ),
+        "status": status,
+    }
+
+
+def get_payload_mode(payload) -> str:
+    mode = payload.get("mode", "daily")
+    if mode is None:
+        return "daily"
+
+    if not isinstance(mode, str):
+        raise ValueError("Invalid puzzle mode")
+
+    normalized_mode = mode.strip().lower() or "daily"
+    if normalized_mode != "daily" and normalized_mode not in PLAY_MODES:
+        raise ValueError("Invalid puzzle mode")
+
+    return normalized_mode
+
+
+def get_answer_record_for_payload(payload):
+    mode = get_payload_mode(payload)
+    if mode == "daily":
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        answer_record = get_daily_answer(puzzle_date)
+        return {
+            "answer": answer_record["answer"],
+            "answer_length": answer_record["answer_length"],
+            "mode": "daily",
+            "puzzle_date": answer_record["puzzle_date"],
+        }
+
+    play_payload = verify_play_puzzle_token(payload.get("puzzleId"), mode)
+    if play_payload is None:
+        raise ValueError("Invalid puzzle")
+
+    return {
+        "answer": play_payload["answer"],
+        "answer_length": len(play_payload["answer"]),
+        "mode": mode,
+        "puzzle_date": play_payload["date"],
+    }
+
+
+def verify_play_puzzle_token(raw_token: object, expected_mode: str) -> dict[str, str] | None:
+    if not isinstance(raw_token, str) or "." not in raw_token:
+        return None
+
+    encoded_payload, encoded_signature = raw_token.split(".", 1)
+    if not hmac.compare_digest(sign_payload(encoded_payload), encoded_signature):
+        return None
+
+    try:
+        payload = json.loads(decode_base64_url(encoded_payload))
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+    answer = normalize_guess(payload.get("answer"), 5)
+    if (
+        payload.get("kind") != PLAY_TOKEN_KIND
+        or payload.get("version") != PLAY_TOKEN_VERSION
+        or payload.get("mode") != expected_mode
+        or answer is None
+        or not isinstance(payload.get("date"), str)
+    ):
+        return None
+
+    return {
+        "answer": answer,
+        "date": payload["date"],
+        "mode": expected_mode,
+    }
+
+
+def get_untracked_result(
+    *,
+    answer: str,
+    mode: str,
+    puzzle_date: str,
+    game_id: str,
+    outcome: str,
+    guesses_used: int,
+    board,
+    guesses,
+):
+    if outcome not in {"won", "lost"}:
+        raise ValueError("Invalid outcome")
+
+    if guesses_used < 1 or guesses_used > 6:
+        raise ValueError("Invalid guess count")
+
+    normalized_board = normalize_board(board)
+    normalized_guesses = normalize_guesses(guesses)
+    if len(normalized_board) != guesses_used or len(normalized_guesses) != guesses_used:
+        raise ValueError("Completed result does not match guess count")
+
+    return {
+        "board": normalized_board,
+        "created": False,
+        "result": {
+            "answer": answer.upper(),
+            "board": normalized_board,
+            "completedAt": datetime.now(UTC).isoformat(timespec="seconds"),
+            "date": puzzle_date,
+            "displayName": UNTRACKED_PLAYER["displayName"],
+            "guesses": normalized_guesses,
+            "guessesUsed": guesses_used,
+            "id": f"{mode}:{game_id or datetime.now(UTC).timestamp()}",
+            "outcome": outcome,
+            "starterWord": normalized_guesses[0],
+            "userId": UNTRACKED_PLAYER["userId"],
+        },
+        "stats": dict(EMPTY_STATS),
+    }
 
 
 def public_sources(sources):

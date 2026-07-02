@@ -124,19 +124,35 @@ def verify_friends_family_token(
         if user_row is None:
             return None
 
-        if user_row["active_session_id"] != session_id:
-            return None
-
         if user_row["code_id"] != payload.get("codeId"):
             return None
 
         if user_row["first_name"] != first_name or user_row["last_initial"] != last_initial:
             return None
 
+        now = datetime.now(UTC).isoformat(timespec="seconds")
+        if user_row["active_session_id"] != session_id:
+            if not claim_client_session:
+                return None
+
+            connection.execute(
+                """
+                UPDATE friends_family_users
+                SET active_session_id = ?,
+                    active_client_session_id = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    session_id,
+                    normalized_client_session_id or user_row["active_client_session_id"],
+                    now,
+                    user_id,
+                ),
+            )
+
         active_client_session_id = user_row["active_client_session_id"]
         if normalized_client_session_id:
-            now = datetime.now(UTC).isoformat(timespec="seconds")
-
             if claim_client_session:
                 connection.execute(
                     """

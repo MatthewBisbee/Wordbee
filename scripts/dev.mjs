@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process'
 import http from 'node:http'
 import net from 'node:net'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 const backendUrl = 'http://127.0.0.1:5001/api/health'
+const backendPort = 5001
 const frontendPort = 5173
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const frontendRoot = path.join(projectRoot, 'frontend')
 const processes = []
 
 let shuttingDown = false
@@ -31,7 +36,7 @@ function trackProcess(childProcess) {
   })
 }
 
-function checkPortAvailable(port) {
+function checkPortAvailable(port, host) {
   return new Promise((resolve) => {
     const server = net.createServer()
 
@@ -39,7 +44,7 @@ function checkPortAvailable(port) {
     server.once('listening', () => {
       server.close(() => resolve(true))
     })
-    server.listen(port, 'localhost')
+    server.listen(port, host)
   })
 }
 
@@ -97,14 +102,22 @@ function waitForBackend(childProcess) {
   })
 }
 
-if (!(await checkPortAvailable(frontendPort))) {
+if (!(await checkPortAvailable(frontendPort, 'localhost'))) {
   console.error(
     `Frontend port ${frontendPort} is already in use. Stop the old dev server and run npm run dev again.`,
   )
   process.exit(1)
 }
 
+if (!(await checkPortAvailable(backendPort, '127.0.0.1'))) {
+  console.error(
+    `Backend port ${backendPort} is already in use. Stop the old dev server and run npm run dev again.`,
+  )
+  process.exit(1)
+}
+
 const backend = spawn('python3', ['backend/run.py'], {
+  cwd: projectRoot,
   env: {
     ...process.env,
     FLASK_ENV: process.env.FLASK_ENV ?? 'development',
@@ -122,7 +135,8 @@ try {
 }
 
 if (!shuttingDown) {
-  const frontend = spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], {
+  const frontend = spawn('npm', ['run', 'dev:vite'], {
+    cwd: frontendRoot,
     stdio: 'inherit',
   })
   trackProcess(frontend)

@@ -6,7 +6,7 @@
   "scripts": {
     "api": "python3 backend/run.py",
     "dev": "node scripts/dev.mjs",
-    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:frontend": "npm --prefix frontend run dev:vite",
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
     "preview": "npm --prefix frontend run preview"

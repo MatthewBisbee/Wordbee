@@ -19,22 +19,26 @@ const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
 const AVATAR_CONFIG_VERSION = 1
-const AVATAR_BACKGROUND_COLORS = [
-  'f8fafc',
-  'fef3c7',
-  'dbeafe',
-  'dcfce7',
-  'fce7f3',
-  'ede9fe',
-  'ffe4e6',
-  'ecfccb',
-] as const
 const AVATAR_GESTURES = [
   { label: 'Any pose', value: 'random' },
   { label: 'Wave', value: 'waveLongArm' },
   { label: 'Point', value: 'point' },
   { label: 'Phone', value: 'handPhone' },
   { label: 'OK', value: 'ok' },
+] as const
+const AVATAR_GLASSES_OPTIONS = [
+  { label: 'None', value: 'none' },
+  { label: 'Style 1', value: 'variant01' },
+  { label: 'Style 2', value: 'variant02' },
+  { label: 'Style 3', value: 'variant03' },
+  { label: 'Style 4', value: 'variant04' },
+  { label: 'Style 5', value: 'variant05' },
+  { label: 'Style 6', value: 'variant06' },
+  { label: 'Style 7', value: 'variant07' },
+  { label: 'Style 8', value: 'variant08' },
+  { label: 'Style 9', value: 'variant09' },
+  { label: 'Style 10', value: 'variant10' },
+  { label: 'Style 11', value: 'variant11' },
 ] as const
 const AVATAR_PRESENCE_OPTIONS = [
   { label: 'Any', value: 'random' },
@@ -133,19 +137,16 @@ type Settings = {
   highContrast: boolean
   onscreenKeyboardOnly: boolean
 }
-type AvatarBackgroundColor = (typeof AVATAR_BACKGROUND_COLORS)[number]
 type AvatarGesture = (typeof AVATAR_GESTURES)[number]['value']
+type AvatarGlasses = (typeof AVATAR_GLASSES_OPTIONS)[number]['value']
 type AvatarPresence = (typeof AVATAR_PRESENCE_OPTIONS)[number]['value']
 type AvatarConfig = {
   version: typeof AVATAR_CONFIG_VERSION
   seed: string
-  backgroundColor: AvatarBackgroundColor
-  backgroundColorFill: 'solid' | 'linear' | 'radial'
   flip: 'none' | 'horizontal'
-  scale: number
   rotate: number
   gestureVariant: AvatarGesture
-  glasses: AvatarPresence
+  glassesVariant: AvatarGlasses
   beard: AvatarPresence
   clothesGraphic: AvatarPresence
 }
@@ -260,36 +261,29 @@ function createDefaultAvatarConfig(displayName = ''): AvatarConfig {
   const seedHash = hashNumber(displayName.trim().toLowerCase() || 'wordbee')
 
   return {
-    backgroundColor: AVATAR_BACKGROUND_COLORS[seedHash % AVATAR_BACKGROUND_COLORS.length],
-    backgroundColorFill: 'solid',
     beard: 'random',
     clothesGraphic: 'random',
     flip: 'none',
     gestureVariant: 'random',
-    glasses: 'random',
+    glassesVariant: 'none',
     rotate: 0,
-    scale: 9,
     seed: `wb-${seedHash.toString(36)}`,
     version: AVATAR_CONFIG_VERSION,
   }
 }
 
 function createRandomAvatarConfig(previousAvatar: AvatarConfig): AvatarConfig {
-  const fillOptions = ['solid', 'linear', 'radial'] as const
   const flipOptions = ['none', 'horizontal'] as const
   const presencePool = ['random', 'random', 'always', 'never'] as const
 
   return {
     ...previousAvatar,
-    backgroundColor: getRandomItem(AVATAR_BACKGROUND_COLORS),
-    backgroundColorFill: getRandomItem(fillOptions),
     beard: getRandomItem(presencePool),
     clothesGraphic: getRandomItem(presencePool),
     flip: getRandomItem(flipOptions),
     gestureVariant: getRandomItem(AVATAR_GESTURES).value,
-    glasses: getRandomItem(presencePool),
+    glassesVariant: getRandomItem(AVATAR_GLASSES_OPTIONS).value,
     rotate: getRandomIndex(13) - 6,
-    scale: 8 + getRandomIndex(3),
     seed: `wb-${getRandomToken()}`,
   }
 }
@@ -303,18 +297,10 @@ function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfi
 
   const storedAvatar = rawAvatar as Partial<AvatarConfig>
   const gestureValues = AVATAR_GESTURES.map(({ value }) => value)
+  const glassesValues = AVATAR_GLASSES_OPTIONS.map(({ value }) => value)
   const presenceValues = AVATAR_PRESENCE_OPTIONS.map(({ value }) => value)
 
   return {
-    backgroundColor: isOption(AVATAR_BACKGROUND_COLORS, storedAvatar.backgroundColor)
-      ? storedAvatar.backgroundColor
-      : defaultAvatar.backgroundColor,
-    backgroundColorFill: isOption(
-      ['solid', 'linear', 'radial'] as const,
-      storedAvatar.backgroundColorFill,
-    )
-      ? storedAvatar.backgroundColorFill
-      : defaultAvatar.backgroundColorFill,
     beard: isOption(presenceValues, storedAvatar.beard)
       ? storedAvatar.beard
       : defaultAvatar.beard,
@@ -325,11 +311,10 @@ function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfi
     gestureVariant: isOption(gestureValues, storedAvatar.gestureVariant)
       ? storedAvatar.gestureVariant
       : defaultAvatar.gestureVariant,
-    glasses: isOption(presenceValues, storedAvatar.glasses)
-      ? storedAvatar.glasses
-      : defaultAvatar.glasses,
+    glassesVariant: isOption(glassesValues, storedAvatar.glassesVariant)
+      ? storedAvatar.glassesVariant
+      : defaultAvatar.glassesVariant,
     rotate: clampNumber(storedAvatar.rotate, -15, 15, defaultAvatar.rotate),
-    scale: clampNumber(storedAvatar.scale, 6, 10, defaultAvatar.scale),
     seed:
       typeof storedAvatar.seed === 'string' && storedAvatar.seed.trim()
         ? storedAvatar.seed.slice(0, 80)
@@ -349,12 +334,8 @@ function setProbability(
 
 function createAvatarUrl(avatar: AvatarConfig, size = 256) {
   const params = new URLSearchParams({
-    backgroundColor: avatar.backgroundColor,
-    backgroundColorFill: avatar.backgroundColorFill,
-    borderRadius: '12',
     flip: avatar.flip,
     rotate: String(avatar.rotate),
-    scale: String(avatar.scale),
     seed: avatar.seed,
     size: String(size),
   })
@@ -365,7 +346,13 @@ function createAvatarUrl(avatar: AvatarConfig, size = 256) {
 
   setProbability(params, 'beardProbability', avatar.beard)
   setProbability(params, 'clothesGraphicProbability', avatar.clothesGraphic)
-  setProbability(params, 'glassesProbability', avatar.glasses)
+
+  if (avatar.glassesVariant === 'none') {
+    params.set('glassesProbability', '0')
+  } else {
+    params.set('glassesProbability', '100')
+    params.set('glassesVariant', avatar.glassesVariant)
+  }
 
   return `${AVATAR_API_URL}?${params.toString()}`
 }
@@ -1796,40 +1783,6 @@ function AvatarBuilder({
       </div>
 
       <div className="avatar-builder__controls">
-        <div className="avatar-control">
-          <span className="avatar-control__label">Background</span>
-          <div className="avatar-swatch-list">
-            {AVATAR_BACKGROUND_COLORS.map((color) => (
-              <button
-                aria-label={`Use background #${color}`}
-                aria-pressed={draftAvatar.backgroundColor === color}
-                className="avatar-swatch"
-                key={color}
-                onClick={() => updateDraftAvatar('backgroundColor', color)}
-                style={{ '--avatar-swatch-color': `#${color}` } as CSSProperties}
-                type="button"
-              />
-            ))}
-          </div>
-        </div>
-
-        <label className="avatar-control">
-          <span className="avatar-control__label">Fill</span>
-          <select
-            onChange={(event) =>
-              updateDraftAvatar(
-                'backgroundColorFill',
-                event.target.value as AvatarConfig['backgroundColorFill'],
-              )
-            }
-            value={draftAvatar.backgroundColorFill}
-          >
-            <option value="solid">Solid</option>
-            <option value="linear">Linear</option>
-            <option value="radial">Radial</option>
-          </select>
-        </label>
-
         <label className="avatar-control">
           <span className="avatar-control__label">Pose</span>
           <select
@@ -1850,11 +1803,11 @@ function AvatarBuilder({
           <span className="avatar-control__label">Glasses</span>
           <select
             onChange={(event) =>
-              updateDraftAvatar('glasses', event.target.value as AvatarPresence)
+              updateDraftAvatar('glassesVariant', event.target.value as AvatarGlasses)
             }
-            value={draftAvatar.glasses}
+            value={draftAvatar.glassesVariant}
           >
-            {AVATAR_PRESENCE_OPTIONS.map((option) => (
+            {AVATAR_GLASSES_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
               </option>
@@ -1905,18 +1858,6 @@ function AvatarBuilder({
             <option value="none">None</option>
             <option value="horizontal">Horizontal</option>
           </select>
-        </label>
-
-        <label className="avatar-control avatar-control--range">
-          <span className="avatar-control__label">Zoom</span>
-          <input
-            max="10"
-            min="6"
-            onChange={(event) => updateDraftAvatar('scale', Number(event.target.value))}
-            step="1"
-            type="range"
-            value={draftAvatar.scale}
-          />
         </label>
       </div>
 

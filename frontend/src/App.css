@@ -161,16 +161,21 @@
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
-  overflow: hidden;
-  border: 1px solid var(--settings-border);
-  border-radius: 6px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
   padding: 0;
-  background: var(--result-link-bg);
+  background: transparent;
   cursor: pointer;
 }
 
 .wordbee-profile-button:hover {
-  filter: brightness(0.96);
+  filter: brightness(0.94);
+}
+
+.wordbee-profile-button .avatar-image {
+  transform: translateY(5%) scale(1.28);
+  transform-origin: center bottom;
 }
 
 .wordbee-inline-icon {
@@ -608,20 +613,20 @@
 
 .avatar-builder__preview-row {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
+  grid-template-columns: 176px minmax(0, 1fr);
   gap: 18px;
   align-items: center;
 }
 
 .avatar-preview {
-  overflow: hidden;
-  border: 1px solid var(--settings-border);
-  border-radius: 8px;
-  background: var(--result-link-bg);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .avatar-preview--large {
-  width: 140px;
+  width: 176px;
   aspect-ratio: 1;
 }
 
@@ -720,7 +725,7 @@
 }
 
 .avatar-control select,
-.avatar-control input[type="range"] {
+.avatar-control input {
   width: 100%;
 }
 
@@ -738,37 +743,8 @@
 }
 
 .avatar-control select:focus,
-.avatar-control input[type="range"]:focus-visible {
+.avatar-control input:focus-visible {
   outline: 2px solid var(--color-correct);
-  outline-offset: 2px;
-}
-
-.avatar-control--range {
-  align-content: start;
-}
-
-.avatar-control input[type="range"] {
-  accent-color: var(--color-correct);
-}
-
-.avatar-swatch-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.avatar-swatch {
-  width: 28px;
-  aspect-ratio: 1;
-  border: 1px solid var(--settings-border);
-  border-radius: 50%;
-  padding: 0;
-  background: var(--avatar-swatch-color);
-  cursor: pointer;
-}
-
-.avatar-swatch[aria-pressed="true"] {
-  outline: 3px solid var(--color-tone-1);
   outline-offset: 2px;
 }
 
@@ -975,10 +951,15 @@
   width: 42px;
   height: 42px;
   flex: 0 0 42px;
-  overflow: hidden;
-  border: 1px solid var(--settings-border);
-  border-radius: 6px;
-  background: var(--result-link-bg);
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.settings-avatar-preview .avatar-image {
+  transform: translateY(5%) scale(1.22);
+  transform-origin: center bottom;
 }
 
 .settings-avatar-button {

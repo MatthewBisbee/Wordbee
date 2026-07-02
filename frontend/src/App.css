@@ -106,6 +106,7 @@
   height: 100%;
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 .wordbee-header__side--left {
@@ -128,6 +129,25 @@
   color: var(--color-tone-1);
   cursor: pointer;
   transform-origin: center;
+}
+
+.wordbee-results-reopen-button {
+  min-height: 32px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-tone-1);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wordbee-results-reopen-button:hover {
+  background: var(--result-link-bg);
 }
 
 .wordbee-inline-icon {
@@ -166,15 +186,18 @@
   transform-origin: bottom;
 }
 
-.wordbee-icon-button--stats:hover .stats-bar--short {
+.wordbee-icon-button--stats:hover .stats-bar--short,
+.results-link-card--stats:hover .stats-bar--short {
   animation: stats-bar-short 900ms ease-in-out infinite alternate;
 }
 
-.wordbee-icon-button--stats:hover .stats-bar--tall {
+.wordbee-icon-button--stats:hover .stats-bar--tall,
+.results-link-card--stats:hover .stats-bar--tall {
   animation: stats-bar-tall 840ms ease-in-out infinite alternate;
 }
 
-.wordbee-icon-button--stats:hover .stats-bar--mid {
+.wordbee-icon-button--stats:hover .stats-bar--mid,
+.results-link-card--stats:hover .stats-bar--mid {
   animation: stats-bar-mid 980ms ease-in-out infinite alternate;
 }
 

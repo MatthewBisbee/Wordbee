@@ -1,7 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import closeIconMarkup from './assets/icons/icon-close.svg?raw'
-import forumIconMarkup from './assets/icons/icon-forum.svg?raw'
 import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
 import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
 import statsIconMarkup from './assets/icons/icon-stats.svg?raw'
@@ -286,7 +285,8 @@ function App() {
   const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
   const [puzzleError, setPuzzleError] = useState('')
   const [stats, setStats] = useState<StatsSummary>(EMPTY_STATS)
-  const [gameResult, setGameResult] = useState<GameResult | null>(null)
+  const [completedResult, setCompletedResult] = useState<GameResult | null>(null)
+  const [isResultsOpen, setIsResultsOpen] = useState(false)
   const gameIdRef = useRef('')
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
@@ -402,7 +402,8 @@ function App() {
         stats,
       }
 
-      setGameResult(baseResult)
+      setCompletedResult(baseResult)
+      setIsResultsOpen(true)
 
       if (!puzzle) {
         return
@@ -426,7 +427,7 @@ function App() {
         })
 
         setStats(result.stats)
-        setGameResult({
+        setCompletedResult({
           ...baseResult,
           answer: result.answer || answer,
           definition: result.definition,
@@ -663,17 +664,17 @@ function App() {
   )
 
   const copyResult = useCallback(async () => {
-    if (!gameResult) return
+    if (!completedResult) return
 
     try {
-      await copyTextToClipboard(createShareText(gameResult))
-      setGameResult({ ...gameResult, copied: true })
+      await copyTextToClipboard(createShareText(completedResult))
+      setCompletedResult({ ...completedResult, copied: true })
       showToast('Copied')
     } catch (error) {
       console.warn('Could not copy result', error)
       showToast('Copy failed')
     }
-  }, [gameResult, showToast])
+  }, [completedResult, showToast])
 
   useEffect(() => {
     let isMounted = true
@@ -825,6 +826,15 @@ function App() {
         <h1 className="wordbee-title">Wordbee</h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
+          {completedResult && (
+            <button
+              className="wordbee-results-reopen-button"
+              type="button"
+              onClick={() => setIsResultsOpen(true)}
+            >
+              See results
+            </button>
+          )}
           <button
             className="wordbee-icon-button wordbee-icon-button--stats"
             type="button"
@@ -900,11 +910,11 @@ function App() {
         />
       )}
 
-      {gameResult && (
+      {completedResult && isResultsOpen && (
         <ResultsDialog
-          onClose={() => setGameResult(null)}
+          onClose={() => setIsResultsOpen(false)}
           onCopy={copyResult}
-          result={gameResult}
+          result={completedResult}
         />
       )}
     </div>
@@ -1031,8 +1041,8 @@ function ResultsDialog({
           </div>
         </section>
 
-        <a className="results-link-card" href="/stats">
-          <InlineIcon markup={forumIconMarkup} />
+        <a className="results-link-card results-link-card--stats" href="/stats">
+          <InlineIcon markup={statsIconMarkup} />
           <span>
             <strong>Detailed stats</strong>
             <span>Compare streaks, dates, and solve patterns.</span>
@@ -1044,7 +1054,7 @@ function ResultsDialog({
 
         <div className="results-secondary-actions">
           <a href="/random">Play random</a>
-          <a href="/history">Play history</a>
+          <a href="/history">Play past words</a>
         </div>
         <p className="results-note">Random and history plays are not tracked.</p>
 

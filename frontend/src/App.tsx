@@ -17,6 +17,49 @@ const RESULTS_REVEAL_DELAY_MS = 950
 const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
+const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
+const AVATAR_CONFIG_VERSION = 1
+const AVATAR_BACKGROUND_COLORS = [
+  'f8fafc',
+  'fef3c7',
+  'dbeafe',
+  'dcfce7',
+  'fce7f3',
+  'ede9fe',
+  'ffe4e6',
+  'ecfccb',
+] as const
+const AVATAR_GESTURES = [
+  { label: 'Any pose', value: 'random' },
+  { label: 'Wave', value: 'waveLongArm' },
+  { label: 'Point', value: 'point' },
+  { label: 'Phone', value: 'handPhone' },
+  { label: 'OK', value: 'ok' },
+] as const
+const AVATAR_PRESENCE_OPTIONS = [
+  { label: 'Any', value: 'random' },
+  { label: 'Always', value: 'always' },
+  { label: 'Never', value: 'never' },
+] as const
+const DICE_FRAME_INTERVAL_MS = 22
+const DICE_FIRST_ROLL_FRAME = 6
+const DICE_REST_FRAME = 90
+const DICE_FRAME_MODULES = import.meta.glob<string>('./assets/dice/*.gif', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+})
+const DICE_ROLL_FRAMES = Object.entries(DICE_FRAME_MODULES)
+  .map(([path, src]) => ({
+    frame: Number(path.match(/frame_(\d+)_/)?.[1] ?? 0),
+    src,
+  }))
+  .filter(({ frame }) => frame >= DICE_FIRST_ROLL_FRAME && frame <= DICE_REST_FRAME)
+  .sort((a, b) => a.frame - b.frame)
+const DICE_REST_SRC =
+  DICE_ROLL_FRAMES.find(({ frame }) => frame === DICE_REST_FRAME)?.src ??
+  DICE_ROLL_FRAMES[DICE_ROLL_FRAMES.length - 1]?.src ??
+  ''
 const STATS_ICON_SELECTOR = '.wordbee-icon-button--stats, .results-link-card--stats'
 const STATS_BAR_CONFIG = [
   { selector: '.stats-bar--short', highScale: 1.45, lowScale: 0.86, durationMs: 900 },
@@ -90,6 +133,22 @@ type Settings = {
   highContrast: boolean
   onscreenKeyboardOnly: boolean
 }
+type AvatarBackgroundColor = (typeof AVATAR_BACKGROUND_COLORS)[number]
+type AvatarGesture = (typeof AVATAR_GESTURES)[number]['value']
+type AvatarPresence = (typeof AVATAR_PRESENCE_OPTIONS)[number]['value']
+type AvatarConfig = {
+  version: typeof AVATAR_CONFIG_VERSION
+  seed: string
+  backgroundColor: AvatarBackgroundColor
+  backgroundColorFill: 'solid' | 'linear' | 'radial'
+  flip: 'none' | 'horizontal'
+  scale: number
+  rotate: number
+  gestureVariant: AvatarGesture
+  glasses: AvatarPresence
+  beard: AvatarPresence
+  clothesGraphic: AvatarPresence
+}
 type GuestAccess = {
   kind: 'guest'
 }
@@ -100,6 +159,7 @@ type FriendsFamilyIdentity = {
   lastInitial: string
 }
 type FriendsFamilyAccess = FriendsFamilyIdentity & {
+  avatar: AvatarConfig
   token: string
 }
 type AccessState = GuestAccess | FriendsFamilyAccess
@@ -145,6 +205,171 @@ const defaultSettings: Settings = {
   onscreenKeyboardOnly: false,
 }
 
+function hashNumber(value: string) {
+  let hash = 2166136261
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return hash >>> 0
+}
+
+function getRandomIndex(length: number) {
+  if (length <= 0) return 0
+
+  try {
+    if (!window.crypto?.getRandomValues) throw new Error('Crypto unavailable')
+    const randomValues = new Uint32Array(1)
+    window.crypto.getRandomValues(randomValues)
+    return randomValues[0] % length
+  } catch {
+    return Math.floor(Math.random() * length)
+  }
+}
+
+function getRandomItem<Item>(items: readonly Item[]) {
+  return items[getRandomIndex(items.length)]
+}
+
+function getRandomToken() {
+  try {
+    if (!window.crypto?.getRandomValues) throw new Error('Crypto unavailable')
+    const bytes = new Uint8Array(8)
+    window.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('')
+  } catch {
+    return Math.random().toString(36).slice(2, 14)
+  }
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function isOption<Value extends string>(
+  options: readonly Value[],
+  value: unknown,
+): value is Value {
+  return typeof value === 'string' && options.includes(value as Value)
+}
+
+function createDefaultAvatarConfig(displayName = ''): AvatarConfig {
+  const seedHash = hashNumber(displayName.trim().toLowerCase() || 'wordbee')
+
+  return {
+    backgroundColor: AVATAR_BACKGROUND_COLORS[seedHash % AVATAR_BACKGROUND_COLORS.length],
+    backgroundColorFill: 'solid',
+    beard: 'random',
+    clothesGraphic: 'random',
+    flip: 'none',
+    gestureVariant: 'random',
+    glasses: 'random',
+    rotate: 0,
+    scale: 9,
+    seed: `wb-${seedHash.toString(36)}`,
+    version: AVATAR_CONFIG_VERSION,
+  }
+}
+
+function createRandomAvatarConfig(previousAvatar: AvatarConfig): AvatarConfig {
+  const fillOptions = ['solid', 'linear', 'radial'] as const
+  const flipOptions = ['none', 'horizontal'] as const
+  const presencePool = ['random', 'random', 'always', 'never'] as const
+
+  return {
+    ...previousAvatar,
+    backgroundColor: getRandomItem(AVATAR_BACKGROUND_COLORS),
+    backgroundColorFill: getRandomItem(fillOptions),
+    beard: getRandomItem(presencePool),
+    clothesGraphic: getRandomItem(presencePool),
+    flip: getRandomItem(flipOptions),
+    gestureVariant: getRandomItem(AVATAR_GESTURES).value,
+    glasses: getRandomItem(presencePool),
+    rotate: getRandomIndex(13) - 6,
+    scale: 8 + getRandomIndex(3),
+    seed: `wb-${getRandomToken()}`,
+  }
+}
+
+function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfig {
+  const defaultAvatar = createDefaultAvatarConfig(displayName)
+
+  if (!rawAvatar || typeof rawAvatar !== 'object') {
+    return defaultAvatar
+  }
+
+  const storedAvatar = rawAvatar as Partial<AvatarConfig>
+  const gestureValues = AVATAR_GESTURES.map(({ value }) => value)
+  const presenceValues = AVATAR_PRESENCE_OPTIONS.map(({ value }) => value)
+
+  return {
+    backgroundColor: isOption(AVATAR_BACKGROUND_COLORS, storedAvatar.backgroundColor)
+      ? storedAvatar.backgroundColor
+      : defaultAvatar.backgroundColor,
+    backgroundColorFill: isOption(
+      ['solid', 'linear', 'radial'] as const,
+      storedAvatar.backgroundColorFill,
+    )
+      ? storedAvatar.backgroundColorFill
+      : defaultAvatar.backgroundColorFill,
+    beard: isOption(presenceValues, storedAvatar.beard)
+      ? storedAvatar.beard
+      : defaultAvatar.beard,
+    clothesGraphic: isOption(presenceValues, storedAvatar.clothesGraphic)
+      ? storedAvatar.clothesGraphic
+      : defaultAvatar.clothesGraphic,
+    flip: storedAvatar.flip === 'horizontal' ? 'horizontal' : 'none',
+    gestureVariant: isOption(gestureValues, storedAvatar.gestureVariant)
+      ? storedAvatar.gestureVariant
+      : defaultAvatar.gestureVariant,
+    glasses: isOption(presenceValues, storedAvatar.glasses)
+      ? storedAvatar.glasses
+      : defaultAvatar.glasses,
+    rotate: clampNumber(storedAvatar.rotate, -15, 15, defaultAvatar.rotate),
+    scale: clampNumber(storedAvatar.scale, 6, 10, defaultAvatar.scale),
+    seed:
+      typeof storedAvatar.seed === 'string' && storedAvatar.seed.trim()
+        ? storedAvatar.seed.slice(0, 80)
+        : defaultAvatar.seed,
+    version: AVATAR_CONFIG_VERSION,
+  }
+}
+
+function setProbability(
+  params: URLSearchParams,
+  parameterName: string,
+  value: AvatarPresence,
+) {
+  if (value === 'random') return
+  params.set(parameterName, value === 'always' ? '100' : '0')
+}
+
+function createAvatarUrl(avatar: AvatarConfig, size = 256) {
+  const params = new URLSearchParams({
+    backgroundColor: avatar.backgroundColor,
+    backgroundColorFill: avatar.backgroundColorFill,
+    borderRadius: '12',
+    flip: avatar.flip,
+    rotate: String(avatar.rotate),
+    scale: String(avatar.scale),
+    seed: avatar.seed,
+    size: String(size),
+  })
+
+  if (avatar.gestureVariant !== 'random') {
+    params.set('gestureVariant', avatar.gestureVariant)
+  }
+
+  setProbability(params, 'beardProbability', avatar.beard)
+  setProbability(params, 'clothesGraphicProbability', avatar.clothesGraphic)
+  setProbability(params, 'glassesProbability', avatar.glasses)
+
+  return `${AVATAR_API_URL}?${params.toString()}`
+}
+
 function loadSettings(): Settings {
   try {
     const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
@@ -181,9 +406,12 @@ function loadAccessState(): AccessState | null {
       typeof storedAccess.lastInitial === 'string' &&
       typeof storedAccess.token === 'string'
     ) {
+      const displayName = storedAccess.displayName.slice(0, 64)
+
       return {
+        avatar: sanitizeAvatarConfig(storedAccess.avatar, displayName),
         kind: 'friends-family',
-        displayName: storedAccess.displayName.slice(0, 64),
+        displayName,
         firstName: storedAccess.firstName.slice(0, 40),
         lastInitial: storedAccess.lastInitial.slice(0, 1),
         token: storedAccess.token,
@@ -483,6 +711,7 @@ function App() {
   const [status, setStatus] = useState<GameStatus>('playing')
   const [isRevealing, setIsRevealing] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isAvatarBuilderOpen, setIsAvatarBuilderOpen] = useState(false)
   const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
   const [puzzleError, setPuzzleError] = useState('')
   const [stats, setStats] = useState<StatsSummary>(EMPTY_STATS)
@@ -523,6 +752,14 @@ function App() {
     },
     [],
   )
+
+  const updateAvatar = useCallback((avatar: AvatarConfig) => {
+    setAccessState((previousAccess) =>
+      previousAccess?.kind === 'friends-family'
+        ? { ...previousAccess, avatar }
+        : previousAccess,
+    )
+  }, [])
 
   const shakeRow = useCallback((row: number) => {
     setInvalidRow(row)
@@ -1026,7 +1263,9 @@ function App() {
           }
 
           return {
+            ...previousAccess,
             ...responseBody.identity,
+            avatar: previousAccess.avatar,
             token,
           }
         })
@@ -1064,13 +1303,18 @@ function App() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (isAvatarBuilderOpen) {
+          setIsAvatarBuilderOpen(false)
+          return
+        }
+
         setIsSettingsOpen(false)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSettingsOpen])
+  }, [isAvatarBuilderOpen, isSettingsOpen])
 
   return (
     <div
@@ -1107,6 +1351,20 @@ function App() {
               onClick={() => setIsResultsOpen(true)}
             >
               See results
+            </button>
+          )}
+          {accessState?.kind === 'friends-family' && (
+            <button
+              aria-label={`Profile for ${accessState.displayName}`}
+              className="wordbee-profile-button"
+              onClick={() => setIsSettingsOpen(true)}
+              type="button"
+            >
+              <AvatarImage
+                avatar={accessState.avatar}
+                displayName={accessState.displayName}
+                size={72}
+              />
             </button>
           )}
           <button
@@ -1180,10 +1438,42 @@ function App() {
           accessState={accessState}
           effectiveDarkTheme={isDarkTheme}
           onAccessLogin={(nextAccessState) => setAccessState(nextAccessState)}
+          onAvatarChange={() => setIsAvatarBuilderOpen(true)}
           onClose={() => setIsSettingsOpen(false)}
           onSettingChange={updateSetting}
           settings={settings}
         />
+      )}
+
+      {isAvatarBuilderOpen && accessState?.kind === 'friends-family' && (
+        <div className="avatar-backdrop" onClick={() => setIsAvatarBuilderOpen(false)}>
+          <section
+            aria-label="Change avatar"
+            aria-modal="true"
+            className="avatar-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <button
+              aria-label="Close avatar builder"
+              className="avatar-close"
+              onClick={() => setIsAvatarBuilderOpen(false)}
+              type="button"
+            >
+              <InlineIcon markup={closeIconMarkup} />
+            </button>
+            <AvatarBuilder
+              displayName={accessState.displayName}
+              initialAvatar={accessState.avatar}
+              onCancel={() => setIsAvatarBuilderOpen(false)}
+              onSave={(avatar) => {
+                updateAvatar(avatar)
+                setIsAvatarBuilderOpen(false)
+              }}
+              saveLabel="Save avatar"
+            />
+          </section>
+        </div>
       )}
 
       {accessState === null && (
@@ -1300,7 +1590,8 @@ function FriendsFamilyAccessForm({
   const [code, setCode] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastInitial, setLastInitial] = useState('')
-  const [step, setStep] = useState<'code' | 'profile'>('code')
+  const [step, setStep] = useState<'code' | 'profile' | 'avatar'>('code')
+  const [pendingAccess, setPendingAccess] = useState<FriendsFamilyAccess | null>(null)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -1356,10 +1647,14 @@ function FriendsFamilyAccessForm({
         throw new Error('Could not sign in')
       }
 
-      onLogin({
+      const nextAccessState = {
+        avatar: createDefaultAvatarConfig(responseBody.identity.displayName),
         ...responseBody.identity,
         token: responseBody.token,
-      })
+      }
+
+      setPendingAccess(nextAccessState)
+      setStep('avatar')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
     } finally {
@@ -1403,7 +1698,7 @@ function FriendsFamilyAccessForm({
             Continue
           </button>
         </>
-      ) : (
+      ) : step === 'profile' ? (
         <>
           <p className="access-confirmed">Code accepted.</p>
           <label className="access-field">
@@ -1441,10 +1736,334 @@ function FriendsFamilyAccessForm({
             Save
           </button>
         </>
-      )}
+      ) : pendingAccess ? (
+        <AvatarBuilder
+          displayName={pendingAccess.displayName}
+          initialAvatar={pendingAccess.avatar}
+          onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
+          saveLabel="Save avatar"
+        />
+      ) : null}
 
       {error && <p className="access-error">{error}</p>}
     </div>
+  )
+}
+
+function AvatarBuilder({
+  displayName,
+  initialAvatar,
+  onCancel,
+  onSave,
+  saveLabel,
+}: {
+  displayName: string
+  initialAvatar: AvatarConfig
+  onCancel?: () => void
+  onSave: (avatar: AvatarConfig) => void
+  saveLabel: string
+}) {
+  const [draftAvatar, setDraftAvatar] = useState(initialAvatar)
+
+  useEffect(() => {
+    setDraftAvatar(initialAvatar)
+  }, [initialAvatar])
+
+  const updateDraftAvatar = <Key extends keyof AvatarConfig>(
+    key: Key,
+    value: AvatarConfig[Key],
+  ) => {
+    setDraftAvatar((previousAvatar) => ({
+      ...previousAvatar,
+      [key]: value,
+    }))
+  }
+
+  return (
+    <div className="avatar-builder">
+      <div className="avatar-builder__preview-row">
+        <div className="avatar-preview avatar-preview--large">
+          <AvatarImage avatar={draftAvatar} displayName={displayName} size={384} />
+        </div>
+        <div className="avatar-builder__heading">
+          <h3>Choose your avatar</h3>
+          <DiceRandomButton
+            onRandomize={() =>
+              setDraftAvatar((previousAvatar) => createRandomAvatarConfig(previousAvatar))
+            }
+          />
+        </div>
+      </div>
+
+      <div className="avatar-builder__controls">
+        <div className="avatar-control">
+          <span className="avatar-control__label">Background</span>
+          <div className="avatar-swatch-list">
+            {AVATAR_BACKGROUND_COLORS.map((color) => (
+              <button
+                aria-label={`Use background #${color}`}
+                aria-pressed={draftAvatar.backgroundColor === color}
+                className="avatar-swatch"
+                key={color}
+                onClick={() => updateDraftAvatar('backgroundColor', color)}
+                style={{ '--avatar-swatch-color': `#${color}` } as CSSProperties}
+                type="button"
+              />
+            ))}
+          </div>
+        </div>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Fill</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar(
+                'backgroundColorFill',
+                event.target.value as AvatarConfig['backgroundColorFill'],
+              )
+            }
+            value={draftAvatar.backgroundColorFill}
+          >
+            <option value="solid">Solid</option>
+            <option value="linear">Linear</option>
+            <option value="radial">Radial</option>
+          </select>
+        </label>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Pose</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar('gestureVariant', event.target.value as AvatarGesture)
+            }
+            value={draftAvatar.gestureVariant}
+          >
+            {AVATAR_GESTURES.map((gesture) => (
+              <option key={gesture.value} value={gesture.value}>
+                {gesture.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Glasses</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar('glasses', event.target.value as AvatarPresence)
+            }
+            value={draftAvatar.glasses}
+          >
+            {AVATAR_PRESENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Facial hair</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar('beard', event.target.value as AvatarPresence)
+            }
+            value={draftAvatar.beard}
+          >
+            {AVATAR_PRESENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Shirt graphic</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar('clothesGraphic', event.target.value as AvatarPresence)
+            }
+            value={draftAvatar.clothesGraphic}
+          >
+            {AVATAR_PRESENCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="avatar-control">
+          <span className="avatar-control__label">Flip</span>
+          <select
+            onChange={(event) =>
+              updateDraftAvatar('flip', event.target.value as AvatarConfig['flip'])
+            }
+            value={draftAvatar.flip}
+          >
+            <option value="none">None</option>
+            <option value="horizontal">Horizontal</option>
+          </select>
+        </label>
+
+        <label className="avatar-control avatar-control--range">
+          <span className="avatar-control__label">Zoom</span>
+          <input
+            max="10"
+            min="6"
+            onChange={(event) => updateDraftAvatar('scale', Number(event.target.value))}
+            step="1"
+            type="range"
+            value={draftAvatar.scale}
+          />
+        </label>
+      </div>
+
+      <div className="avatar-builder__actions">
+        {onCancel && (
+          <button className="avatar-secondary-button" onClick={onCancel} type="button">
+            Cancel
+          </button>
+        )}
+        <button
+          className="avatar-primary-button"
+          onClick={() => onSave(draftAvatar)}
+          type="button"
+        >
+          {saveLabel}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function AvatarImage({
+  avatar,
+  className = '',
+  displayName,
+  size = 256,
+}: {
+  avatar: AvatarConfig
+  className?: string
+  displayName: string
+  size?: number
+}) {
+  return (
+    <img
+      alt={`${displayName} avatar`}
+      className={['avatar-image', className].filter(Boolean).join(' ')}
+      decoding="async"
+      draggable={false}
+      referrerPolicy="no-referrer"
+      src={createAvatarUrl(avatar, size)}
+    />
+  )
+}
+
+function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
+  const [isDiceRolling, setIsDiceRolling] = useState(false)
+  const [diceFrameIndex, setDiceFrameIndex] = useState(Math.max(DICE_ROLL_FRAMES.length - 1, 0))
+  const diceRollTimerRef = useRef<number | null>(null)
+  const diceRollRunIdRef = useRef(0)
+  const dicePreloadRef = useRef<HTMLImageElement[]>([])
+
+  const stopDiceRoll = useCallback(() => {
+    diceRollRunIdRef.current += 1
+
+    if (diceRollTimerRef.current !== null) {
+      window.clearTimeout(diceRollTimerRef.current)
+      diceRollTimerRef.current = null
+    }
+
+    setIsDiceRolling(false)
+    setDiceFrameIndex(Math.max(DICE_ROLL_FRAMES.length - 1, 0))
+  }, [])
+
+  const startDiceRoll = useCallback(() => {
+    if (DICE_ROLL_FRAMES.length <= 1) return
+
+    const rollId = diceRollRunIdRef.current + 1
+    diceRollRunIdRef.current = rollId
+
+    if (diceRollTimerRef.current !== null) {
+      window.clearTimeout(diceRollTimerRef.current)
+    }
+
+    setIsDiceRolling(true)
+    setDiceFrameIndex(0)
+
+    const advanceFrame = (frameIndex: number) => {
+      if (diceRollRunIdRef.current !== rollId) return
+
+      if (document.visibilityState === 'hidden') {
+        stopDiceRoll()
+        return
+      }
+
+      if (frameIndex >= DICE_ROLL_FRAMES.length - 1) {
+        setDiceFrameIndex(DICE_ROLL_FRAMES.length - 1)
+        diceRollTimerRef.current = null
+        setIsDiceRolling(false)
+        return
+      }
+
+      setDiceFrameIndex(frameIndex)
+      diceRollTimerRef.current = window.setTimeout(
+        () => advanceFrame(frameIndex + 1),
+        DICE_FRAME_INTERVAL_MS,
+      )
+    }
+
+    diceRollTimerRef.current = window.setTimeout(
+      () => advanceFrame(1),
+      DICE_FRAME_INTERVAL_MS,
+    )
+  }, [stopDiceRoll])
+
+  useEffect(() => {
+    dicePreloadRef.current = DICE_ROLL_FRAMES.map(({ src }) => {
+      const image = new Image()
+      image.decoding = 'sync'
+      image.src = src
+      return image
+    })
+
+    return () => {
+      dicePreloadRef.current = []
+      diceRollRunIdRef.current += 1
+
+      if (diceRollTimerRef.current !== null) {
+        window.clearTimeout(diceRollTimerRef.current)
+        diceRollTimerRef.current = null
+      }
+    }
+  }, [])
+
+  const diceImageSrc = isDiceRolling
+    ? DICE_ROLL_FRAMES[diceFrameIndex]?.src ?? DICE_REST_SRC
+    : DICE_REST_SRC
+
+  return (
+    <button
+      aria-label="Randomize avatar"
+      className="avatar-random-button"
+      data-rolling={isDiceRolling}
+      disabled={isDiceRolling}
+      onClick={() => {
+        startDiceRoll()
+        onRandomize()
+      }}
+      type="button"
+    >
+      {diceImageSrc ? (
+        <img alt="" decoding="sync" draggable={false} src={diceImageSrc} />
+      ) : (
+        <span aria-hidden="true" className="avatar-random-button__fallback">
+          D6
+        </span>
+      )}
+    </button>
   )
 }
 
@@ -1601,6 +2220,7 @@ function SettingsDialog({
   accessState,
   effectiveDarkTheme,
   onAccessLogin,
+  onAvatarChange,
   onClose,
   onSettingChange,
   settings,
@@ -1608,6 +2228,7 @@ function SettingsDialog({
   accessState: AccessState | null
   effectiveDarkTheme: boolean
   onAccessLogin: (accessState: FriendsFamilyAccess) => void
+  onAvatarChange: () => void
   onClose: () => void
   onSettingChange: <Key extends keyof Settings>(key: Key, value: Settings[Key]) => void
   settings: Settings
@@ -1653,7 +2274,12 @@ function SettingsDialog({
             onChange={(checked) => onSettingChange('onscreenKeyboardOnly', checked)}
           />
           {accessState?.kind === 'friends-family' && (
-            <SettingsIdentityRow label="Friends and family" value={accessState.displayName} />
+            <SettingsIdentityRow
+              avatar={accessState.avatar}
+              label="Signed in as"
+              onAvatarChange={onAvatarChange}
+              value={accessState.displayName}
+            />
           )}
           {accessState?.kind === 'guest' && (
             <SettingsAccessSection onLogin={onAccessLogin} />
@@ -1697,18 +2323,30 @@ function SettingsAccessSection({
 }
 
 function SettingsIdentityRow({
+  avatar,
   label,
+  onAvatarChange,
   value,
 }: {
+  avatar: AvatarConfig
   label: string
+  onAvatarChange: () => void
   value: string
 }) {
   return (
-    <div className="settings-row">
+    <div className="settings-row settings-profile-row">
       <span className="settings-row__text">
         <span className="settings-row__label">{label}</span>
       </span>
-      <span className="settings-identity-value">{value}</span>
+      <span className="settings-profile">
+        <span className="settings-avatar-preview">
+          <AvatarImage avatar={avatar} displayName={value} size={96} />
+        </span>
+        <span className="settings-identity-value">{value}</span>
+        <button className="settings-avatar-button" onClick={onAvatarChange} type="button">
+          Change avatar
+        </button>
+      </span>
     </div>
   )
 }

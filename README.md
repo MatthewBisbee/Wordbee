@@ -5,7 +5,7 @@ Wordbee is a self-hosted daily word game for a private friends and family group.
 ## Current Status
 
 - Frontend: playable Vite + React + TypeScript daily word game.
-- Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
+- Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, friends-and-family avatar setup, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
 - Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive and validating friends-and-family access codes server-side.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
@@ -94,6 +94,8 @@ See the planning docs in `docs/` for more detail.
 ## Data Sources
 
 Word metadata is enriched with the Free Dictionary API and the Datamuse API.
+
+Friends-and-family profile avatars are generated with DiceBear's Notionists SVG HTTP API.
 
 ## Deployment Roadmap
 

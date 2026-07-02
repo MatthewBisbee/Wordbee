@@ -13,6 +13,8 @@ const FLIP_HALF_MS = 250
 const REVEAL_STEP_MS = 250
 const DANCE_STEP_MS = 100
 const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 100
+const COMPLETION_TOAST_MS = 2600
+const RESULTS_REVEAL_DELAY_MS = 950
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const DEV_FALLBACK_ANSWER = 'MAVEN'
 const EMPTY_STATS: StatsSummary = {
@@ -89,6 +91,12 @@ type Tile = {
   letter: string
   state: TileState
   animation: TileAnimation
+}
+type CompletedResultInput = {
+  answer?: string
+  board: EvaluatedState[][]
+  guessesUsed: number
+  outcome: GameStatus
 }
 
 const keyboardRows = [
@@ -335,9 +343,10 @@ function App() {
   const [gameResult, setGameResult] = useState<GameResult | null>(null)
   const gameIdRef = useRef('')
   const toastTimerRef = useRef<number | null>(null)
+  const resultsRevealTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
 
-  const showToast = useCallback((message: string, persistent = false) => {
+  const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
       window.clearTimeout(toastTimerRef.current)
       toastTimerRef.current = null
@@ -345,11 +354,11 @@ function App() {
 
     setToast(message)
 
-    if (!persistent) {
+    if (durationMs > 0) {
       toastTimerRef.current = window.setTimeout(() => {
         setToast('')
         toastTimerRef.current = null
-      }, 1200)
+      }, durationMs)
     }
   }, [])
 
@@ -436,12 +445,7 @@ function App() {
       board,
       guessesUsed,
       outcome,
-    }: {
-      answer?: string
-      board: EvaluatedState[][]
-      guessesUsed: number
-      outcome: GameStatus
-    }) => {
+    }: CompletedResultInput) => {
       const baseResult: GameResult = {
         answer,
         board,
@@ -491,6 +495,20 @@ function App() {
       }
     },
     [puzzle, settings.familyDisplayName, settings.hardMode, stats],
+  )
+
+  const showResultAfterPause = useCallback(
+    (resultInput: CompletedResultInput) => {
+      if (resultsRevealTimerRef.current !== null) {
+        window.clearTimeout(resultsRevealTimerRef.current)
+      }
+
+      resultsRevealTimerRef.current = window.setTimeout(() => {
+        resultsRevealTimerRef.current = null
+        void submitResult(resultInput)
+      }, RESULTS_REVEAL_DELAY_MS)
+    },
+    [submitResult],
   )
 
   const revealGuess = useCallback(async () => {
@@ -633,7 +651,7 @@ function App() {
       if (didWin) {
         setStatus('won')
         setWinningRow(row)
-        void submitResult({
+        showResultAfterPause({
           board: getCompletedBoard(board, row, scores),
           guessesUsed: row + 1,
           outcome: 'won',
@@ -642,20 +660,20 @@ function App() {
           ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew'][
             row
           ],
-          true,
+          COMPLETION_TOAST_MS,
         )
         return
       }
 
       if (isLastRow) {
         setStatus('lost')
-        void submitResult({
+        showResultAfterPause({
           answer: guessResult.answer,
           board: getCompletedBoard(board, row, scores),
           guessesUsed: MAX_GUESSES,
           outcome: 'lost',
         })
-        showToast(guessResult.answer || 'Answer unavailable', true)
+        showToast(guessResult.answer || 'Answer unavailable', COMPLETION_TOAST_MS)
         return
       }
 
@@ -670,8 +688,8 @@ function App() {
     puzzleError,
     settings.hardMode,
     shakeRow,
+    showResultAfterPause,
     showToast,
-    submitResult,
   ])
 
   const handleKey = useCallback(
@@ -809,11 +827,20 @@ function App() {
 
     return () => {
       window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [handleKey, isSettingsOpen])
+
+  useEffect(() => {
+    return () => {
       if (toastTimerRef.current !== null) {
         window.clearTimeout(toastTimerRef.current)
       }
+
+      if (resultsRevealTimerRef.current !== null) {
+        window.clearTimeout(resultsRevealTimerRef.current)
+      }
     }
-  }, [handleKey, isSettingsOpen])
+  }, [])
 
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))

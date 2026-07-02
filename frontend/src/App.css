@@ -180,21 +180,7 @@
 .stats-bar {
   transform-box: fill-box;
   transform-origin: bottom;
-}
-
-.wordbee-icon-button--stats:hover .stats-bar--short,
-.results-link-card--stats:hover .stats-bar--short {
-  animation: stats-bar-short 900ms ease-in-out infinite alternate;
-}
-
-.wordbee-icon-button--stats:hover .stats-bar--tall,
-.results-link-card--stats:hover .stats-bar--tall {
-  animation: stats-bar-tall 840ms ease-in-out infinite alternate;
-}
-
-.wordbee-icon-button--stats:hover .stats-bar--mid,
-.results-link-card--stats:hover .stats-bar--mid {
-  animation: stats-bar-mid 980ms ease-in-out infinite alternate;
+  will-change: transform;
 }
 
 .wordbee-icon-button--settings:hover .wordbee-inline-icon {
@@ -1131,36 +1117,6 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes stats-bar-short {
-  from {
-    transform: scaleY(1);
-  }
-
-  to {
-    transform: scaleY(1.45);
-  }
-}
-
-@keyframes stats-bar-tall {
-  from {
-    transform: scaleY(1);
-  }
-
-  to {
-    transform: scaleY(0.7);
-  }
-}
-
-@keyframes stats-bar-mid {
-  from {
-    transform: scaleY(1);
-  }
-
-  to {
-    transform: scaleY(1.25);
   }
 }
 

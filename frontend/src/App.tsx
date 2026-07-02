@@ -17,6 +17,12 @@ const RESULTS_REVEAL_DELAY_MS = 950
 const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
+const STATS_ICON_SELECTOR = '.wordbee-icon-button--stats, .results-link-card--stats'
+const STATS_BAR_CONFIG = [
+  { selector: '.stats-bar--short', highScale: 1.45, lowScale: 0.86, durationMs: 900 },
+  { selector: '.stats-bar--tall', highScale: 0.7, lowScale: 1.16, durationMs: 840 },
+  { selector: '.stats-bar--mid', highScale: 1.25, lowScale: 0.9, durationMs: 980 },
+]
 const EMPTY_STATS: StatsSummary = {
   played: 0,
   winPercentage: 0,
@@ -320,6 +326,147 @@ function getHardModeViolation(board: Tile[][], activeRow: number, guess: string)
   return null
 }
 
+function getStatsTrigger(target: EventTarget | null) {
+  if (!(target instanceof Element)) return null
+  return target.closest<HTMLElement>(STATS_ICON_SELECTOR)
+}
+
+function normalizeTransform(transform: string) {
+  return transform === 'none' ? 'scaleY(1)' : transform
+}
+
+function useStatsIconAnimation() {
+  useEffect(() => {
+    if (!Element.prototype.animate) return
+
+    const hoverAnimations = new WeakMap<Element, Animation>()
+    const returnAnimations = new WeakMap<Element, Animation>()
+    const activeAnimations = new Set<Animation>()
+
+    const cancelAnimation = (animation?: Animation) => {
+      if (!animation) return
+
+      animation.cancel()
+      activeAnimations.delete(animation)
+    }
+
+    const getStatsBars = (trigger: Element) =>
+      STATS_BAR_CONFIG.flatMap((config) => {
+        const bar = trigger.querySelector(config.selector)
+        return bar ? [{ bar, config }] : []
+      })
+
+    const startBarAnimation = (trigger: Element) => {
+      getStatsBars(trigger).forEach(({ bar, config }) => {
+        const currentTransform = normalizeTransform(window.getComputedStyle(bar).transform)
+
+        cancelAnimation(returnAnimations.get(bar))
+        cancelAnimation(hoverAnimations.get(bar))
+        returnAnimations.delete(bar)
+
+        const animation = bar.animate(
+          [
+            { transform: currentTransform, offset: 0 },
+            { transform: `scaleY(${config.highScale})`, offset: 0.48 },
+            { transform: `scaleY(${config.lowScale})`, offset: 1 },
+          ],
+          {
+            duration: config.durationMs,
+            easing: 'ease-in-out',
+            direction: 'alternate',
+            iterations: Infinity,
+          },
+        )
+
+        hoverAnimations.set(bar, animation)
+        activeAnimations.add(animation)
+      })
+    }
+
+    const returnBarToRest = (trigger: Element) => {
+      getStatsBars(trigger).forEach(({ bar }) => {
+        const currentTransform = normalizeTransform(window.getComputedStyle(bar).transform)
+
+        cancelAnimation(hoverAnimations.get(bar))
+        hoverAnimations.delete(bar)
+        cancelAnimation(returnAnimations.get(bar))
+
+        const animation = bar.animate(
+          [
+            { transform: currentTransform },
+            { transform: 'scaleY(1)' },
+          ],
+          {
+            duration: 280,
+            easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
+          },
+        )
+
+        returnAnimations.set(bar, animation)
+        activeAnimations.add(animation)
+        animation.addEventListener(
+          'finish',
+          () => {
+            activeAnimations.delete(animation)
+
+            if (returnAnimations.get(bar) === animation) {
+              returnAnimations.delete(bar)
+            }
+          },
+          { once: true },
+        )
+      })
+    }
+
+    const onPointerOver = (event: PointerEvent) => {
+      const trigger = getStatsTrigger(event.target)
+      if (!trigger || (event.relatedTarget instanceof Node && trigger.contains(event.relatedTarget))) {
+        return
+      }
+
+      startBarAnimation(trigger)
+    }
+
+    const onPointerOut = (event: PointerEvent) => {
+      const trigger = getStatsTrigger(event.target)
+      if (!trigger || (event.relatedTarget instanceof Node && trigger.contains(event.relatedTarget))) {
+        return
+      }
+
+      returnBarToRest(trigger)
+    }
+
+    const onFocusIn = (event: FocusEvent) => {
+      const trigger = getStatsTrigger(event.target)
+      if (trigger) {
+        startBarAnimation(trigger)
+      }
+    }
+
+    const onFocusOut = (event: FocusEvent) => {
+      const trigger = getStatsTrigger(event.target)
+      if (trigger) {
+        returnBarToRest(trigger)
+      }
+    }
+
+    document.addEventListener('pointerover', onPointerOver)
+    document.addEventListener('pointerout', onPointerOut)
+    document.addEventListener('focusin', onFocusIn)
+    document.addEventListener('focusout', onFocusOut)
+
+    return () => {
+      document.removeEventListener('pointerover', onPointerOver)
+      document.removeEventListener('pointerout', onPointerOut)
+      document.removeEventListener('focusin', onFocusIn)
+      document.removeEventListener('focusout', onFocusOut)
+
+      activeAnimations.forEach((animation) => animation.cancel())
+      activeAnimations.clear()
+    }
+  }, [])
+}
+
 function App() {
   const [board, setBoard] = useState(createBoard)
   const [settings, setSettings] = useState(loadSettings)
@@ -346,6 +493,8 @@ function App() {
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
   const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
   const isAccessPromptOpen = accessState === null
+
+  useStatsIconAnimation()
 
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {

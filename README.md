@@ -1,12 +1,12 @@
 # Wordbee
 
-Wordbee is a self-hosted daily word game for a private family and friends group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
+Wordbee is a self-hosted daily word game for a private friends and family group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
 
 ## Current Status
 
 - Frontend: playable Vite + React + TypeScript daily word game.
 - Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
-- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive.
+- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive and validating friends-and-family access codes server-side.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
 ## Tech Stack
@@ -78,13 +78,13 @@ cp .env.example .env
 
 Do not commit `.env` or local SQLite database files.
 
-Family notifications are configured with server-side environment values only. Add allowlisted display names and private ntfy topic/title/token values to `.env`; keep real private values out of Git.
+Friends-and-family access codes and ntfy notification values are configured with server-side environment values only. Add private code groups, topic/title/token values, and a deployment `SECRET_KEY` to `.env`; keep real private values out of Git.
 
 ## Backend Roadmap
 
 The backend currently provides daily answer fetching, SQLite caching, and guess scoring. Planned additions include:
 
-- Guest and private Wordbee modes.
+- Guest and friends-and-family Wordbee modes.
 - Session handling with HttpOnly cookies.
 - Daily and all-time leaderboards.
 - SQLite persistence for completed games, guesses, users, and sessions.

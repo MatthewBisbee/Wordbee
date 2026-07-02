@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
+from .auth import (
+    create_friends_family_session,
+    validate_friends_family_code,
+    verify_friends_family_token,
+)
 from .daily_answer import get_daily_answer, get_puzzle_date
 from .definitions import get_definition
 from .game import is_valid_guess, normalize_guess, score_guess
@@ -47,6 +52,43 @@ def stats():
     return jsonify(get_stats())
 
 
+@api.post("/friends-family/validate-code")
+def friends_family_validate_code():
+    payload = request.get_json(silent=True) or {}
+
+    if validate_friends_family_code(payload.get("code")) is None:
+        return jsonify({"error": "Code not recognized"}), 400
+
+    return jsonify({"ok": True})
+
+
+@api.post("/friends-family/login")
+def friends_family_login():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        session = create_friends_family_session(
+            code=payload.get("code"),
+            first_name=payload.get("firstName"),
+            last_initial=payload.get("lastInitial"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(session)
+
+
+@api.post("/friends-family/verify")
+def friends_family_verify():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_friends_family_token(payload.get("token"))
+
+    if identity is None:
+        return jsonify({"error": "Session expired"}), 401
+
+    return jsonify({"identity": identity})
+
+
 @api.post("/guess")
 def guess():
     payload = request.get_json(silent=True) or {}
@@ -85,6 +127,7 @@ def guess():
 @api.post("/results")
 def results():
     payload = request.get_json(silent=True) or {}
+    friends_family_identity = verify_friends_family_token(payload.get("friendsFamilyToken"))
 
     try:
         puzzle_date = get_puzzle_date(payload.get("date"))
@@ -112,13 +155,15 @@ def results():
     if saved_result["created"]:
         notification_result = publish_completion_notification(
             board=saved_result["board"],
-            display_name=payload.get("familyDisplayName"),
+            display_name=(
+                friends_family_identity["displayName"] if friends_family_identity else ""
+            ),
             guesses_used=int(payload.get("guessesUsed") or 0),
         )
 
         if notification_result["reason"] == "request_failed":
             current_app.logger.warning(
-                "Could not publish family completion notification: %s",
+                "Could not publish friends and family completion notification: %s",
                 notification_result.get("error", "unknown error"),
             )
 

@@ -15,6 +15,7 @@ const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 1
 const COMPLETION_TOAST_MS = 2600
 const RESULTS_REVEAL_DELAY_MS = 950
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
+const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 const EMPTY_STATS: StatsSummary = {
   played: 0,
   winPercentage: 0,
@@ -77,11 +78,33 @@ type GameResult = {
   saved: boolean
 }
 type Settings = {
-  familyDisplayName: string
   hardMode: boolean
   darkThemeOverride: boolean | null
   highContrast: boolean
   onscreenKeyboardOnly: boolean
+}
+type GuestAccess = {
+  kind: 'guest'
+}
+type FriendsFamilyIdentity = {
+  kind: 'friends-family'
+  displayName: string
+  firstName: string
+  lastInitial: string
+}
+type FriendsFamilyAccess = FriendsFamilyIdentity & {
+  token: string
+}
+type AccessState = GuestAccess | FriendsFamilyAccess
+type AccessLoginResponse = {
+  identity: FriendsFamilyIdentity
+  token: string
+}
+type AccessVerifyResponse = {
+  identity: FriendsFamilyIdentity
+}
+type AccessValidateResponse = {
+  ok: boolean
 }
 
 type Tile = {
@@ -109,7 +132,6 @@ const statePriority: Record<EvaluatedState, number> = {
 }
 
 const defaultSettings: Settings = {
-  familyDisplayName: '',
   hardMode: false,
   darkThemeOverride: null,
   highContrast: false,
@@ -129,14 +151,42 @@ function loadSettings(): Settings {
         typeof storedSettings.darkThemeOverride === 'boolean'
           ? storedSettings.darkThemeOverride
           : null,
-      familyDisplayName:
-        typeof storedSettings.familyDisplayName === 'string'
-          ? storedSettings.familyDisplayName.slice(0, 64)
-          : '',
     }
   } catch {
     return defaultSettings
   }
+}
+
+function loadAccessState(): AccessState | null {
+  try {
+    const rawAccess = window.localStorage.getItem(ACCESS_STORAGE_KEY)
+    if (!rawAccess) return null
+
+    const storedAccess = JSON.parse(rawAccess) as Partial<FriendsFamilyAccess | GuestAccess>
+    if (storedAccess.kind === 'guest') {
+      return { kind: 'guest' }
+    }
+
+    if (
+      storedAccess.kind === 'friends-family' &&
+      typeof storedAccess.displayName === 'string' &&
+      typeof storedAccess.firstName === 'string' &&
+      typeof storedAccess.lastInitial === 'string' &&
+      typeof storedAccess.token === 'string'
+    ) {
+      return {
+        kind: 'friends-family',
+        displayName: storedAccess.displayName.slice(0, 64),
+        firstName: storedAccess.firstName.slice(0, 40),
+        lastInitial: storedAccess.lastInitial.slice(0, 1),
+        token: storedAccess.token,
+      }
+    }
+  } catch {
+    window.localStorage.removeItem(ACCESS_STORAGE_KEY)
+  }
+
+  return null
 }
 
 function getDevicePrefersDark() {
@@ -272,6 +322,7 @@ function getHardModeViolation(board: Tile[][], activeRow: number, guess: string)
 function App() {
   const [board, setBoard] = useState(createBoard)
   const [settings, setSettings] = useState(loadSettings)
+  const [accessState, setAccessState] = useState<AccessState | null>(loadAccessState)
   const [devicePrefersDark, setDevicePrefersDark] = useState(getDevicePrefersDark)
   const [currentRow, setCurrentRow] = useState(0)
   const [currentColumn, setCurrentColumn] = useState(0)
@@ -291,6 +342,8 @@ function App() {
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
+  const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
+  const isAccessPromptOpen = accessState === null
 
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
@@ -418,7 +471,7 @@ function App() {
           body: JSON.stringify({
             board,
             date: puzzle.date,
-            familyDisplayName: settings.familyDisplayName.trim(),
+            friendsFamilyToken,
             gameId: gameIdRef.current,
             guessesUsed,
             hardMode: settings.hardMode,
@@ -438,7 +491,7 @@ function App() {
         console.warn('Could not save result', error)
       }
     },
-    [puzzle, settings.familyDisplayName, settings.hardMode, stats],
+    [friendsFamilyToken, puzzle, settings.hardMode, stats],
   )
 
   const showResultAfterPause = useCallback(
@@ -746,7 +799,7 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (isSettingsOpen) return
+      if (isSettingsOpen || isAccessPromptOpen) return
       handleKey(event.key)
     }
 
@@ -755,7 +808,7 @@ function App() {
     return () => {
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [handleKey, isSettingsOpen])
+  }, [handleKey, isAccessPromptOpen, isSettingsOpen])
 
   useEffect(() => {
     return () => {
@@ -772,6 +825,60 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
   }, [settings])
+
+  useEffect(() => {
+    if (accessState === null) {
+      window.localStorage.removeItem(ACCESS_STORAGE_KEY)
+      return
+    }
+
+    window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessState))
+  }, [accessState])
+
+  useEffect(() => {
+    if (!friendsFamilyToken) return
+
+    let isMounted = true
+    const token = friendsFamilyToken
+
+    async function verifyAccess() {
+      try {
+        const responseBody = await requestJson<AccessVerifyResponse>('/api/friends-family/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ token }),
+        })
+
+        if (!isMounted) return
+
+        setAccessState((previousAccess) => {
+          if (previousAccess?.kind !== 'friends-family' || previousAccess.token !== token) {
+            return previousAccess
+          }
+
+          return {
+            ...responseBody.identity,
+            token,
+          }
+        })
+      } catch (error) {
+        console.warn('Could not verify friends and family access', error)
+
+        if (isMounted) {
+          setAccessState(null)
+          showToast('Sign in again')
+        }
+      }
+    }
+
+    verifyAccess()
+
+    return () => {
+      isMounted = false
+    }
+  }, [friendsFamilyToken, showToast])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
@@ -903,10 +1010,18 @@ function App() {
 
       {isSettingsOpen && (
         <SettingsDialog
+          accessState={accessState}
           effectiveDarkTheme={isDarkTheme}
           onClose={() => setIsSettingsOpen(false)}
           onSettingChange={updateSetting}
           settings={settings}
+        />
+      )}
+
+      {accessState === null && (
+        <AccessDialog
+          onGuest={() => setAccessState({ kind: 'guest' })}
+          onLogin={(nextAccessState) => setAccessState(nextAccessState)}
         />
       )}
 
@@ -968,6 +1083,173 @@ function Keyboard({
           {rowIndex === 1 && <div className="wordbee-keyboard__spacer" />}
         </div>
       ))}
+    </div>
+  )
+}
+
+function AccessDialog({
+  onGuest,
+  onLogin,
+}: {
+  onGuest: () => void
+  onLogin: (accessState: FriendsFamilyAccess) => void
+}) {
+  const [code, setCode] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastInitial, setLastInitial] = useState('')
+  const [step, setStep] = useState<'code' | 'profile'>('code')
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const validateCode = async () => {
+    setError('')
+    setIsSubmitting(true)
+
+    try {
+      const responseBody = await requestJson<AccessValidateResponse>(
+        '/api/friends-family/validate-code',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code }),
+        },
+      )
+
+      if (!responseBody.ok) {
+        throw new Error('Code not recognized')
+      }
+
+      setStep('profile')
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Code not recognized')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const login = async () => {
+    setError('')
+    setIsSubmitting(true)
+
+    try {
+      const responseBody = await requestJson<AccessLoginResponse>('/api/friends-family/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+          firstName,
+          lastInitial,
+        }),
+      })
+
+      if (
+        responseBody.identity?.kind !== 'friends-family' ||
+        typeof responseBody.token !== 'string'
+      ) {
+        throw new Error('Could not sign in')
+      }
+
+      onLogin({
+        ...responseBody.identity,
+        token: responseBody.token,
+      })
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="access-backdrop">
+      <section
+        aria-labelledby="access-title"
+        aria-modal="true"
+        className="access-modal"
+        role="dialog"
+      >
+        <h2 id="access-title">Who's playing?</h2>
+        <p>
+          You can play as a guest. If you were given a friends and family code, enter it
+          here.
+        </p>
+
+        {step === 'code' ? (
+          <>
+            <button className="access-guest-button" type="button" onClick={onGuest}>
+              I wasn't given a friends and family code
+            </button>
+            <label className="access-field">
+              <span>Friends and family code</span>
+              <input
+                autoComplete="one-time-code"
+                autoFocus
+                inputMode="numeric"
+                onChange={(event) => setCode(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && code.trim()) {
+                    void validateCode()
+                  }
+                }}
+                type="password"
+                value={code}
+              />
+            </label>
+            <button
+              className="access-primary-button"
+              disabled={!code.trim() || isSubmitting}
+              onClick={() => void validateCode()}
+              type="button"
+            >
+              Continue
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="access-confirmed">Code accepted.</p>
+            <label className="access-field">
+              <span>First name</span>
+              <input
+                autoComplete="given-name"
+                autoFocus
+                maxLength={40}
+                onChange={(event) => setFirstName(event.target.value)}
+                type="text"
+                value={firstName}
+              />
+            </label>
+            <label className="access-field access-field--short">
+              <span>Last initial</span>
+              <input
+                autoComplete="off"
+                maxLength={1}
+                onChange={(event) => setLastInitial(event.target.value.toUpperCase())}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && firstName.trim() && lastInitial.trim()) {
+                    void login()
+                  }
+                }}
+                type="text"
+                value={lastInitial}
+              />
+            </label>
+            <button
+              className="access-primary-button"
+              disabled={!firstName.trim() || !lastInitial.trim() || isSubmitting}
+              onClick={() => void login()}
+              type="button"
+            >
+              Save
+            </button>
+          </>
+        )}
+
+        {error && <p className="access-error">{error}</p>}
+      </section>
     </div>
   )
 }
@@ -1108,11 +1390,13 @@ function StatValue({ label, value }: { label: string; value: number }) {
 }
 
 function SettingsDialog({
+  accessState,
   effectiveDarkTheme,
   onClose,
   onSettingChange,
   settings,
 }: {
+  accessState: AccessState | null
   effectiveDarkTheme: boolean
   onClose: () => void
   onSettingChange: <Key extends keyof Settings>(key: Key, value: Settings[Key]) => void
@@ -1158,12 +1442,9 @@ function SettingsDialog({
             label="Onscreen Keyboard Input Only"
             onChange={(checked) => onSettingChange('onscreenKeyboardOnly', checked)}
           />
-          <SettingsTextRow
-            label="Family Name"
-            onChange={(value) => onSettingChange('familyDisplayName', value)}
-            placeholder="Firstname L"
-            value={settings.familyDisplayName}
-          />
+          {accessState?.kind === 'friends-family' && (
+            <SettingsIdentityRow label="Friends and family" value={accessState.displayName} />
+          )}
           <div className="settings-links" aria-label="Project links">
             <a
               href="https://github.com/MatthewBisbee/Wordbee"
@@ -1185,35 +1466,20 @@ function SettingsDialog({
   )
 }
 
-function SettingsTextRow({
+function SettingsIdentityRow({
   label,
-  onChange,
-  placeholder,
   value,
 }: {
   label: string
-  onChange: (value: string) => void
-  placeholder: string
   value: string
 }) {
-  const inputId = `setting-${label.toLowerCase().replaceAll(' ', '-')}`
-
   return (
-    <label className="settings-row" htmlFor={inputId}>
+    <div className="settings-row">
       <span className="settings-row__text">
         <span className="settings-row__label">{label}</span>
       </span>
-      <input
-        autoComplete="name"
-        className="settings-text-input"
-        id={inputId}
-        maxLength={64}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        type="text"
-        value={value}
-      />
-    </label>
+      <span className="settings-identity-value">{value}</span>
+    </div>
   )
 }
 

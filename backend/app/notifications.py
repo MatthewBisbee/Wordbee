@@ -18,9 +18,9 @@ def publish_completion_notification(
     display_name: object,
     guesses_used: int,
 ) -> dict[str, Any]:
-    canonical_name = get_allowed_family_name(display_name)
-    if canonical_name is None:
-        return {"sent": False, "reason": "not_family"}
+    canonical_name = normalize_display_name(display_name)
+    if not canonical_name:
+        return {"sent": False, "reason": "not_friends_family"}
 
     if not env_enabled("WORDBEE_NTFY_ENABLED"):
         return {"sent": False, "reason": "disabled"}
@@ -88,31 +88,11 @@ def format_guess_count(guesses_used: int) -> str:
     return f"{guesses_used} {'guess' if guesses_used == 1 else 'guesses'}"
 
 
-def get_allowed_family_name(display_name: object) -> str | None:
-    requested_name = normalize_display_name(display_name)
-    requested_key = member_key(requested_name)
-
-    if not requested_key:
-        return None
-
-    for raw_name in os.environ.get("WORDBEE_FAMILY_MEMBERS", "").split(","):
-        canonical_name = normalize_display_name(raw_name)
-
-        if member_key(canonical_name) == requested_key:
-            return canonical_name
-
-    return None
-
-
 def normalize_display_name(display_name: object) -> str:
     if not isinstance(display_name, str):
         return ""
 
     return " ".join(display_name.strip().split())[:64]
-
-
-def member_key(display_name: str) -> str:
-    return normalize_display_name(display_name).replace(".", "").casefold()
 
 
 def env_enabled(key: str) -> bool:

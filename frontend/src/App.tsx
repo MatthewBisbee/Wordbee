@@ -1,5 +1,11 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import closeIconMarkup from './assets/icons/icon-close.svg?raw'
+import forumIconMarkup from './assets/icons/icon-forum.svg?raw'
+import helpIconMarkup from './assets/icons/icon-help.svg?raw'
+import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
+import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
+import statsIconMarkup from './assets/icons/icon-stats.svg?raw'
 import './App.css'
 
 const WORD_LENGTH = 5
@@ -9,6 +15,21 @@ const REVEAL_STEP_MS = 250
 const DANCE_STEP_MS = 100
 const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 100
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
+const DEV_FALLBACK_ANSWER = 'MAVEN'
+const EMPTY_STATS: StatsSummary = {
+  played: 0,
+  winPercentage: 0,
+  currentStreak: 0,
+  maxStreak: 0,
+  guessDistribution: {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+    6: 0,
+  },
+}
 
 type TileState = 'empty' | 'tbd' | 'correct' | 'present' | 'absent'
 type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
@@ -19,11 +40,32 @@ type PuzzleMetadata = {
   answerLength: number
   confidence: number
   status: string
+  isDevFallback?: boolean
 }
 type GuessResponse = {
   scores: EvaluatedState[]
   didWin: boolean
   answer?: string
+}
+type StatsSummary = {
+  played: number
+  winPercentage: number
+  currentStreak: number
+  maxStreak: number
+  guessDistribution: Record<number, number>
+}
+type ResultsResponse = {
+  stats: StatsSummary
+  answer?: string
+}
+type GameResult = {
+  outcome: GameStatus
+  guessesUsed: number
+  board: EvaluatedState[][]
+  stats: StatsSummary
+  answer?: string
+  copied: boolean
+  saved: boolean
 }
 type Settings = {
   hardMode: boolean
@@ -90,6 +132,113 @@ function createBoard() {
   )
 }
 
+async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
+  const response = await fetch(url, init)
+  const responseText = await response.text()
+  let responseBody: { error?: string } = {}
+
+  if (responseText.trim()) {
+    try {
+      responseBody = JSON.parse(responseText) as { error?: string }
+    } catch {
+      throw new Error(response.ok ? 'Invalid server response' : 'Service unavailable')
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(responseBody.error || 'Service unavailable')
+  }
+
+  return responseBody as ResponseBody
+}
+
+function scoreDevGuess(answer: string, guess: string) {
+  const answerLetters = answer.split('')
+  const guessLetters = guess.split('')
+  const result = Array.from({ length: WORD_LENGTH }, () => 'absent' as EvaluatedState)
+
+  guessLetters.forEach((letter, index) => {
+    if (letter === answerLetters[index]) {
+      result[index] = 'correct'
+      answerLetters[index] = ''
+      guessLetters[index] = ''
+    }
+  })
+
+  guessLetters.forEach((letter, index) => {
+    if (!letter) return
+
+    const answerIndex = answerLetters.indexOf(letter)
+    if (answerIndex !== -1) {
+      result[index] = 'present'
+      answerLetters[answerIndex] = ''
+    }
+  })
+
+  return result
+}
+
+function createGameId(date: string) {
+  if (window.crypto?.randomUUID) {
+    return `${date}-${window.crypto.randomUUID()}`
+  }
+
+  return `${date}-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function getCompletedBoard(board: Tile[][], activeRow: number, scores: EvaluatedState[]) {
+  return board
+    .slice(0, activeRow)
+    .map((row) => row.map((tile) => tile.state as EvaluatedState))
+    .concat([scores])
+}
+
+function createShareText(result: GameResult, puzzle: PuzzleMetadata | null) {
+  const score = result.outcome === 'won' ? result.guessesUsed.toString() : 'X'
+  const heading = `Wordbee ${puzzle?.date ?? ''} ${score}/${MAX_GUESSES}`.trim()
+  const rows = result.board.map((row) =>
+    row
+      .map((state) => {
+        if (state === 'correct') return '🟩'
+        if (state === 'present') return '🟨'
+        return '⬜'
+      })
+      .join(''),
+  )
+
+  return [heading, '', ...rows].join('\n')
+}
+
+function getDistributionMax(stats: StatsSummary) {
+  return Math.max(1, ...Object.values(stats.guessDistribution))
+}
+
+function createLocalStats(
+  stats: StatsSummary,
+  outcome: GameStatus,
+  guessesUsed: number,
+) {
+  const won = outcome === 'won'
+  const played = stats.played + 1
+  const previousWins = Math.round((stats.played * stats.winPercentage) / 100)
+  const wins = previousWins + (won ? 1 : 0)
+  const guessDistribution = { ...stats.guessDistribution }
+
+  if (won) {
+    guessDistribution[guessesUsed] = (guessDistribution[guessesUsed] ?? 0) + 1
+  }
+
+  const currentStreak = won ? stats.currentStreak + 1 : 0
+
+  return {
+    played,
+    winPercentage: Math.round((wins / played) * 100),
+    currentStreak,
+    maxStreak: Math.max(stats.maxStreak, currentStreak),
+    guessDistribution,
+  }
+}
+
 function getHardModeViolation(board: Tile[][], activeRow: number, guess: string) {
   const requiredPositions = new Map<number, string>()
   const requiredCounts = new Map<string, number>()
@@ -145,6 +294,9 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
   const [puzzleError, setPuzzleError] = useState('')
+  const [stats, setStats] = useState<StatsSummary>(EMPTY_STATS)
+  const [gameResult, setGameResult] = useState<GameResult | null>(null)
+  const gameIdRef = useRef('')
   const toastTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
 
@@ -241,6 +393,67 @@ function App() {
     setCurrentColumn(nextColumn)
   }, [currentColumn, currentRow])
 
+  const submitResult = useCallback(
+    async ({
+      answer,
+      board,
+      guessesUsed,
+      outcome,
+    }: {
+      answer?: string
+      board: EvaluatedState[][]
+      guessesUsed: number
+      outcome: GameStatus
+    }) => {
+      const baseResult: GameResult = {
+        answer,
+        board,
+        copied: false,
+        guessesUsed,
+        outcome,
+        saved: false,
+        stats,
+      }
+
+      setGameResult(baseResult)
+
+      if (!puzzle || puzzle.isDevFallback) {
+        const nextStats = createLocalStats(stats, outcome, guessesUsed)
+        setStats(nextStats)
+        setGameResult({ ...baseResult, saved: false, stats: nextStats })
+        return
+      }
+
+      try {
+        const result = await requestJson<ResultsResponse>('/api/results', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            board,
+            date: puzzle.date,
+            gameId: gameIdRef.current,
+            guessesUsed,
+            hardMode: settings.hardMode,
+            outcome,
+          }),
+        })
+
+        setStats(result.stats)
+        setGameResult({
+          ...baseResult,
+          answer: result.answer || answer,
+          saved: true,
+          stats: result.stats,
+        })
+      } catch (error) {
+        console.warn('Could not save result', error)
+      }
+    },
+    [puzzle, settings.hardMode, stats],
+  )
+
   const revealGuess = useCallback(async () => {
     if (!puzzle) {
       showToast(puzzleError || 'Loading daily answer')
@@ -272,44 +485,49 @@ function App() {
 
     let guessResult: GuessResponse
 
-    try {
-      const response = await fetch('/api/guess', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          date: puzzle.date,
-          guess,
-          reveal: isLastRow,
-        }),
-      })
-      const responseBody = (await response.json()) as Partial<GuessResponse> & {
-        error?: string
-      }
-
-      if (!response.ok) {
-        throw new Error(responseBody.error || 'Could not check guess')
-      }
-
-      if (
-        !Array.isArray(responseBody.scores) ||
-        responseBody.scores.length !== WORD_LENGTH ||
-        typeof responseBody.didWin !== 'boolean'
-      ) {
-        throw new Error('Unexpected guess response')
-      }
-
+    if (puzzle.isDevFallback) {
+      const scores = scoreDevGuess(DEV_FALLBACK_ANSWER, guess)
       guessResult = {
-        scores: responseBody.scores,
-        didWin: responseBody.didWin,
-        answer: responseBody.answer,
+        answer: isLastRow ? DEV_FALLBACK_ANSWER : undefined,
+        didWin: scores.every((score) => score === 'correct'),
+        scores,
       }
-    } catch (error) {
-      setIsRevealing(false)
-      shakeRow(row)
-      showToast(error instanceof Error ? error.message : 'Could not check guess')
-      return
+    } else {
+      try {
+        const responseBody = await requestJson<Partial<GuessResponse> & { error?: string }>(
+          '/api/guess',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              date: puzzle.date,
+              guess,
+              reveal: isLastRow,
+            }),
+          },
+        )
+
+        if (
+          !Array.isArray(responseBody.scores) ||
+          responseBody.scores.length !== WORD_LENGTH ||
+          typeof responseBody.didWin !== 'boolean'
+        ) {
+          throw new Error('Unexpected guess response')
+        }
+
+        guessResult = {
+          scores: responseBody.scores,
+          didWin: responseBody.didWin,
+          answer: responseBody.answer,
+        }
+      } catch (error) {
+        setIsRevealing(false)
+        shakeRow(row)
+        showToast(error instanceof Error ? error.message : 'Could not check guess')
+        return
+      }
     }
 
     const { didWin, scores } = guessResult
@@ -376,6 +594,11 @@ function App() {
       if (didWin) {
         setStatus('won')
         setWinningRow(row)
+        void submitResult({
+          board: getCompletedBoard(board, row, scores),
+          guessesUsed: row + 1,
+          outcome: 'won',
+        })
         showToast(
           ['Genius', 'Magnificent', 'Impressive', 'Splendid', 'Great', 'Phew'][
             row
@@ -387,6 +610,12 @@ function App() {
 
       if (isLastRow) {
         setStatus('lost')
+        void submitResult({
+          answer: guessResult.answer,
+          board: getCompletedBoard(board, row, scores),
+          guessesUsed: MAX_GUESSES,
+          outcome: 'lost',
+        })
         showToast(guessResult.answer || 'Answer unavailable', true)
         return
       }
@@ -403,6 +632,7 @@ function App() {
     settings.hardMode,
     shakeRow,
     showToast,
+    submitResult,
   ])
 
   const handleKey = useCallback(
@@ -435,19 +665,27 @@ function App() {
     ],
   )
 
+  const copyResult = useCallback(async () => {
+    if (!gameResult) return
+
+    try {
+      await navigator.clipboard.writeText(createShareText(gameResult, puzzle))
+      setGameResult({ ...gameResult, copied: true })
+      showToast('Copied')
+    } catch (error) {
+      console.warn('Could not copy result', error)
+      showToast('Copy failed')
+    }
+  }, [gameResult, puzzle, showToast])
+
   useEffect(() => {
     let isMounted = true
 
     async function loadPuzzle() {
       try {
-        const response = await fetch('/api/today')
-        const responseBody = (await response.json()) as Partial<PuzzleMetadata> & {
-          error?: string
-        }
-
-        if (!response.ok) {
-          throw new Error(responseBody.error || 'Could not load daily answer')
-        }
+        const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
+          '/api/today',
+        )
 
         if (
           typeof responseBody.date !== 'string' ||
@@ -466,13 +704,29 @@ function App() {
           confidence: responseBody.confidence,
           status: responseBody.status,
         })
+        gameIdRef.current = createGameId(responseBody.date)
         setPuzzleError('')
       } catch (error) {
         if (!isMounted) return
 
         const message = error instanceof Error ? error.message : 'Could not load daily answer'
+        console.warn('Using local dev answer fallback', error)
+
+        if (import.meta.env.DEV) {
+          const fallbackDate = new Date().toISOString().slice(0, 10)
+          setPuzzle({
+            answerLength: WORD_LENGTH,
+            confidence: 0,
+            date: fallbackDate,
+            isDevFallback: true,
+            status: 'dev-fallback',
+          })
+          gameIdRef.current = createGameId(fallbackDate)
+          setPuzzleError('')
+          return
+        }
+
         setPuzzleError(message)
-        showToast(message, true)
       }
     }
 
@@ -481,7 +735,30 @@ function App() {
     return () => {
       isMounted = false
     }
-  }, [showToast])
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadStats() {
+      try {
+        const responseBody = await requestJson<StatsSummary>('/api/stats')
+        if (isMounted) {
+          setStats(responseBody)
+        }
+      } catch (error) {
+        console.warn('Could not load stats', error)
+      }
+    }
+
+    if (!puzzle?.isDevFallback) {
+      loadStats()
+    }
+
+    return () => {
+      isMounted = false
+    }
+  }, [puzzle])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -545,7 +822,7 @@ function App() {
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left">
           <button className="wordbee-icon-button" type="button" aria-label="Menu">
-            <MenuIcon />
+            <InlineIcon markup={menuIconMarkup} />
           </button>
         </div>
 
@@ -553,10 +830,10 @@ function App() {
 
         <div className="wordbee-header__side wordbee-header__side--right">
           <button className="wordbee-icon-button" type="button" aria-label="Statistics">
-            <StatsIcon />
+            <InlineIcon markup={statsIconMarkup} />
           </button>
           <button className="wordbee-icon-button" type="button" aria-label="Help">
-            <HelpIcon />
+            <InlineIcon markup={helpIconMarkup} />
           </button>
           <button
             className="wordbee-icon-button"
@@ -566,7 +843,7 @@ function App() {
             aria-expanded={isSettingsOpen}
             onClick={() => setIsSettingsOpen(true)}
           >
-            <SettingsIcon />
+            <InlineIcon markup={settingsIconMarkup} />
           </button>
         </div>
       </header>
@@ -625,6 +902,13 @@ function App() {
           settings={settings}
         />
       )}
+
+      {gameResult && (
+        <ResultsDialog
+          onCopy={copyResult}
+          result={gameResult}
+        />
+      )}
     </div>
   )
 }
@@ -680,6 +964,112 @@ function Keyboard({
   )
 }
 
+function ResultsDialog({
+  onCopy,
+  result,
+}: {
+  onCopy: () => void
+  result: GameResult
+}) {
+  const distributionMax = getDistributionMax(result.stats)
+  const title = result.outcome === 'won' ? 'Nice solve' : 'Good run'
+  const subtitle =
+    result.outcome === 'won'
+      ? `Solved in ${result.guessesUsed}`
+      : result.answer
+        ? `Answer: ${result.answer}`
+        : 'Answer saved for reveal'
+
+  return (
+    <div className="results-backdrop" aria-live="polite">
+      <section className="results-panel" aria-labelledby="results-title">
+        <div className="results-badge" aria-hidden="true">
+          <InlineIcon markup={statsIconMarkup} />
+        </div>
+
+        <h2 className="results-title" id="results-title">
+          {title}
+        </h2>
+        <p className="results-subtitle">{subtitle}</p>
+
+        <section className="results-section" aria-labelledby="summary-title">
+          <h3 id="summary-title">Statistics</h3>
+          <div className="results-stat-grid">
+            <StatValue label="Played" value={result.stats.played} />
+            <StatValue label="Win %" value={result.stats.winPercentage} />
+            <StatValue label="Current Streak" value={result.stats.currentStreak} />
+            <StatValue label="Max Streak" value={result.stats.maxStreak} />
+          </div>
+        </section>
+
+        <section className="results-section" aria-labelledby="distribution-title">
+          <h3 id="distribution-title">Guess Distribution</h3>
+          <div className="distribution-list">
+            {Array.from({ length: MAX_GUESSES }, (_, index) => {
+              const guessNumber = index + 1
+              const count = result.stats.guessDistribution[guessNumber] ?? 0
+              const isCurrentGuess =
+                result.outcome === 'won' && result.guessesUsed === guessNumber
+
+              return (
+                <div className="distribution-row" key={guessNumber}>
+                  <span className="distribution-row__label">{guessNumber}</span>
+                  <span
+                    className={[
+                      'distribution-row__bar',
+                      isCurrentGuess ? 'distribution-row__bar--current' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={
+                      {
+                        '--bar-width': `${Math.max(8, (count / distributionMax) * 100)}%`,
+                      } as CSSProperties
+                    }
+                  >
+                    {count}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+
+        <a className="results-link-card" href="/stats">
+          <InlineIcon markup={forumIconMarkup} />
+          <span>
+            <strong>Detailed stats</strong>
+            <span>Compare streaks, dates, and solve patterns.</span>
+          </span>
+          <span className="results-link-card__arrow" aria-hidden="true">
+            ›
+          </span>
+        </a>
+
+        <div className="results-secondary-actions">
+          <a href="/random">Play random</a>
+          <a href="/history">Play history</a>
+        </div>
+        <p className="results-note">Random and history plays are not tracked.</p>
+
+        <button className="results-share-button" type="button" onClick={onCopy}>
+          {result.copied ? 'Copied' : 'Share'}
+          <ShareGlyph />
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function StatValue({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="results-stat">
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
 function SettingsDialog({
   effectiveDarkTheme,
   onClose,
@@ -703,7 +1093,7 @@ function SettingsDialog({
         <div className="settings-modal__header">
           <h2 id="settings-title">SETTINGS</h2>
           <button className="settings-close" type="button" aria-label="Close" onClick={onClose}>
-            <CloseIcon />
+            <InlineIcon markup={closeIconMarkup} />
           </button>
         </div>
 
@@ -787,44 +1177,19 @@ function SettingsRow({
   )
 }
 
-function MenuIcon() {
+function InlineIcon({ markup }: { markup: string }) {
   return (
-    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
-      <path d="M4 7h16M4 12h16M4 17h16" />
-    </svg>
+    <span
+      className="wordbee-inline-icon"
+      dangerouslySetInnerHTML={{ __html: markup }}
+    />
   )
 }
 
-function StatsIcon() {
+function ShareGlyph() {
   return (
-    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
-      <path d="M5 20V10h4v10M10 20V4h4v16M15 20v-7h4v7" />
-    </svg>
-  )
-}
-
-function HelpIcon() {
-  return (
-    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.6 9a2.6 2.6 0 0 1 5.05.9c0 2.1-2.65 2.3-2.65 4.5M12 18h.01" />
-    </svg>
-  )
-}
-
-function SettingsIcon() {
-  return (
-    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
-      <path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" />
-      <path d="m4.9 9.2 1.5-2.6 2 .8a7 7 0 0 1 1.5-.9L10.2 4h3.6l.4 2.5c.5.2 1 .5 1.5.9l2-.8 1.5 2.6-2 1.6v2.4l2 1.6-1.5 2.6-2-.8c-.5.4-1 .7-1.5.9l-.4 2.5h-3.6l-.4-2.5a7 7 0 0 1-1.5-.9l-2 .8-1.5-2.6 2-1.6v-2.4l-1.9-1.6Z" />
-    </svg>
-  )
-}
-
-function CloseIcon() {
-  return (
-    <svg aria-hidden="true" className="settings-close-icon" viewBox="0 0 24 24">
-      <path d="M4.5 4.5 19.5 19.5M19.5 4.5 4.5 19.5" />
+    <svg aria-hidden="true" className="results-share-icon" viewBox="0 0 24 24">
+      <path d="M18 8a3 3 0 1 0-2.83-4H15a3 3 0 0 0 .3 1.3l-6.2 3.1a3 3 0 1 0 0 3.2l6.2 3.1A3 3 0 0 0 15 16v.17A3 3 0 1 0 18 14a3 3 0 0 0-1.7.52l-6.2-3.1a3 3 0 0 0 0-2.84l6.2-3.1A3 3 0 0 0 18 8Zm0-5a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM6 12a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm12 7a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" />
     </svg>
   )
 }

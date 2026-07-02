@@ -4,6 +4,7 @@ from flask import Blueprint, jsonify, request
 
 from .daily_answer import get_daily_answer, get_puzzle_date
 from .game import is_valid_guess, normalize_guess, score_guess
+from .stats import get_stats, save_completed_game
 
 
 api = Blueprint("api", __name__)
@@ -39,6 +40,11 @@ def today():
     )
 
 
+@api.get("/stats")
+def stats():
+    return jsonify(get_stats())
+
+
 @api.post("/guess")
 def guess():
     payload = request.get_json(silent=True) or {}
@@ -69,6 +75,34 @@ def guess():
     }
 
     if should_reveal:
+        response["answer"] = answer_record["answer"]
+
+    return jsonify(response)
+
+
+@api.post("/results")
+def results():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        answer_record = get_daily_answer(puzzle_date)
+        stats_record = save_completed_game(
+            game_id=str(payload.get("gameId") or ""),
+            puzzle_date=answer_record["puzzle_date"],
+            mode="daily",
+            outcome=str(payload.get("outcome") or ""),
+            guesses_used=int(payload.get("guessesUsed") or 0),
+            hard_mode=bool(payload.get("hardMode")),
+            board=payload.get("board"),
+        )
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    response = {"stats": stats_record}
+    if payload.get("outcome") == "lost":
         response["answer"] = answer_record["answer"]
 
     return jsonify(response)

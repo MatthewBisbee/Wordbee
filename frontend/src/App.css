@@ -28,6 +28,11 @@
   --settings-border: #d3d6da;
   --settings-switch-off: #878a8c;
   --settings-switch-on: #6aaa64;
+  --result-panel-bg: #fff;
+  --result-card-bg: #f4f4f4;
+  --result-muted: #565758;
+  --result-bar-bg: #787c7e;
+  --result-link-bg: #efefef;
 }
 
 .wordbee-app--dark {
@@ -52,6 +57,11 @@
   --settings-border: #3a3a3c;
   --settings-switch-off: #565758;
   --settings-switch-on: #6aaa64;
+  --result-panel-bg: #121213;
+  --result-card-bg: #262626;
+  --result-muted: #d7dadc;
+  --result-bar-bg: #3a3a3c;
+  --result-link-bg: #262626;
 }
 
 .wordbee-app--high-contrast {
@@ -113,16 +123,30 @@
   background: transparent;
   color: var(--color-tone-1);
   cursor: pointer;
+  transform-origin: center;
 }
 
-.wordbee-icon {
+.wordbee-icon-button:hover .wordbee-inline-icon {
+  transform: translateY(-1px) rotate(-5deg) scale(1.08);
+}
+
+.wordbee-icon-button:active .wordbee-inline-icon {
+  transform: translateY(1px) rotate(5deg) scale(0.92);
+}
+
+.wordbee-inline-icon {
   width: 28px;
   height: 28px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 160ms ease;
+}
+
+.wordbee-inline-icon .game-icon {
+  width: 28px;
+  height: 28px;
+  display: block;
 }
 
 .wordbee-game {
@@ -376,13 +400,10 @@
   cursor: pointer;
 }
 
-.settings-close-icon {
+.settings-close .wordbee-inline-icon,
+.settings-close .game-icon {
   width: 24px;
   height: 24px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.5;
-  stroke-linecap: round;
 }
 
 .settings-list {
@@ -476,6 +497,245 @@
   color: var(--settings-border);
 }
 
+.results-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 22px 0;
+  background: var(--result-panel-bg);
+}
+
+.results-panel {
+  width: min(620px, 100%);
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 0 28px 28px;
+  color: var(--color-tone-1);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+.results-badge {
+  width: 86px;
+  height: 86px;
+  margin: 0 auto 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-correct) 42%, transparent);
+}
+
+.results-badge .wordbee-inline-icon,
+.results-badge .game-icon {
+  width: 48px;
+  height: 48px;
+}
+
+.results-title {
+  margin: 0;
+  color: var(--color-tone-1);
+  font-size: clamp(42px, 10vw, 64px);
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.results-subtitle {
+  margin: 10px 0 30px;
+  color: var(--result-muted);
+  font-size: 16px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.results-section {
+  margin-top: 28px;
+}
+
+.results-section h3 {
+  margin: 0 0 14px;
+  color: var(--color-tone-1);
+  font-size: 20px;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+.results-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.results-stat {
+  min-width: 0;
+  text-align: center;
+}
+
+.results-stat strong {
+  display: block;
+  font-size: clamp(42px, 11vw, 64px);
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.results-stat span {
+  display: block;
+  margin-top: 6px;
+  font-size: 17px;
+  line-height: 20px;
+}
+
+.distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.distribution-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.distribution-row__label {
+  color: var(--color-tone-1);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.distribution-row__bar {
+  width: var(--bar-width);
+  min-width: 28px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--result-bar-bg);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.distribution-row__bar--current {
+  background: var(--color-correct);
+}
+
+.results-link-card {
+  min-height: 84px;
+  margin-top: 32px;
+  padding: 16px;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  gap: 14px;
+  align-items: center;
+  background: var(--result-link-bg);
+  color: var(--color-tone-1);
+  text-decoration: none;
+}
+
+.results-link-card .wordbee-inline-icon,
+.results-link-card .game-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.results-link-card strong,
+.results-link-card span span {
+  display: block;
+}
+
+.results-link-card strong {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.results-link-card span span {
+  margin-top: 2px;
+  color: var(--result-muted);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.results-link-card__arrow {
+  color: var(--color-tone-1);
+  font-size: 42px;
+  line-height: 1;
+}
+
+.results-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.results-secondary-actions a {
+  min-height: 46px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-tone-1);
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.results-note {
+  margin: 8px 0 0;
+  color: var(--result-muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.results-share-button {
+  width: min(400px, 100%);
+  min-height: 58px;
+  margin: 24px auto 0;
+  border: 0;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--color-correct);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    filter 160ms ease,
+    transform 160ms ease;
+}
+
+.results-share-button:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.results-share-button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.results-share-icon {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+
 @media (min-width: 768px) {
   .wordbee-header__side--left {
     left: var(--horizontal-spacing-3);
@@ -487,6 +747,19 @@
 }
 
 @media (max-width: 370px), (max-height: 640px) {
+  .results-panel {
+    padding: 0 18px 22px;
+  }
+
+  .results-stat-grid {
+    gap: 10px;
+  }
+
+  .results-stat span {
+    font-size: 14px;
+    line-height: 17px;
+  }
+
   .wordbee-board {
     width: min(300px, calc(100vw - 20px));
   }

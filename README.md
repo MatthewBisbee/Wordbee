@@ -43,16 +43,17 @@ Install backend dependencies:
 python3 -m pip install -r backend/requirements.txt
 ```
 
-Run the backend API:
-
-```bash
-npm run api
-```
-
-Run the frontend development server in a second terminal:
+Run the full local app:
 
 ```bash
 npm run dev
+```
+
+Or run each side separately:
+
+```bash
+npm run api
+npm run dev:frontend
 ```
 
 Build the frontend:

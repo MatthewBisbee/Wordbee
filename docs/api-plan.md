@@ -5,10 +5,16 @@ Current endpoints:
 - `GET /api/health`
 - `GET /api/today`
 - `POST /api/guess`
+- `POST /api/results`
+- `GET /api/stats`
 
 `GET /api/today` returns the active puzzle date, answer length, confidence score, source status, sanitized source metadata, and fetch timestamp. It does not return the answer.
 
 `POST /api/guess` accepts a date, guess, and optional final-reveal flag. It validates the guess, returns tile scores, and returns the answer only when the final-reveal flag is set.
+
+`POST /api/results` stores a completed daily result and returns updated stats.
+
+`GET /api/stats` returns played count, win percentage, streaks, and guess distribution for tracked daily games.
 
 Planned endpoints:
 

@@ -5,6 +5,7 @@ const processes = [
     env: {
       ...process.env,
       FLASK_ENV: process.env.FLASK_ENV ?? 'development',
+      WORDBEE_ENABLE_DEV_FALLBACK: process.env.WORDBEE_ENABLE_DEV_FALLBACK ?? '1',
     },
     stdio: 'inherit',
   }),

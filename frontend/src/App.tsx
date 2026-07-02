@@ -219,12 +219,14 @@ async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
     try {
       responseBody = JSON.parse(responseText) as { error?: string }
     } catch {
-      throw new Error(response.ok ? 'Invalid server response' : 'Service unavailable')
+      throw new Error(
+        response.ok ? 'Invalid server response' : 'API server unavailable. Check the dev terminal.',
+      )
     }
   }
 
   if (!response.ok) {
-    throw new Error(responseBody.error || 'Service unavailable')
+    throw new Error(responseBody.error || 'API server unavailable')
   }
 
   return responseBody as ResponseBody
@@ -1284,12 +1286,14 @@ function FriendsFamilyAccessForm({
   autoFocusCode = false,
   className = '',
   guestButtonLabel,
+  hideCodeLabel = false,
   onGuest,
   onLogin,
 }: {
   autoFocusCode?: boolean
   className?: string
   guestButtonLabel?: string
+  hideCodeLabel?: boolean
   onGuest?: () => void
   onLogin: (accessState: FriendsFamilyAccess) => void
 }) {
@@ -1373,7 +1377,9 @@ function FriendsFamilyAccessForm({
             </button>
           )}
           <label className="access-field">
-            <span>Friends and family code</span>
+            <span className={hideCodeLabel ? 'wordbee-sr-only' : ''}>
+              Friends and family code
+            </span>
             <input
               autoComplete="one-time-code"
               autoFocus={autoFocusCode}
@@ -1680,8 +1686,12 @@ function SettingsAccessSection({
 }) {
   return (
     <div className="settings-access-section">
-      <span className="settings-row__label">Friends and family</span>
-      <FriendsFamilyAccessForm className="access-form--settings" onLogin={onLogin} />
+      <span className="settings-row__label">Enter friends and family code</span>
+      <FriendsFamilyAccessForm
+        className="access-form--settings"
+        hideCodeLabel
+        onLogin={onLogin}
+      />
     </div>
   )
 }

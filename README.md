@@ -7,13 +7,13 @@ Wordbee is a self-hosted daily word game for a private family and friends group.
 - Frontend: playable Vite + React + TypeScript daily word game.
 - Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
 - Backend: Flask + SQLite files are scaffolded, but API and persistence implementation are still planned.
-- Deployment: nginx, cloudflared, systemd, and Docker placeholders are included for the future Raspberry Pi setup.
+- Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
 ## Tech Stack
 
 - Frontend: React 19, TypeScript, Vite, Oxlint.
 - Backend plan: Flask, SQLite.
-- Deployment plan: nginx reverse proxy, Cloudflare Tunnel, systemd service or Docker.
+- Deployment plan: nginx reverse proxy, Cloudflare Tunnel, and systemd service.
 
 ## Project Structure
 

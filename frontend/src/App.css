@@ -33,6 +33,8 @@
   --result-muted: #565758;
   --result-bar-bg: #787c7e;
   --result-link-bg: #efefef;
+  --result-copy-bg: #3f6277;
+  --result-copy-text: #fff;
 }
 
 .wordbee-app--dark {
@@ -62,6 +64,8 @@
   --result-muted: #d7dadc;
   --result-bar-bg: #3a3a3c;
   --result-link-bg: #262626;
+  --result-copy-bg: #82a8bf;
+  --result-copy-text: #111;
 }
 
 .wordbee-app--high-contrast {
@@ -505,6 +509,25 @@
   transform: translateX(12px);
 }
 
+.settings-text-input {
+  width: min(170px, 46vw);
+  min-width: 0;
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.settings-text-input:focus {
+  outline: 2px solid var(--color-correct);
+  outline-offset: 2px;
+}
+
 .settings-links {
   display: flex;
   align-items: center;
@@ -808,8 +831,8 @@
   justify-content: center;
   gap: 8px;
   padding: 14px 20px;
-  background: var(--color-correct);
-  color: #fff;
+  background: var(--result-copy-bg);
+  color: var(--result-copy-text);
   font-weight: 800;
   cursor: pointer;
   transition:

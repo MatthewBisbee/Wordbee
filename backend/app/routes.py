@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from .daily_answer import get_daily_answer, get_puzzle_date
 from .definitions import get_definition
 from .game import is_valid_guess, normalize_guess, score_guess
+from .notifications import publish_completion_notification
 from .stats import get_stats, save_completed_game
 
 
@@ -88,7 +89,7 @@ def results():
     try:
         puzzle_date = get_puzzle_date(payload.get("date"))
         answer_record = get_daily_answer(puzzle_date)
-        stats_record = save_completed_game(
+        saved_result = save_completed_game(
             game_id=str(payload.get("gameId") or ""),
             puzzle_date=answer_record["puzzle_date"],
             mode="daily",
@@ -105,8 +106,21 @@ def results():
     response = {
         "answer": answer_record["answer"],
         "definition": get_definition(answer_record["answer"]),
-        "stats": stats_record,
+        "stats": saved_result["stats"],
     }
+
+    if saved_result["created"]:
+        notification_result = publish_completion_notification(
+            board=saved_result["board"],
+            display_name=payload.get("familyDisplayName"),
+            guesses_used=int(payload.get("guessesUsed") or 0),
+        )
+
+        if notification_result["reason"] == "request_failed":
+            current_app.logger.warning(
+                "Could not publish family completion notification: %s",
+                notification_result.get("error", "unknown error"),
+            )
 
     return jsonify(response)
 

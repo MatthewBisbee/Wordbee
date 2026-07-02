@@ -78,6 +78,7 @@ type GameResult = {
   saved: boolean
 }
 type Settings = {
+  familyDisplayName: string
   hardMode: boolean
   darkThemeOverride: boolean | null
   highContrast: boolean
@@ -103,6 +104,7 @@ const statePriority: Record<EvaluatedState, number> = {
 }
 
 const defaultSettings: Settings = {
+  familyDisplayName: '',
   hardMode: false,
   darkThemeOverride: null,
   highContrast: false,
@@ -122,6 +124,10 @@ function loadSettings(): Settings {
         typeof storedSettings.darkThemeOverride === 'boolean'
           ? storedSettings.darkThemeOverride
           : null,
+      familyDisplayName:
+        typeof storedSettings.familyDisplayName === 'string'
+          ? storedSettings.familyDisplayName.slice(0, 64)
+          : '',
     }
   } catch {
     return defaultSettings
@@ -464,6 +470,7 @@ function App() {
           body: JSON.stringify({
             board,
             date: puzzle.date,
+            familyDisplayName: settings.familyDisplayName.trim(),
             gameId: gameIdRef.current,
             guessesUsed,
             hardMode: settings.hardMode,
@@ -483,7 +490,7 @@ function App() {
         console.warn('Could not save result', error)
       }
     },
-    [puzzle, settings.hardMode, stats],
+    [puzzle, settings.familyDisplayName, settings.hardMode, stats],
   )
 
   const revealGuess = useCallback(async () => {
@@ -1188,6 +1195,12 @@ function SettingsDialog({
             label="Onscreen Keyboard Input Only"
             onChange={(checked) => onSettingChange('onscreenKeyboardOnly', checked)}
           />
+          <SettingsTextRow
+            label="Family Name"
+            onChange={(value) => onSettingChange('familyDisplayName', value)}
+            placeholder="Firstname L"
+            value={settings.familyDisplayName}
+          />
           <div className="settings-links" aria-label="Project links">
             <a
               href="https://github.com/MatthewBisbee/Wordbee"
@@ -1206,6 +1219,38 @@ function SettingsDialog({
         </div>
       </section>
     </div>
+  )
+}
+
+function SettingsTextRow({
+  label,
+  onChange,
+  placeholder,
+  value,
+}: {
+  label: string
+  onChange: (value: string) => void
+  placeholder: string
+  value: string
+}) {
+  const inputId = `setting-${label.toLowerCase().replaceAll(' ', '-')}`
+
+  return (
+    <label className="settings-row" htmlFor={inputId}>
+      <span className="settings-row__text">
+        <span className="settings-row__label">{label}</span>
+      </span>
+      <input
+        autoComplete="name"
+        className="settings-text-input"
+        id={inputId}
+        maxLength={64}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        type="text"
+        value={value}
+      />
+    </label>
   )
 }
 

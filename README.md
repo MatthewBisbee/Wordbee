@@ -78,6 +78,8 @@ cp .env.example .env
 
 Do not commit `.env` or local SQLite database files.
 
+Family notifications are configured with server-side environment values only. Add allowlisted display names and private ntfy topic/title/token values to `.env`; keep real private values out of Git.
+
 ## Backend Roadmap
 
 The backend currently provides daily answer fetching, SQLite caching, and guess scoring. Planned additions include:

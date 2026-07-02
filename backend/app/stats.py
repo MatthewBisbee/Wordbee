@@ -37,7 +37,7 @@ def save_completed_game(
     now = datetime.now().astimezone().isoformat()
 
     with connect() as connection:
-        connection.execute(
+        cursor = connection.execute(
             """
             INSERT OR IGNORE INTO completed_games (
               id, puzzle_date, mode, outcome, guesses_used,
@@ -56,8 +56,13 @@ def save_completed_game(
                 now,
             ),
         )
+        created = cursor.rowcount == 1
 
-    return get_stats(mode=mode)
+    return {
+        "board": normalized_board,
+        "created": created,
+        "stats": get_stats(mode=mode),
+    }
 
 
 def get_stats(mode: str = "daily") -> dict[str, Any]:

@@ -14,6 +14,7 @@ Current endpoints:
 
 `POST /api/results` stores a completed daily result and returns updated stats.
 It also returns the completed answer and definition summary for the completion popup.
+When ntfy is enabled, this endpoint may publish a completion message only for a server-allowlisted family display name and only on first save for that game id.
 
 `GET /api/stats` returns played count, win percentage, streaks, and guess distribution for tracked daily games.
 

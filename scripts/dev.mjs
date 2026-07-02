@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process'
 
 const processes = [
   spawn('python3', ['backend/run.py'], {
+    env: {
+      ...process.env,
+      FLASK_ENV: process.env.FLASK_ENV ?? 'development',
+    },
     stdio: 'inherit',
   }),
   spawn('npm', ['--prefix', 'frontend', 'run', 'dev'], {

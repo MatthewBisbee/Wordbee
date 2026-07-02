@@ -16,8 +16,10 @@ from .db import connect
 ANSWER_LENGTH = 5
 CACHE_TTL_SECONDS = 60 * 60 * 18
 SOURCE_TIMEOUT_SECONDS = 8
+DEV_FALLBACK_ANSWER = "MAVEN"
 PUBLISHER_BASE_URL = "https://www.nytimes.com/svc/" + "wor" + "dle" + "/v2"
 USER_AGENT = "Wordbee/0.1 (+https://github.com/MatthewBisbee/Wordbee)"
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
 def get_puzzle_date(raw_date: object = None) -> date:
@@ -44,6 +46,23 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
     answer, confidence, status = choose_answer(source_results)
 
     if answer is None:
+        if is_dev_fallback_enabled():
+            source_results.append(
+                {
+                    "id": "dev-fallback",
+                    "ok": True,
+                    "answer": DEV_FALLBACK_ANSWER,
+                    "note": "Local development fallback",
+                }
+            )
+            return save_answer(
+                puzzle_date=puzzle_date,
+                answer=DEV_FALLBACK_ANSWER,
+                confidence=0.0,
+                status="dev-fallback",
+                source_results=source_results,
+            )
+
         raise RuntimeError("Unable to load today's Wordbee answer")
 
     return save_answer(
@@ -288,6 +307,15 @@ def normalize_answer(raw_answer: object) -> str | None:
         return None
 
     return answer
+
+
+def is_dev_fallback_enabled() -> bool:
+    configured_value = os.environ.get("WORDBEE_ENABLE_DEV_FALLBACK")
+
+    if configured_value is not None:
+        return configured_value.strip().casefold() in TRUTHY_VALUES
+
+    return os.environ.get("FLASK_ENV", "").strip().casefold() == "development"
 
 
 def row_to_answer(row: Any) -> dict[str, Any]:

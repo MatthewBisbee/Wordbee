@@ -91,6 +91,10 @@ The backend currently provides daily answer fetching, SQLite caching, and guess 
 
 See the planning docs in `docs/` for more detail.
 
+## Data Sources
+
+Word metadata is enriched with the Free Dictionary API and the Datamuse API.
+
 ## Deployment Roadmap
 
 The intended production path is:

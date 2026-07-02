@@ -16,7 +16,6 @@ const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 1
 const COMPLETION_TOAST_MS = 2600
 const RESULTS_REVEAL_DELAY_MS = 950
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
-const DEV_FALLBACK_ANSWER = 'MAVEN'
 const EMPTY_STATS: StatsSummary = {
   played: 0,
   winPercentage: 0,
@@ -41,7 +40,6 @@ type PuzzleMetadata = {
   answerLength: number
   confidence: number
   status: string
-  isDevFallback?: boolean
 }
 type GuessResponse = {
   scores: EvaluatedState[]
@@ -176,32 +174,6 @@ async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
   return responseBody as ResponseBody
 }
 
-function scoreDevGuess(answer: string, guess: string) {
-  const answerLetters = answer.split('')
-  const guessLetters = guess.split('')
-  const result = Array.from({ length: WORD_LENGTH }, () => 'absent' as EvaluatedState)
-
-  guessLetters.forEach((letter, index) => {
-    if (letter === answerLetters[index]) {
-      result[index] = 'correct'
-      answerLetters[index] = ''
-      guessLetters[index] = ''
-    }
-  })
-
-  guessLetters.forEach((letter, index) => {
-    if (!letter) return
-
-    const answerIndex = answerLetters.indexOf(letter)
-    if (answerIndex !== -1) {
-      result[index] = 'present'
-      answerLetters[answerIndex] = ''
-    }
-  })
-
-  return result
-}
-
 function createGameId(date: string) {
   if (window.crypto?.randomUUID) {
     return `${date}-${window.crypto.randomUUID()}`
@@ -256,32 +228,6 @@ async function copyTextToClipboard(text: string) {
 
 function getDistributionMax(stats: StatsSummary) {
   return Math.max(1, ...Object.values(stats.guessDistribution))
-}
-
-function createLocalStats(
-  stats: StatsSummary,
-  outcome: GameStatus,
-  guessesUsed: number,
-) {
-  const won = outcome === 'won'
-  const played = stats.played + 1
-  const previousWins = Math.round((stats.played * stats.winPercentage) / 100)
-  const wins = previousWins + (won ? 1 : 0)
-  const guessDistribution = { ...stats.guessDistribution }
-
-  if (won) {
-    guessDistribution[guessesUsed] = (guessDistribution[guessesUsed] ?? 0) + 1
-  }
-
-  const currentStreak = won ? stats.currentStreak + 1 : 0
-
-  return {
-    played,
-    winPercentage: Math.round((wins / played) * 100),
-    currentStreak,
-    maxStreak: Math.max(stats.maxStreak, currentStreak),
-    guessDistribution,
-  }
 }
 
 function getHardModeViolation(board: Tile[][], activeRow: number, guess: string) {
@@ -458,10 +404,7 @@ function App() {
 
       setGameResult(baseResult)
 
-      if (!puzzle || puzzle.isDevFallback) {
-        const nextStats = createLocalStats(stats, outcome, guessesUsed)
-        setStats(nextStats)
-        setGameResult({ ...baseResult, saved: false, stats: nextStats })
+      if (!puzzle) {
         return
       }
 
@@ -542,49 +485,40 @@ function App() {
 
     let guessResult: GuessResponse
 
-    if (puzzle.isDevFallback) {
-      const scores = scoreDevGuess(DEV_FALLBACK_ANSWER, guess)
-      guessResult = {
-        answer: isLastRow ? DEV_FALLBACK_ANSWER : undefined,
-        didWin: scores.every((score) => score === 'correct'),
-        scores,
-      }
-    } else {
-      try {
-        const responseBody = await requestJson<Partial<GuessResponse> & { error?: string }>(
-          '/api/guess',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              date: puzzle.date,
-              guess,
-              reveal: isLastRow,
-            }),
+    try {
+      const responseBody = await requestJson<Partial<GuessResponse> & { error?: string }>(
+        '/api/guess',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        )
+          body: JSON.stringify({
+            date: puzzle.date,
+            guess,
+            reveal: isLastRow,
+          }),
+        },
+      )
 
-        if (
-          !Array.isArray(responseBody.scores) ||
-          responseBody.scores.length !== WORD_LENGTH ||
-          typeof responseBody.didWin !== 'boolean'
-        ) {
-          throw new Error('Unexpected guess response')
-        }
-
-        guessResult = {
-          scores: responseBody.scores,
-          didWin: responseBody.didWin,
-          answer: responseBody.answer,
-        }
-      } catch (error) {
-        setIsRevealing(false)
-        shakeRow(row)
-        showToast(error instanceof Error ? error.message : 'Could not check guess')
-        return
+      if (
+        !Array.isArray(responseBody.scores) ||
+        responseBody.scores.length !== WORD_LENGTH ||
+        typeof responseBody.didWin !== 'boolean'
+      ) {
+        throw new Error('Unexpected guess response')
       }
+
+      guessResult = {
+        scores: responseBody.scores,
+        didWin: responseBody.didWin,
+        answer: responseBody.answer,
+      }
+    } catch (error) {
+      setIsRevealing(false)
+      shakeRow(row)
+      showToast(error instanceof Error ? error.message : 'Could not check guess')
+      return
     }
 
     const { didWin, scores } = guessResult
@@ -694,7 +628,11 @@ function App() {
 
   const handleKey = useCallback(
     (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
-      if (status !== 'playing' || isRevealing || !puzzle) return
+      if (status !== 'playing' || isRevealing) return
+      if (!puzzle) {
+        showToast(puzzleError || 'Loading daily answer')
+        return
+      }
       if (settings.onscreenKeyboardOnly && source === 'physical') return
 
       if (rawKey === 'Backspace') {
@@ -718,6 +656,8 @@ function App() {
       revealGuess,
       settings.onscreenKeyboardOnly,
       puzzle,
+      puzzleError,
+      showToast,
       status,
     ],
   )
@@ -767,21 +707,7 @@ function App() {
         if (!isMounted) return
 
         const message = error instanceof Error ? error.message : 'Could not load daily answer'
-        console.warn('Using local dev answer fallback', error)
-
-        if (import.meta.env.DEV) {
-          const fallbackDate = new Date().toISOString().slice(0, 10)
-          setPuzzle({
-            answerLength: WORD_LENGTH,
-            confidence: 0,
-            date: fallbackDate,
-            isDevFallback: true,
-            status: 'dev-fallback',
-          })
-          gameIdRef.current = createGameId(fallbackDate)
-          setPuzzleError('')
-          return
-        }
+        console.warn('Could not load daily answer', error)
 
         setPuzzleError(message)
       }
@@ -808,7 +734,7 @@ function App() {
       }
     }
 
-    if (!puzzle?.isDevFallback) {
+    if (puzzle) {
       loadStats()
     }
 
@@ -1150,7 +1076,7 @@ function DefinitionPanel({
       {definition?.partOfSpeech && (
         <span className="definition-panel__part">{definition.partOfSpeech}</span>
       )}
-      <p>{definition?.definition || 'Definition unavailable for now.'}</p>
+      <p>{definition?.definition || 'Short definition is still loading.'}</p>
       {definition?.example && <blockquote>{definition.example}</blockquote>}
       {synonyms.length > 0 && (
         <div className="definition-panel__synonyms">

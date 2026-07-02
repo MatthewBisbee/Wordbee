@@ -1,27 +1,30 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import validWordsRaw from './data/valid-wordbee-words.txt?raw'
 import './App.css'
 
-const ANSWER = 'PLINK'
-const WORD_LENGTH = ANSWER.length
+const WORD_LENGTH = 5
 const MAX_GUESSES = 6
 const FLIP_HALF_MS = 250
 const REVEAL_STEP_MS = 250
 const DANCE_STEP_MS = 100
 const REVEAL_DONE_MS = (WORD_LENGTH - 1) * REVEAL_STEP_MS + FLIP_HALF_MS * 2 + 100
-const validGuesses = new Set(
-  validWordsRaw
-    .split(/\r?\n/)
-    .map((word) => word.trim().toUpperCase())
-    .filter(Boolean),
-)
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 
 type TileState = 'empty' | 'tbd' | 'correct' | 'present' | 'absent'
 type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
 type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 type GameStatus = 'playing' | 'won' | 'lost'
+type PuzzleMetadata = {
+  date: string
+  answerLength: number
+  confidence: number
+  status: string
+}
+type GuessResponse = {
+  scores: EvaluatedState[]
+  didWin: boolean
+  answer?: string
+}
 type Settings = {
   hardMode: boolean
   darkThemeOverride: boolean | null
@@ -87,32 +90,6 @@ function createBoard() {
   )
 }
 
-function scoreGuess(guess: string) {
-  const answerLetters = ANSWER.split('')
-  const guessLetters = guess.split('')
-  const result = Array.from({ length: WORD_LENGTH }, () => 'absent' as EvaluatedState)
-
-  guessLetters.forEach((letter, index) => {
-    if (letter === answerLetters[index]) {
-      result[index] = 'correct'
-      answerLetters[index] = ''
-      guessLetters[index] = ''
-    }
-  })
-
-  guessLetters.forEach((letter, index) => {
-    if (!letter) return
-
-    const answerIndex = answerLetters.indexOf(letter)
-    if (answerIndex !== -1) {
-      result[index] = 'present'
-      answerLetters[answerIndex] = ''
-    }
-  })
-
-  return result
-}
-
 function getHardModeViolation(board: Tile[][], activeRow: number, guess: string) {
   const requiredPositions = new Map<number, string>()
   const requiredCounts = new Map<string, number>()
@@ -166,6 +143,8 @@ function App() {
   const [status, setStatus] = useState<GameStatus>('playing')
   const [isRevealing, setIsRevealing] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [puzzle, setPuzzle] = useState<PuzzleMetadata | null>(null)
+  const [puzzleError, setPuzzleError] = useState('')
   const toastTimerRef = useRef<number | null>(null)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
 
@@ -262,7 +241,12 @@ function App() {
     setCurrentColumn(nextColumn)
   }, [currentColumn, currentRow])
 
-  const revealGuess = useCallback(() => {
+  const revealGuess = useCallback(async () => {
+    if (!puzzle) {
+      showToast(puzzleError || 'Loading daily answer')
+      return
+    }
+
     if (currentColumn < WORD_LENGTH) {
       shakeRow(currentRow)
       showToast('Not enough letters')
@@ -271,12 +255,6 @@ function App() {
 
     const row = currentRow
     const guess = board[row].map((tile) => tile.letter).join('')
-
-    if (!validGuesses.has(guess)) {
-      shakeRow(row)
-      showToast('Not in word list')
-      return
-    }
 
     if (settings.hardMode) {
       const violation = getHardModeViolation(board, row, guess)
@@ -288,11 +266,53 @@ function App() {
       }
     }
 
-    const scores = scoreGuess(guess)
-    const didWin = scores.every((score) => score === 'correct')
     const isLastRow = row === MAX_GUESSES - 1
 
     setIsRevealing(true)
+
+    let guessResult: GuessResponse
+
+    try {
+      const response = await fetch('/api/guess', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: puzzle.date,
+          guess,
+          reveal: isLastRow,
+        }),
+      })
+      const responseBody = (await response.json()) as Partial<GuessResponse> & {
+        error?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(responseBody.error || 'Could not check guess')
+      }
+
+      if (
+        !Array.isArray(responseBody.scores) ||
+        responseBody.scores.length !== WORD_LENGTH ||
+        typeof responseBody.didWin !== 'boolean'
+      ) {
+        throw new Error('Unexpected guess response')
+      }
+
+      guessResult = {
+        scores: responseBody.scores,
+        didWin: responseBody.didWin,
+        answer: responseBody.answer,
+      }
+    } catch (error) {
+      setIsRevealing(false)
+      shakeRow(row)
+      showToast(error instanceof Error ? error.message : 'Could not check guess')
+      return
+    }
+
+    const { didWin, scores } = guessResult
 
     scores.forEach((score, index) => {
       window.setTimeout(() => {
@@ -367,18 +387,27 @@ function App() {
 
       if (isLastRow) {
         setStatus('lost')
-        showToast(ANSWER, true)
+        showToast(guessResult.answer || 'Answer unavailable', true)
         return
       }
 
       setCurrentRow((row) => row + 1)
       setCurrentColumn(0)
     }, REVEAL_DONE_MS)
-  }, [board, currentColumn, currentRow, settings.hardMode, shakeRow, showToast])
+  }, [
+    board,
+    currentColumn,
+    currentRow,
+    puzzle,
+    puzzleError,
+    settings.hardMode,
+    shakeRow,
+    showToast,
+  ])
 
   const handleKey = useCallback(
     (rawKey: string, source: 'physical' | 'onscreen' = 'physical') => {
-      if (status !== 'playing' || isRevealing) return
+      if (status !== 'playing' || isRevealing || !puzzle) return
       if (settings.onscreenKeyboardOnly && source === 'physical') return
 
       if (rawKey === 'Backspace') {
@@ -401,9 +430,58 @@ function App() {
       removeLetter,
       revealGuess,
       settings.onscreenKeyboardOnly,
+      puzzle,
       status,
     ],
   )
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadPuzzle() {
+      try {
+        const response = await fetch('/api/today')
+        const responseBody = (await response.json()) as Partial<PuzzleMetadata> & {
+          error?: string
+        }
+
+        if (!response.ok) {
+          throw new Error(responseBody.error || 'Could not load daily answer')
+        }
+
+        if (
+          typeof responseBody.date !== 'string' ||
+          responseBody.answerLength !== WORD_LENGTH ||
+          typeof responseBody.confidence !== 'number' ||
+          typeof responseBody.status !== 'string'
+        ) {
+          throw new Error('Unexpected daily answer response')
+        }
+
+        if (!isMounted) return
+
+        setPuzzle({
+          date: responseBody.date,
+          answerLength: responseBody.answerLength,
+          confidence: responseBody.confidence,
+          status: responseBody.status,
+        })
+        setPuzzleError('')
+      } catch (error) {
+        if (!isMounted) return
+
+        const message = error instanceof Error ? error.message : 'Could not load daily answer'
+        setPuzzleError(message)
+        showToast(message, true)
+      }
+    }
+
+    loadPuzzle()
+
+    return () => {
+      isMounted = false
+    }
+  }, [showToast])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

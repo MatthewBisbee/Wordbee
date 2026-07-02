@@ -6,7 +6,7 @@ Wordbee is a self-hosted daily word game for a private family and friends group.
 
 - Frontend: playable Vite + React + TypeScript daily word game.
 - Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
-- Backend: Flask + SQLite files are scaffolded, but API and persistence implementation are still planned.
+- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
 ## Tech Stack
@@ -37,7 +37,19 @@ Install frontend dependencies:
 npm --prefix frontend install
 ```
 
-Run the frontend development server:
+Install backend dependencies:
+
+```bash
+python3 -m pip install -r backend/requirements.txt
+```
+
+Run the backend API:
+
+```bash
+npm run api
+```
+
+Run the frontend development server in a second terminal:
 
 ```bash
 npm run dev
@@ -67,14 +79,12 @@ Do not commit `.env` or local SQLite database files.
 
 ## Backend Roadmap
 
-The planned backend will eventually provide:
+The backend currently provides daily answer fetching, SQLite caching, and guess scoring. Planned additions include:
 
-- Daily puzzle selection.
-- Guess validation and scoring.
 - Guest and private Wordbee modes.
 - Session handling with HttpOnly cookies.
 - Daily and all-time leaderboards.
-- SQLite persistence for puzzles, games, guesses, users, and sessions.
+- SQLite persistence for completed games, guesses, users, and sessions.
 
 See the planning docs in `docs/` for more detail.
 

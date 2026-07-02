@@ -1401,9 +1401,18 @@ function App() {
               See results
             </button>
           )}
-          {accessState?.kind === 'friends-family' && (
+          <button
+            className="wordbee-icon-button wordbee-icon-button--stats"
+            type="button"
+            aria-label="Statistics"
+          >
+            <InlineIcon markup={statsIconMarkup} />
+          </button>
+          {accessState?.kind === 'friends-family' ? (
             <button
-              aria-label={`Profile for ${accessState.displayName}`}
+              aria-label={`Settings for ${accessState.displayName}`}
+              aria-haspopup="dialog"
+              aria-expanded={isSettingsOpen}
               className="wordbee-profile-button"
               onClick={() => setIsSettingsOpen(true)}
               type="button"
@@ -1414,24 +1423,18 @@ function App() {
                 size={72}
               />
             </button>
+          ) : (
+            <button
+              className="wordbee-icon-button wordbee-icon-button--settings"
+              type="button"
+              aria-label="Settings"
+              aria-haspopup="dialog"
+              aria-expanded={isSettingsOpen}
+              onClick={() => setIsSettingsOpen(true)}
+            >
+              <InlineIcon markup={settingsIconMarkup} />
+            </button>
           )}
-          <button
-            className="wordbee-icon-button wordbee-icon-button--stats"
-            type="button"
-            aria-label="Statistics"
-          >
-            <InlineIcon markup={statsIconMarkup} />
-          </button>
-          <button
-            className="wordbee-icon-button wordbee-icon-button--settings"
-            type="button"
-            aria-label="Settings"
-            aria-haspopup="dialog"
-            aria-expanded={isSettingsOpen}
-            onClick={() => setIsSettingsOpen(true)}
-          >
-            <InlineIcon markup={settingsIconMarkup} />
-          </button>
         </div>
       </header>
 

@@ -17,6 +17,7 @@ const RESULTS_REVEAL_DELAY_MS = 950
 const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
+const AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
 const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
 const AVATAR_CONFIG_VERSION = 1
@@ -471,6 +472,58 @@ function createAvatarUrl(avatar: AvatarConfig, size = 256) {
   return `${AVATAR_API_URL}?${params.toString()}`
 }
 
+function decodeTokenPayload(rawToken: unknown) {
+  if (typeof rawToken !== 'string' || !rawToken.includes('.')) return null
+
+  try {
+    const [encodedPayload] = rawToken.split('.', 1)
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+    return JSON.parse(window.atob(`${base64}${padding}`)) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function getAvatarCacheKey(userId: string, displayName: string) {
+  return userId || displayName.trim().toLowerCase()
+}
+
+function loadAvatarCache() {
+  try {
+    const rawAvatars = window.localStorage.getItem(AVATAR_STORAGE_KEY)
+    if (!rawAvatars) return {}
+
+    const avatars = JSON.parse(rawAvatars)
+    return avatars && typeof avatars === 'object'
+      ? (avatars as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function loadCachedAvatar(userId: string, displayName: string) {
+  const cacheKey = getAvatarCacheKey(userId, displayName)
+  if (!cacheKey) return null
+
+  const cachedAvatar = loadAvatarCache()[cacheKey]
+  return cachedAvatar ? sanitizeAvatarConfig(cachedAvatar, displayName) : null
+}
+
+function saveCachedAvatar(userId: string, displayName: string, avatar: AvatarConfig) {
+  const cacheKey = getAvatarCacheKey(userId, displayName)
+  if (!cacheKey) return
+
+  try {
+    const avatarCache = loadAvatarCache()
+    avatarCache[cacheKey] = avatar
+    window.localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(avatarCache))
+  } catch {
+    // Best effort only. The signed-in access record still carries the avatar.
+  }
+}
+
 function loadSettings(): Settings {
   try {
     const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
@@ -500,22 +553,30 @@ function loadAccessState(): AccessState | null {
       return { kind: 'guest' }
     }
 
-    if (
-      storedAccess.kind === 'friends-family' &&
-      typeof storedAccess.userId === 'string' &&
-      typeof storedAccess.displayName === 'string' &&
-      typeof storedAccess.firstName === 'string' &&
-      typeof storedAccess.lastInitial === 'string' &&
-      typeof storedAccess.token === 'string'
-    ) {
-      const displayName = storedAccess.displayName.slice(0, 64)
+	    if (
+	      storedAccess.kind === 'friends-family' &&
+	      typeof storedAccess.displayName === 'string' &&
+	      typeof storedAccess.firstName === 'string' &&
+	      typeof storedAccess.lastInitial === 'string' &&
+	      typeof storedAccess.token === 'string'
+	    ) {
+	      const displayName = storedAccess.displayName.slice(0, 64)
+	      const tokenPayload = decodeTokenPayload(storedAccess.token)
+	      const userId =
+	        typeof storedAccess.userId === 'string'
+	          ? storedAccess.userId.slice(0, 80)
+	          : typeof tokenPayload?.userId === 'string'
+	            ? tokenPayload.userId.slice(0, 80)
+	            : ''
+	      const avatar =
+	        storedAccess.avatar || loadCachedAvatar(userId, displayName) || undefined
 
-      return {
-        avatar: sanitizeAvatarConfig(storedAccess.avatar, displayName),
-        kind: 'friends-family',
-        userId: storedAccess.userId.slice(0, 80),
-        displayName,
-        firstName: storedAccess.firstName.slice(0, 40),
+	      return {
+	        avatar: sanitizeAvatarConfig(avatar, displayName),
+	        kind: 'friends-family',
+	        userId,
+	        displayName,
+	        firstName: storedAccess.firstName.slice(0, 40),
         lastInitial: storedAccess.lastInitial.slice(0, 1),
         token: storedAccess.token,
       }
@@ -567,11 +628,25 @@ async function requestJson<ResponseBody>(url: string, init?: RequestInit) {
     }
   }
 
-  if (!response.ok) {
-    throw new ApiError(responseBody.error || 'API server unavailable', response.status)
-  }
+	  if (!response.ok) {
+	    throw new ApiError(
+	      getApiErrorMessage(responseBody.error, response.status),
+	      response.status,
+	    )
+	  }
 
   return responseBody as ResponseBody
+}
+
+function getApiErrorMessage(errorMessage: string | undefined, status: number) {
+  if (
+    status === 404 &&
+    errorMessage?.includes('The requested URL was not found on the server')
+  ) {
+    return 'API route unavailable. Stop npm run dev and start it again.'
+  }
+
+  return errorMessage || 'API server unavailable'
 }
 
 function getClientSessionId() {
@@ -1593,6 +1668,10 @@ function App() {
     }
 
     window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessState))
+
+    if (accessState.kind === 'friends-family') {
+      saveCachedAvatar(accessState.userId, accessState.displayName, accessState.avatar)
+    }
   }, [accessState])
 
   useEffect(() => {
@@ -2108,14 +2187,24 @@ function FriendsFamilyAccessForm({
         throw new Error('Could not sign in')
       }
 
-      const nextAccessState = {
-        avatar: createDefaultAvatarConfig(responseBody.identity.displayName),
-        ...responseBody.identity,
-        token: responseBody.token,
-      }
+	      const cachedAvatar = loadCachedAvatar(
+	        responseBody.identity.userId,
+	        responseBody.identity.displayName,
+	      )
+	      const nextAccessState = {
+	        avatar:
+	          cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
+	        ...responseBody.identity,
+	        token: responseBody.token,
+	      }
 
-      setPendingAccess(nextAccessState)
-      setStep('avatar')
+	      if (cachedAvatar) {
+	        onLogin(nextAccessState)
+	        return
+	      }
+
+	      setPendingAccess(nextAccessState)
+	      setStep('avatar')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
     } finally {

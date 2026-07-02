@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import validWordsRaw from './data/valid-wordle-words.txt?raw'
+import validWordsRaw from './data/valid-wordbee-words.txt?raw'
 import './App.css'
 
 const ANSWER = 'PLINK'
@@ -453,35 +453,35 @@ function App() {
   return (
     <div
       className={[
-        'wordle-app',
-        isDarkTheme ? 'wordle-app--dark' : 'wordle-app--light',
-        settings.highContrast ? 'wordle-app--high-contrast' : '',
+        'wordbee-app',
+        isDarkTheme ? 'wordbee-app--dark' : 'wordbee-app--light',
+        settings.highContrast ? 'wordbee-app--high-contrast' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
-      <div className="wordle-toast-layer" aria-live="polite" aria-atomic="true">
-        {toast && <div className="wordle-toast">{toast}</div>}
+      <div className="wordbee-toast-layer" aria-live="polite" aria-atomic="true">
+        {toast && <div className="wordbee-toast">{toast}</div>}
       </div>
 
-      <header className="wordle-header">
-        <div className="wordle-header__side wordle-header__side--left">
-          <button className="wordle-icon-button" type="button" aria-label="Menu">
+      <header className="wordbee-header">
+        <div className="wordbee-header__side wordbee-header__side--left">
+          <button className="wordbee-icon-button" type="button" aria-label="Menu">
             <MenuIcon />
           </button>
         </div>
 
-        <h1 className="wordle-title">Wordbee</h1>
+        <h1 className="wordbee-title">Wordbee</h1>
 
-        <div className="wordle-header__side wordle-header__side--right">
-          <button className="wordle-icon-button" type="button" aria-label="Statistics">
+        <div className="wordbee-header__side wordbee-header__side--right">
+          <button className="wordbee-icon-button" type="button" aria-label="Statistics">
             <StatsIcon />
           </button>
-          <button className="wordle-icon-button" type="button" aria-label="Help">
+          <button className="wordbee-icon-button" type="button" aria-label="Help">
             <HelpIcon />
           </button>
           <button
-            className="wordle-icon-button"
+            className="wordbee-icon-button"
             type="button"
             aria-label="Settings"
             aria-haspopup="dialog"
@@ -493,15 +493,15 @@ function App() {
         </div>
       </header>
 
-      <main className="wordle-game" aria-label="Wordbee game">
-        <section className="wordle-board-container" aria-label="Game board">
-          <div className="wordle-board">
+      <main className="wordbee-game" aria-label="Wordbee game">
+        <section className="wordbee-board-container" aria-label="Game board">
+          <div className="wordbee-board">
             {board.map((row, rowIndex) => (
               <div
                 className={[
-                  'wordle-row',
-                  invalidRow === rowIndex ? 'wordle-row--invalid' : '',
-                  winningRow === rowIndex ? 'wordle-row--win' : '',
+                  'wordbee-row',
+                  invalidRow === rowIndex ? 'wordbee-row--invalid' : '',
+                  winningRow === rowIndex ? 'wordbee-row--win' : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -511,7 +511,7 @@ function App() {
               >
                 {row.map((tile, tileIndex) => (
                   <div
-                    className="wordle-tile"
+                    className="wordbee-tile"
                     data-animation={tile.animation}
                     data-state={tile.state}
                     key={`tile-${rowIndex}-${tileIndex}`}
@@ -574,17 +574,17 @@ function Keyboard({
   states: Record<string, EvaluatedState>
 }) {
   return (
-    <div className="wordle-keyboard" aria-label="Keyboard">
+    <div className="wordbee-keyboard" aria-label="Keyboard">
       {keys.map((row, rowIndex) => (
-        <div className="wordle-keyboard__row" key={`keyboard-row-${rowIndex}`}>
-          {rowIndex === 1 && <div className="wordle-keyboard__spacer" />}
+        <div className="wordbee-keyboard__row" key={`keyboard-row-${rowIndex}`}>
+          {rowIndex === 1 && <div className="wordbee-keyboard__spacer" />}
           {row.map((key) => {
             const isAction = key.length > 1
             const keyState = states[key.toLowerCase()]
 
             return (
               <button
-                className={isAction ? 'wordle-key wordle-key--wide' : 'wordle-key'}
+                className={isAction ? 'wordbee-key wordbee-key--wide' : 'wordbee-key'}
                 data-state={keyState ?? undefined}
                 key={key}
                 type="button"
@@ -595,7 +595,7 @@ function Keyboard({
               </button>
             )
           })}
-          {rowIndex === 1 && <div className="wordle-keyboard__spacer" />}
+          {rowIndex === 1 && <div className="wordbee-keyboard__spacer" />}
         </div>
       ))}
     </div>
@@ -653,6 +653,21 @@ function SettingsDialog({
             label="Onscreen Keyboard Input Only"
             onChange={(checked) => onSettingChange('onscreenKeyboardOnly', checked)}
           />
+          <div className="settings-links" aria-label="Project links">
+            <a
+              href="https://github.com/MatthewBisbee/Wordbee"
+              rel="noreferrer"
+              target="_blank"
+            >
+              GitHub
+            </a>
+            <span className="settings-links__separator" aria-hidden="true">
+              |
+            </span>
+            <a href="https://matthewbisbee.com" rel="noreferrer" target="_blank">
+              matthewbisbee.com
+            </a>
+          </div>
         </div>
       </section>
     </div>
@@ -696,7 +711,7 @@ function SettingsRow({
 
 function MenuIcon() {
   return (
-    <svg aria-hidden="true" className="wordle-icon" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
       <path d="M4 7h16M4 12h16M4 17h16" />
     </svg>
   )
@@ -704,7 +719,7 @@ function MenuIcon() {
 
 function StatsIcon() {
   return (
-    <svg aria-hidden="true" className="wordle-icon" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
       <path d="M5 20V10h4v10M10 20V4h4v16M15 20v-7h4v7" />
     </svg>
   )
@@ -712,7 +727,7 @@ function StatsIcon() {
 
 function HelpIcon() {
   return (
-    <svg aria-hidden="true" className="wordle-icon" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="9" />
       <path d="M9.6 9a2.6 2.6 0 0 1 5.05.9c0 2.1-2.65 2.3-2.65 4.5M12 18h.01" />
     </svg>
@@ -721,7 +736,7 @@ function HelpIcon() {
 
 function SettingsIcon() {
   return (
-    <svg aria-hidden="true" className="wordle-icon" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="wordbee-icon" viewBox="0 0 24 24">
       <path d="M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" />
       <path d="m4.9 9.2 1.5-2.6 2 .8a7 7 0 0 1 1.5-.9L10.2 4h3.6l.4 2.5c.5.2 1 .5 1.5.9l2-.8 1.5 2.6-2 1.6v2.4l2 1.6-1.5 2.6-2-.8c-.5.4-1 .7-1.5.9l-.4 2.5h-3.6l-.4-2.5a7 7 0 0 1-1.5-.9l-2 .8-1.5-2.6 2-1.6v-2.4l-1.9-1.6Z" />
     </svg>
@@ -738,7 +753,7 @@ function CloseIcon() {
 
 function BackspaceIcon() {
   return (
-    <svg aria-hidden="true" className="wordle-backspace-icon" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="wordbee-backspace-icon" viewBox="0 0 24 24">
       <path d="M22 3H7c-.7 0-1.2.35-1.6.88L0 12l5.4 8.11c.4.54.9.89 1.6.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm0 16H7.1L2.4 12l4.7-7H22v14Zm-11.6-2 3.6-3.6 3.6 3.6 1.4-1.4-3.6-3.6L19 8.4 17.6 7 14 10.6 10.4 7 9 8.4l3.6 3.6L9 15.6l1.4 1.4Z" />
     </svg>
   )

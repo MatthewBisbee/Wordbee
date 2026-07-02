@@ -1,1 +1,1 @@
-# Future backend-owned Wordle game logic will live here.
+# Future backend-owned Wordbee game logic will live here.

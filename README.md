@@ -1,10 +1,10 @@
 # Wordbee
 
-Wordbee is a self-hosted Wordle-style web app for a private family and friends group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
+Wordbee is a self-hosted daily word game for a private family and friends group. The current app includes a playable React prototype and the project scaffold for the planned Flask, SQLite, nginx, Cloudflare Tunnel, and Raspberry Pi deployment path.
 
 ## Current Status
 
-- Frontend: playable Vite + React + TypeScript Wordle-style game.
+- Frontend: playable Vite + React + TypeScript daily word game.
 - Gameplay: six guesses, five-letter answer, valid-word checks, hard mode, high-contrast mode, theme settings, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
 - Backend: Flask + SQLite files are scaffolded, but API and persistence implementation are still planned.
 - Deployment: nginx, cloudflared, systemd, and Docker placeholders are included for the future Raspberry Pi setup.
@@ -90,4 +90,4 @@ nginx is expected to serve the built frontend and reverse-proxy `/api` requests 
 
 ## License
 
-No license has been selected yet.
+Wordbee is released under the MIT License. See `LICENSE`.

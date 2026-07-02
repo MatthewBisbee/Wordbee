@@ -1,0 +1,1 @@
+-- Future SQLite schema will live here.

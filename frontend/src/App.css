@@ -434,13 +434,6 @@
   line-height: 32px;
 }
 
-.access-modal p {
-  margin: 12px 0 0;
-  color: var(--result-muted);
-  font-size: 16px;
-  line-height: 22px;
-}
-
 .access-guest-button,
 .access-primary-button {
   width: 100%;
@@ -518,6 +511,31 @@
   font-weight: 800;
 }
 
+.access-form--settings {
+  margin-top: 10px;
+}
+
+.access-form--settings .access-field {
+  margin-top: 10px;
+}
+
+.access-form--settings .access-field input {
+  min-height: 40px;
+  font-size: 16px;
+  line-height: 20px;
+}
+
+.access-form--settings .access-primary-button {
+  min-height: 40px;
+}
+
+.access-form--settings .access-confirmed,
+.access-form--settings .access-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 18px;
+}
+
 .settings-backdrop {
   position: fixed;
   inset: 0;
@@ -589,6 +607,11 @@
   border-bottom: 1px solid var(--settings-border);
   gap: 18px;
   padding: 6px 0;
+}
+
+.settings-access-section {
+  border-bottom: 1px solid var(--settings-border);
+  padding: 12px 0 14px;
 }
 
 .settings-row__text {

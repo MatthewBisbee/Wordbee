@@ -1028,6 +1028,7 @@ function App() {
         <SettingsDialog
           accessState={accessState}
           effectiveDarkTheme={isDarkTheme}
+          onAccessLogin={(nextAccessState) => setAccessState(nextAccessState)}
           onClose={() => setIsSettingsOpen(false)}
           onSettingChange={updateSetting}
           settings={settings}
@@ -1110,6 +1111,39 @@ function AccessDialog({
   onGuest: () => void
   onLogin: (accessState: FriendsFamilyAccess) => void
 }) {
+  return (
+    <div className="access-backdrop">
+      <section
+        aria-labelledby="access-title"
+        aria-modal="true"
+        className="access-modal"
+        role="dialog"
+      >
+        <h2 id="access-title">Who's playing?</h2>
+        <FriendsFamilyAccessForm
+          autoFocusCode
+          guestButtonLabel="I don't have a friends and family code"
+          onGuest={onGuest}
+          onLogin={onLogin}
+        />
+      </section>
+    </div>
+  )
+}
+
+function FriendsFamilyAccessForm({
+  autoFocusCode = false,
+  className = '',
+  guestButtonLabel,
+  onGuest,
+  onLogin,
+}: {
+  autoFocusCode?: boolean
+  className?: string
+  guestButtonLabel?: string
+  onGuest?: () => void
+  onLogin: (accessState: FriendsFamilyAccess) => void
+}) {
   const [code, setCode] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastInitial, setLastInitial] = useState('')
@@ -1181,91 +1215,80 @@ function AccessDialog({
   }
 
   return (
-    <div className="access-backdrop">
-      <section
-        aria-labelledby="access-title"
-        aria-modal="true"
-        className="access-modal"
-        role="dialog"
-      >
-        <h2 id="access-title">Who's playing?</h2>
-        <p>
-          You can play as a guest. If you were given a friends and family code, enter it
-          here.
-        </p>
-
-        {step === 'code' ? (
-          <>
+    <div className={['access-form', className].filter(Boolean).join(' ')}>
+      {step === 'code' ? (
+        <>
+          {guestButtonLabel && onGuest && (
             <button className="access-guest-button" type="button" onClick={onGuest}>
-              I wasn't given a friends and family code
+              {guestButtonLabel}
             </button>
-            <label className="access-field">
-              <span>Friends and family code</span>
-              <input
-                autoComplete="one-time-code"
-                autoFocus
-                inputMode="numeric"
-                onChange={(event) => setCode(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && code.trim()) {
-                    void validateCode()
-                  }
-                }}
-                type="password"
-                value={code}
-              />
-            </label>
-            <button
-              className="access-primary-button"
-              disabled={!code.trim() || isSubmitting}
-              onClick={() => void validateCode()}
-              type="button"
-            >
-              Continue
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="access-confirmed">Code accepted.</p>
-            <label className="access-field">
-              <span>First name</span>
-              <input
-                autoComplete="given-name"
-                autoFocus
-                maxLength={40}
-                onChange={(event) => setFirstName(event.target.value)}
-                type="text"
-                value={firstName}
-              />
-            </label>
-            <label className="access-field access-field--short">
-              <span>Last initial</span>
-              <input
-                autoComplete="off"
-                maxLength={1}
-                onChange={(event) => setLastInitial(event.target.value.toUpperCase())}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && firstName.trim() && lastInitial.trim()) {
-                    void login()
-                  }
-                }}
-                type="text"
-                value={lastInitial}
-              />
-            </label>
-            <button
-              className="access-primary-button"
-              disabled={!firstName.trim() || !lastInitial.trim() || isSubmitting}
-              onClick={() => void login()}
-              type="button"
-            >
-              Save
-            </button>
-          </>
-        )}
+          )}
+          <label className="access-field">
+            <span>Friends and family code</span>
+            <input
+              autoComplete="one-time-code"
+              autoFocus={autoFocusCode}
+              inputMode="numeric"
+              onChange={(event) => setCode(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && code.trim()) {
+                  void validateCode()
+                }
+              }}
+              type="password"
+              value={code}
+            />
+          </label>
+          <button
+            className="access-primary-button"
+            disabled={!code.trim() || isSubmitting}
+            onClick={() => void validateCode()}
+            type="button"
+          >
+            Continue
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="access-confirmed">Code accepted.</p>
+          <label className="access-field">
+            <span>First name</span>
+            <input
+              autoComplete="given-name"
+              autoFocus
+              maxLength={40}
+              onChange={(event) => setFirstName(event.target.value)}
+              type="text"
+              value={firstName}
+            />
+          </label>
+          <label className="access-field access-field--short">
+            <span>Last initial</span>
+            <input
+              autoComplete="off"
+              maxLength={1}
+              onChange={(event) => setLastInitial(event.target.value.toUpperCase())}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && firstName.trim() && lastInitial.trim()) {
+                  void login()
+                }
+              }}
+              type="text"
+              value={lastInitial}
+            />
+          </label>
+          <button
+            className="access-primary-button"
+            disabled={!firstName.trim() || !lastInitial.trim() || isSubmitting}
+            onClick={() => void login()}
+            type="button"
+          >
+            Save
+          </button>
+        </>
+      )}
 
-        {error && <p className="access-error">{error}</p>}
-      </section>
+      {error && <p className="access-error">{error}</p>}
     </div>
   )
 }
@@ -1422,12 +1445,14 @@ function StatValue({ label, value }: { label: string; value: number }) {
 function SettingsDialog({
   accessState,
   effectiveDarkTheme,
+  onAccessLogin,
   onClose,
   onSettingChange,
   settings,
 }: {
   accessState: AccessState | null
   effectiveDarkTheme: boolean
+  onAccessLogin: (accessState: FriendsFamilyAccess) => void
   onClose: () => void
   onSettingChange: <Key extends keyof Settings>(key: Key, value: Settings[Key]) => void
   settings: Settings
@@ -1475,6 +1500,9 @@ function SettingsDialog({
           {accessState?.kind === 'friends-family' && (
             <SettingsIdentityRow label="Friends and family" value={accessState.displayName} />
           )}
+          {accessState?.kind === 'guest' && (
+            <SettingsAccessSection onLogin={onAccessLogin} />
+          )}
           <div className="settings-links" aria-label="Project links">
             <a
               href="https://github.com/MatthewBisbee/Wordbee"
@@ -1492,6 +1520,19 @@ function SettingsDialog({
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+function SettingsAccessSection({
+  onLogin,
+}: {
+  onLogin: (accessState: FriendsFamilyAccess) => void
+}) {
+  return (
+    <div className="settings-access-section">
+      <span className="settings-row__label">Friends and family</span>
+      <FriendsFamilyAccessForm className="access-form--settings" onLogin={onLogin} />
     </div>
   )
 }

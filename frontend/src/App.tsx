@@ -68,6 +68,12 @@ const AVATAR_FEATURES = [
   { key: 'noseVariant', label: 'Nose', options: AVATAR_NOSE_OPTIONS },
   { key: 'mouthVariant', label: 'Mouth', options: AVATAR_MOUTH_OPTIONS },
 ] as const
+const AVATAR_GRAPHIC_COMPATIBLE_CLOTHES = new Set(
+  createVariantOptions(10).map((option) => option.value),
+)
+const AVATAR_GRAPHIC_UNAVAILABLE_OPTIONS = [
+  { label: 'Not on this shirt', value: 'none' },
+] as const
 const DICE_FRAME_INTERVAL_MS = 22
 const DICE_FIRST_ROLL_FRAME = 6
 const DICE_REST_FRAME = 90
@@ -278,6 +284,21 @@ function isAvatarOptionValue(
   return typeof value === 'string' && options.some((option) => option.value === value)
 }
 
+function avatarClothesSupportsGraphic(clothesVariant: string) {
+  return AVATAR_GRAPHIC_COMPATIBLE_CLOTHES.has(clothesVariant)
+}
+
+function normalizeAvatarGraphic(avatar: AvatarConfig) {
+  if (avatarClothesSupportsGraphic(avatar.clothesVariant)) {
+    return avatar
+  }
+
+  return {
+    ...avatar,
+    clothesGraphicVariant: 'none',
+  }
+}
+
 function createDefaultAvatarConfig(displayName = ''): AvatarConfig {
   const seedHash = hashNumber(displayName.trim().toLowerCase() || 'wordbee')
   const avatar = {
@@ -289,7 +310,7 @@ function createDefaultAvatarConfig(displayName = ''): AvatarConfig {
     avatar[feature.key] = getDefaultAvatarFeatureValue(feature.options, seedHash, index * 7)
   })
 
-  return avatar
+  return normalizeAvatarGraphic(avatar)
 }
 
 function createRandomAvatarConfig(previousAvatar: AvatarConfig): AvatarConfig {
@@ -299,7 +320,7 @@ function createRandomAvatarConfig(previousAvatar: AvatarConfig): AvatarConfig {
     nextAvatar[feature.key] = getRandomItem(feature.options).value
   })
 
-  return nextAvatar
+  return normalizeAvatarGraphic(nextAvatar)
 }
 
 function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfig {
@@ -327,7 +348,28 @@ function sanitizeAvatarConfig(rawAvatar: unknown, displayName = ''): AvatarConfi
     }
   })
 
-  return avatar
+  return normalizeAvatarGraphic(avatar)
+}
+
+function updateAvatarFeature(
+  avatar: AvatarConfig,
+  key: AvatarFeatureKey,
+  value: string,
+): AvatarConfig {
+  const nextAvatar = {
+    ...avatar,
+    [key]: value,
+  }
+
+  if (
+    key === 'clothesGraphicVariant' &&
+    value !== 'none' &&
+    !avatarClothesSupportsGraphic(nextAvatar.clothesVariant)
+  ) {
+    nextAvatar.clothesVariant = AVATAR_CLOTHES_OPTIONS[0].value
+  }
+
+  return normalizeAvatarGraphic(nextAvatar)
 }
 
 function setOptionalAvatarVariant(
@@ -1776,11 +1818,9 @@ function AvatarBuilder({
   }, [initialAvatar])
 
   const updateDraftAvatar = (key: AvatarFeatureKey, value: string) => {
-    setDraftAvatar((previousAvatar) => ({
-      ...previousAvatar,
-      [key]: value,
-    }))
+    setDraftAvatar((previousAvatar) => updateAvatarFeature(previousAvatar, key, value))
   }
+  const selectedClothesSupportsGraphic = avatarClothesSupportsGraphic(draftAvatar.clothesVariant)
 
   return (
     <div className="avatar-builder">
@@ -1799,15 +1839,24 @@ function AvatarBuilder({
       </div>
 
       <div className="avatar-builder__controls">
-        {AVATAR_FEATURES.map((feature) => (
-          <AvatarFeatureSelector
-            key={feature.key}
-            label={feature.label}
-            onChange={(value) => updateDraftAvatar(feature.key, value)}
-            options={feature.options}
-            value={draftAvatar[feature.key]}
-          />
-        ))}
+        {AVATAR_FEATURES.map((feature) => {
+          const isUnavailableGraphic =
+            feature.key === 'clothesGraphicVariant' && !selectedClothesSupportsGraphic
+          const options = isUnavailableGraphic
+            ? AVATAR_GRAPHIC_UNAVAILABLE_OPTIONS
+            : feature.options
+
+          return (
+            <AvatarFeatureSelector
+              disabled={isUnavailableGraphic}
+              key={feature.key}
+              label={feature.label}
+              onChange={(value) => updateDraftAvatar(feature.key, value)}
+              options={options}
+              value={isUnavailableGraphic ? 'none' : draftAvatar[feature.key]}
+            />
+          )
+        })}
       </div>
 
       <div className="avatar-builder__actions">
@@ -1833,7 +1882,9 @@ function AvatarFeatureSelector({
   onChange,
   options,
   value,
+  disabled = false,
 }: {
+  disabled?: boolean
   label: string
   onChange: (value: string) => void
   options: readonly AvatarOption[]
@@ -1857,10 +1908,11 @@ function AvatarFeatureSelector({
   return (
     <div className="avatar-feature">
       <span className="avatar-feature__label">{label}</span>
-      <div className="avatar-feature__selector">
+      <div className="avatar-feature__selector" data-disabled={disabled}>
         <button
           aria-label={`Previous ${label}`}
           className="avatar-feature__button"
+          disabled={disabled || options.length <= 1}
           onClick={() => selectOffset(-1)}
           type="button"
         >
@@ -1870,6 +1922,7 @@ function AvatarFeatureSelector({
         <button
           aria-label={`Next ${label}`}
           className="avatar-feature__button"
+          disabled={disabled || options.length <= 1}
           onClick={() => selectOffset(1)}
           type="button"
         >

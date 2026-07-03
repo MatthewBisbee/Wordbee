@@ -17,6 +17,7 @@ ANSWER_LENGTH = 5
 CACHE_TTL_SECONDS = 60 * 60 * 18
 SOURCE_TIMEOUT_SECONDS = 8
 DEV_FALLBACK_ANSWER = "MAVEN"
+FIRST_OFFICIAL_PUZZLE_DATE = date(2021, 6, 19)
 PUBLISHER_BASE_URL = "https://www.nytimes.com/svc/" + "wor" + "dle" + "/v2"
 USER_AGENT = "Wordbee/0.1 (+https://github.com/MatthewBisbee/Wordbee)"
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
@@ -37,6 +38,8 @@ def get_puzzle_date(raw_date: object = None) -> date:
 
 
 def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str, Any]:
+    validate_supported_puzzle_date(puzzle_date)
+
     if not force_refresh:
         cached_answer = get_cached_answer(puzzle_date)
         if cached_answer is not None:
@@ -46,7 +49,7 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
     answer, confidence, status = choose_answer(source_results)
 
     if answer is None:
-        if is_dev_fallback_enabled():
+        if is_dev_fallback_enabled() and puzzle_date == get_puzzle_date():
             source_results.append(
                 {
                     "id": "dev-fallback",
@@ -55,7 +58,7 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
                     "note": "Local development fallback",
                 }
             )
-            return save_answer(
+            return create_answer_record(
                 puzzle_date=puzzle_date,
                 answer=DEV_FALLBACK_ANSWER,
                 confidence=0.0,
@@ -63,7 +66,7 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
                 source_results=source_results,
             )
 
-        raise RuntimeError("Unable to load today's Wordbee answer")
+        raise RuntimeError("Unable to load the Wordbee answer for this date")
 
     return save_answer(
         puzzle_date=puzzle_date,
@@ -72,6 +75,11 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
         status=status,
         source_results=source_results,
     )
+
+
+def validate_supported_puzzle_date(puzzle_date: date) -> None:
+    if puzzle_date < FIRST_OFFICIAL_PUZZLE_DATE:
+        raise ValueError("Choose a date on or after 2021-06-19")
 
 
 def get_cached_answer(puzzle_date: date) -> dict[str, Any] | None:
@@ -89,12 +97,38 @@ def get_cached_answer(puzzle_date: date) -> dict[str, Any] | None:
     if row is None:
         return None
 
+    if row["status"] == "dev-fallback":
+        return None
+
     fetched_at = datetime.fromisoformat(row["fetched_at"])
     age_seconds = (datetime.now().astimezone() - fetched_at).total_seconds()
     if age_seconds > CACHE_TTL_SECONDS and row["status"] != "confirmed":
         return None
 
     return row_to_answer(row)
+
+
+def create_answer_record(
+    *,
+    puzzle_date: date,
+    answer: str,
+    confidence: float,
+    status: str,
+    source_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    now = datetime.now().astimezone().isoformat()
+
+    return {
+        "puzzle_date": puzzle_date.isoformat(),
+        "answer": answer,
+        "answer_length": ANSWER_LENGTH,
+        "confidence": confidence,
+        "status": status,
+        "source_count": len(source_results),
+        "sources": source_results,
+        "fetched_at": now,
+        "updated_at": now,
+    }
 
 
 def save_answer(

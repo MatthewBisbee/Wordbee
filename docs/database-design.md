@@ -9,6 +9,17 @@ Current tables:
 - `friends_family_users`: one row per unique friends-and-family code group plus first name and last initial.
 - `friends_family_sessions`: server-issued login sessions. Newer sessions replace older active sessions for the same user.
 - `friends_family_daily_results`: one row per friends-and-family user per puzzle date, including answer, outcome, guess count, starter word, guesses JSON, board states JSON, and completion timestamp.
-- `word_definitions`: one row per fetched definition, including pronunciation text, part of speech, definition, example, synonyms JSON, source URL, and timestamps.
+- `word_definitions`: one row per fetched definition, including pronunciation text, part of speech, definition, an intentionally blank example field, synonyms JSON, source URL, and timestamps.
 
 Random and past-word play are intentionally excluded from friends-and-family stats tables.
+
+Daily answer archive notes:
+
+- Official historical play starts on `2021-06-19`.
+- The `daily_answers` primary key keeps the archive to one row per puzzle date.
+- Development fallback answers are ignored by cache reads and are not written as historical records.
+
+Stats privacy notes:
+
+- Current-day stats are visible only after the requesting friends-and-family user has solved that day's puzzle.
+- Before that, current-day result rows are returned as locked placeholders without answer, guesses, board states, or solve analysis.

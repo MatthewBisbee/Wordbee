@@ -75,7 +75,6 @@ def definition_is_complete(definition_record: dict[str, Any]) -> bool:
         [
             normalize_string(definition_record.get("phonetic")),
             normalize_string(definition_record.get("definition")),
-            normalize_string(definition_record.get("example")),
             isinstance(definition_record.get("synonyms"), list)
             and len(definition_record["synonyms"]) > 0,
         ]
@@ -107,7 +106,7 @@ def save_definition(definition_record: dict[str, Any]) -> dict[str, Any]:
                 definition_record.get("phonetic", ""),
                 definition_record.get("partOfSpeech", ""),
                 definition_record["definition"],
-                definition_record.get("example", ""),
+                "",
                 json.dumps(definition_record.get("synonyms", []), separators=(",", ":")),
                 definition_record.get("sourceUrl", ""),
                 now,
@@ -155,18 +154,11 @@ def fetch_free_dictionary_definition(word: str) -> dict[str, Any] | None:
     if not isinstance(meanings, list):
         return None
 
-    selected_meaning = None
-    selected_definition = None
-
-    for meaning in meanings:
-        definitions = meaning.get("definitions") if isinstance(meaning, dict) else None
-        if isinstance(definitions, list) and definitions:
-            selected_meaning = meaning
-            selected_definition = definitions[0]
-            break
-
-    if not isinstance(selected_meaning, dict) or not isinstance(selected_definition, dict):
+    selected_record = select_free_dictionary_definition(meanings)
+    if selected_record is None:
         return None
+
+    selected_meaning, selected_definition = selected_record
 
     definition_text = normalize_string(selected_definition.get("definition"))
     if not definition_text:
@@ -179,7 +171,7 @@ def fetch_free_dictionary_definition(word: str) -> dict[str, Any] | None:
         "phonetic": normalize_phonetic(entry.get("phonetic")),
         "partOfSpeech": normalize_string(selected_meaning.get("partOfSpeech")),
         "definition": shorten_definition(definition_text),
-        "example": normalize_string(selected_definition.get("example")),
+        "example": "",
         "synonyms": collect_synonyms(selected_meaning, selected_definition),
         "sourceUrl": source_urls[0] if isinstance(source_urls, list) and source_urls else "",
     }
@@ -263,19 +255,13 @@ def complete_definition(definition_record: dict[str, Any]) -> dict[str, Any]:
         "phonetic": normalize_phonetic(definition_record.get("phonetic")),
         "partOfSpeech": normalize_string(definition_record.get("partOfSpeech")),
         "definition": shorten_definition(normalize_string(definition_record.get("definition"))),
-        "example": normalize_string(definition_record.get("example")),
+        "example": "",
         "synonyms": merge_synonym_lists(definition_record.get("synonyms", []), []),
         "sourceUrl": normalize_string(definition_record.get("sourceUrl")),
     }
 
     if not completed_record["definition"]:
         completed_record["definition"] = "No short definition is available yet."
-
-    if not completed_record["example"]:
-        completed_record["example"] = create_usage_sentence(
-            completed_record["word"],
-            completed_record["partOfSpeech"],
-        )
 
     return completed_record
 
@@ -291,7 +277,7 @@ def merge_definition_records(
         or secondary_record.get("partOfSpeech")
         or "",
         "definition": primary_record.get("definition") or secondary_record.get("definition") or "",
-        "example": primary_record.get("example") or secondary_record.get("example") or "",
+        "example": "",
         "synonyms": merge_synonym_lists(
             primary_record.get("synonyms", []),
             secondary_record.get("synonyms", []),
@@ -322,6 +308,25 @@ def collect_synonyms(meaning: dict[str, Any], definition: dict[str, Any]) -> lis
         synonyms = merge_synonym_lists(synonyms, source)
 
     return synonyms
+
+
+def select_free_dictionary_definition(
+    meanings: list[object],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    for meaning in meanings:
+        definitions = meaning.get("definitions") if isinstance(meaning, dict) else None
+        if not isinstance(definitions, list):
+            continue
+
+        for definition in definitions:
+            if not isinstance(definition, dict):
+                continue
+            if not normalize_string(definition.get("definition")):
+                continue
+
+            return meaning, definition
+
+    return None
 
 
 def merge_synonym_lists(primary_synonyms: object, secondary_synonyms: object) -> list[str]:
@@ -398,22 +403,6 @@ def shorten_definition(definition_text: str) -> str:
     return f"{first_sentence[:157].rstrip()}..."
 
 
-def create_usage_sentence(word: str, part_of_speech: str) -> str:
-    lower_word = word.lower()
-    normalized_part = part_of_speech.casefold()
-
-    if normalized_part == "verb":
-        return f"They chose to {lower_word} before the day was over."
-
-    if normalized_part == "adjective":
-        return f"The final clue felt {lower_word} once the answer clicked."
-
-    if normalized_part == "adverb":
-        return f"She answered {lower_word} after reading the clue."
-
-    return f"The {lower_word} offered expert guidance during the project."
-
-
 def normalize_phonetic(value: object) -> str:
     phonetic = normalize_string(value)
 
@@ -436,7 +425,7 @@ def row_to_definition(row: Any) -> dict[str, Any]:
         "phonetic": row["phonetic"] or "",
         "partOfSpeech": row["part_of_speech"] or "",
         "definition": row["definition"],
-        "example": row["example"] or "",
+        "example": "",
         "synonyms": json.loads(row["synonyms_json"]),
         "sourceUrl": row["source_url"] or "",
     }

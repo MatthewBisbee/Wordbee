@@ -19,6 +19,7 @@ const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 const AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
 const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
+const FIRST_OFFICIAL_PUZZLE_DATE = '2021-06-19'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
 const AVATAR_CONFIG_VERSION = 1
 const AVATAR_HAIR_OPTIONS = [
@@ -101,6 +102,10 @@ const STATS_BAR_CONFIG = [
   { selector: '.stats-bar--tall', highScale: 0.7, lowScale: 1.16, durationMs: 840 },
   { selector: '.stats-bar--mid', highScale: 1.25, lowScale: 0.9, durationMs: 980 },
 ]
+const SKILL_HELP_TEXT =
+  'Skill compares each guess with the best expected play from the current candidate set. Higher means your choices reduced the puzzle closer to optimal.'
+const LUCK_HELP_TEXT =
+  "Luck compares the clue you actually received with that guess's expected clue spread. Higher means the answer gave more help than average."
 const EMPTY_STATS: StatsSummary = {
   played: 0,
   wins: 0,
@@ -128,7 +133,7 @@ type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
 type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 type GameStatus = 'playing' | 'won' | 'lost'
 type PlayMode = 'daily' | 'random' | 'past'
-type FamilyStatsView = 'comparison' | 'profiles'
+type FamilyStatsView = 'overview' | 'players' | 'daily'
 type PuzzleMetadata = {
   date: string
   answerLength: number
@@ -147,7 +152,6 @@ type DefinitionSummary = {
   phonetic: string
   partOfSpeech: string
   definition: string
-  example: string
   synonyms: string[]
   sourceUrl: string
 }
@@ -164,11 +168,41 @@ type StatsSummary = {
   bestPlayStreak: number
   guessDistribution: Record<number, number>
   topStarters: StarterStat[]
+  averageSkill?: number
+  averageLuck?: number
+  favoriteStarter?: StarterStat | null
 }
 type StarterStat = {
   word: string
   count: number
   percentage: number
+}
+type StarterInsight = StarterStat & {
+  users: number
+  averageGuesses: number
+  winPercentage: number
+}
+type GuessAnalysisStep = {
+  turn: number
+  guess: string
+  states: EvaluatedState[]
+  before: number
+  after: number
+  eliminated: number
+  eliminatedPercentage: number
+  bestWord: string
+  bestRemaining: number
+  skill: number
+  luck: number
+  expectedRemaining: number
+}
+type SolveAnalysis = {
+  skill: number
+  luck: number
+  openerScore: number
+  pathLabel: string
+  remainingAfterLast: number
+  steps: GuessAnalysisStep[]
 }
 type FamilyDailyResult = {
   id: string
@@ -182,6 +216,8 @@ type FamilyDailyResult = {
   guesses: string[]
   board: EvaluatedState[][]
   completedAt: string
+  locked?: boolean
+  analysis?: SolveAnalysis
 }
 type FamilyStatsUser = {
   id: string
@@ -191,8 +227,41 @@ type FamilyStatsUser = {
   stats: StatsSummary
   history: FamilyDailyResult[]
 }
+type FamilyTimelineDay = {
+  date: string
+  answer: string
+  players: number
+  wins: number
+  winPercentage: number
+  averageGuesses: number
+  averageSkill: number
+  averageLuck: number
+  topStarter: string
+  bestPlayer: string
+  bestScore: string
+  locked?: boolean
+}
+type FamilyGroupStats = {
+  played: number
+  wins: number
+  winPercentage: number
+  averageGuesses: number
+  averageSkill: number
+  averageLuck: number
+  daysTracked: number
+  players: number
+  guessDistribution: Record<number, number>
+  topStarters: StarterInsight[]
+  timeline: FamilyTimelineDay[]
+  recentResults: FamilyDailyResult[]
+  bestDay?: FamilyTimelineDay | null
+  toughestDay?: FamilyTimelineDay | null
+}
 type FamilyStatsDashboard = {
+  canRevealCurrentDay?: boolean
+  currentDate?: string
   currentUserId: string
+  group?: FamilyGroupStats
   users: FamilyStatsUser[]
 }
 type FamilyTodayStatus = {
@@ -964,7 +1033,7 @@ function App() {
   const [familyStatsError, setFamilyStatsError] = useState('')
   const [isFamilyStatsLoading, setIsFamilyStatsLoading] = useState(false)
   const [isFamilyStatsOpen, setIsFamilyStatsOpen] = useState(false)
-  const [familyStatsView, setFamilyStatsView] = useState<FamilyStatsView>('comparison')
+  const [familyStatsView, setFamilyStatsView] = useState<FamilyStatsView>('overview')
   const [pastWordDate, setPastWordDate] = useState(getDefaultPastDate)
   const [isFamilyDailyStatusLoading, setIsFamilyDailyStatusLoading] = useState(
     accessState?.kind === 'friends-family',
@@ -1246,6 +1315,11 @@ function App() {
         return
       }
 
+      if (dateValue < FIRST_OFFICIAL_PUZZLE_DATE) {
+        showToast('Choose a date on or after Jun 19, 2021')
+        return
+      }
+
       try {
         const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
           '/api/puzzle/past',
@@ -1289,11 +1363,16 @@ function App() {
     (view: FamilyStatsView) => {
       setFamilyStatsView(view)
       setIsMenuOpen(false)
+      setIsResultsOpen(false)
+      setIsSettingsOpen(false)
       setIsFamilyStatsOpen(true)
       void loadFamilyStats()
     },
     [loadFamilyStats],
   )
+  const closeFamilyStats = useCallback(() => {
+    setIsFamilyStatsOpen(false)
+  }, [])
 
   const shakeRow = useCallback((row: number) => {
     setInvalidRow(row)
@@ -1958,34 +2037,43 @@ function App() {
 
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left">
-          <button
-            className="wordbee-icon-button wordbee-icon-button--menu"
-            type="button"
-            aria-expanded={isMenuOpen}
-            aria-label="Menu"
-            aria-haspopup="menu"
-            onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
-          >
-            <InlineIcon markup={menuIconMarkup} />
-          </button>
-          {isMenuOpen && (
-            <WordbeeMenu
-              canOpenStats={accessState?.kind === 'friends-family'}
-              maxPastDate={getDefaultPastDate()}
-              onDaily={() => void loadDailyPuzzle()}
-              onOpenStats={openFamilyStats}
-              onPast={() => void startPastPuzzle(pastWordDate)}
-              onPastDateChange={setPastWordDate}
-              onRandom={() => void startRandomPuzzle()}
-              pastDate={pastWordDate}
-            />
+          {isFamilyStatsOpen ? (
+            <button className="wordbee-page-back-button" onClick={closeFamilyStats} type="button">
+              Back
+            </button>
+          ) : (
+            <>
+              <button
+                className="wordbee-icon-button wordbee-icon-button--menu"
+                type="button"
+                aria-expanded={isMenuOpen}
+                aria-label="Menu"
+                aria-haspopup="menu"
+                onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
+              >
+                <InlineIcon markup={menuIconMarkup} />
+              </button>
+              {isMenuOpen && (
+                <WordbeeMenu
+                  canOpenStats={accessState?.kind === 'friends-family'}
+                  maxPastDate={getDefaultPastDate()}
+                  minPastDate={FIRST_OFFICIAL_PUZZLE_DATE}
+                  onDaily={() => void loadDailyPuzzle()}
+                  onOpenStats={openFamilyStats}
+                  onPast={() => void startPastPuzzle(pastWordDate)}
+                  onPastDateChange={setPastWordDate}
+                  onRandom={() => void startRandomPuzzle()}
+                  pastDate={pastWordDate}
+                />
+              )}
+            </>
           )}
         </div>
 
         <h1 className="wordbee-title">Wordbee</h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
-          {completedResult && (
+          {!isFamilyStatsOpen && completedResult && (
             <button
               className="wordbee-results-reopen-button"
               type="button"
@@ -1994,14 +2082,12 @@ function App() {
               See results
             </button>
           )}
-          {accessState?.kind === 'friends-family' && (
+          {!isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
             <button
               className="wordbee-icon-button wordbee-icon-button--stats"
               type="button"
-              aria-label="Statistics"
-              aria-haspopup="dialog"
-              aria-expanded={isFamilyStatsOpen}
-              onClick={() => openFamilyStats('comparison')}
+              aria-label="Stats"
+              onClick={() => openFamilyStats('overview')}
             >
               <InlineIcon markup={statsIconMarkup} />
             </button>
@@ -2036,62 +2122,74 @@ function App() {
         </div>
       </header>
 
-      <main className="wordbee-game" aria-label="Wordbee game">
-        <section className="wordbee-board-container" aria-label="Game board">
-          <div className="wordbee-board">
-            {board.map((row, rowIndex) => (
-              <div
-                className={[
-                  'wordbee-row',
-                  invalidRow === rowIndex ? 'wordbee-row--invalid' : '',
-                  winningRow === rowIndex ? 'wordbee-row--win' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                key={`row-${rowIndex}`}
-                role="group"
-                aria-label={`Row ${rowIndex + 1}`}
-              >
-                {row.map((tile, tileIndex) => (
-                  <div
-                    className="wordbee-tile"
-                    data-animation={tile.animation}
-                    data-state={tile.state}
-                    key={`tile-${rowIndex}-${tileIndex}`}
-                    role="img"
-                    aria-roledescription="tile"
-                    aria-label={tileAriaLabel(tile, tileIndex)}
-                    style={
-                      {
-                        '--dance-delay': `${tileIndex * DANCE_STEP_MS}ms`,
-                      } as CSSProperties
-                    }
-                  >
-                    {tile.letter}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <Keyboard
-          keys={keyboardRows}
-          onKey={(key) => handleKey(key, 'onscreen')}
-          states={keyboardState}
+      {isFamilyStatsOpen && accessState?.kind === 'friends-family' ? (
+        <FamilyStatsPage
+          currentUserId={accessState.userId}
+          dashboard={familyStats}
+          error={familyStatsError}
+          initialView={familyStatsView}
+          isLoading={isFamilyStatsLoading}
+          onBack={closeFamilyStats}
+          onReload={() => void loadFamilyStats()}
         />
-      </main>
+      ) : (
+        <main className="wordbee-game" aria-label="Wordbee game">
+          <section className="wordbee-board-container" aria-label="Game board">
+            <div className="wordbee-board">
+              {board.map((row, rowIndex) => (
+                <div
+                  className={[
+                    'wordbee-row',
+                    invalidRow === rowIndex ? 'wordbee-row--invalid' : '',
+                    winningRow === rowIndex ? 'wordbee-row--win' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  key={`row-${rowIndex}`}
+                  role="group"
+                  aria-label={`Row ${rowIndex + 1}`}
+                >
+                  {row.map((tile, tileIndex) => (
+                    <div
+                      className="wordbee-tile"
+                      data-animation={tile.animation}
+                      data-state={tile.state}
+                      key={`tile-${rowIndex}-${tileIndex}`}
+                      role="img"
+                      aria-roledescription="tile"
+                      aria-label={tileAriaLabel(tile, tileIndex)}
+                      style={
+                        {
+                          '--dance-delay': `${tileIndex * DANCE_STEP_MS}ms`,
+                        } as CSSProperties
+                      }
+                    >
+                      {tile.letter}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <Keyboard
+            keys={keyboardRows}
+            onKey={(key) => handleKey(key, 'onscreen')}
+            states={keyboardState}
+          />
+        </main>
+      )}
 
       {isSettingsOpen && (
         <SettingsDialog
-	          accessState={accessState}
-	          clientSessionId={clientSessionId}
-	          effectiveDarkTheme={isDarkTheme}
-	          onAccessLogin={handleAccessLogin}
-	          onAvatarChange={() => {
-	            setIsSettingsOpen(false)
-	            setIsAvatarBuilderOpen(true)
-	          }}
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          effectiveDarkTheme={isDarkTheme}
+          onAccessLogin={handleAccessLogin}
+          onAvatarChange={() => {
+            setIsSettingsOpen(false)
+            setIsAvatarBuilderOpen(true)
+          }}
           onClose={() => setIsSettingsOpen(false)}
           onSignOut={signOut}
           onSettingChange={updateSetting}
@@ -2100,34 +2198,18 @@ function App() {
       )}
 
       {isAvatarBuilderOpen && accessState?.kind === 'friends-family' && (
-        <div className="avatar-backdrop" onClick={() => setIsAvatarBuilderOpen(false)}>
-          <section
-            aria-label="Change avatar"
-            aria-modal="true"
-            className="avatar-modal"
-            onClick={(event) => event.stopPropagation()}
-            role="dialog"
-          >
-            <button
-              aria-label="Close avatar builder"
-              className="avatar-close"
-              onClick={() => setIsAvatarBuilderOpen(false)}
-              type="button"
-            >
-              <InlineIcon markup={closeIconMarkup} />
-            </button>
-            <AvatarBuilder
-              displayName={accessState.displayName}
-              initialAvatar={accessState.avatar}
-              onCancel={() => setIsAvatarBuilderOpen(false)}
-              onSave={(avatar) => {
-                updateAvatar(avatar)
-                setIsAvatarBuilderOpen(false)
-              }}
-              saveLabel="Save avatar"
-            />
-          </section>
-        </div>
+        <AvatarDialog
+          ariaLabel="Change avatar"
+          displayName={accessState.displayName}
+          initialAvatar={accessState.avatar}
+          onClose={() => setIsAvatarBuilderOpen(false)}
+          onCancel={() => setIsAvatarBuilderOpen(false)}
+          onSave={(avatar) => {
+            updateAvatar(avatar)
+            setIsAvatarBuilderOpen(false)
+          }}
+          saveLabel="Save avatar"
+        />
       )}
 
       {accessState === null && (
@@ -2148,24 +2230,13 @@ function App() {
             setIsResultsOpen(false)
           }}
           onOpenStats={() => {
-            openFamilyStats('comparison')
+            openFamilyStats('overview')
           }}
           onPlayRandom={() => void startRandomPuzzle()}
           result={completedResult}
         />
       )}
 
-      {isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
-        <FamilyStatsDialog
-          currentUserId={accessState.userId}
-          dashboard={familyStats}
-          error={familyStatsError}
-          initialView={familyStatsView}
-          isLoading={isFamilyStatsLoading}
-          onClose={() => setIsFamilyStatsOpen(false)}
-          onReload={() => void loadFamilyStats()}
-        />
-      )}
     </div>
   )
 }
@@ -2245,6 +2316,7 @@ function AccessDialog({
           guestButtonLabel="I don't have a friends and family code"
           onGuest={onGuest}
           onLogin={onLogin}
+          useAvatarDialog
         />
       </section>
     </div>
@@ -2259,6 +2331,8 @@ function FriendsFamilyAccessForm({
   hideCodeLabel = false,
   onGuest,
   onLogin,
+  onAvatarDialogClose,
+  useAvatarDialog = false,
 }: {
   autoFocusCode?: boolean
   className?: string
@@ -2267,6 +2341,8 @@ function FriendsFamilyAccessForm({
   hideCodeLabel?: boolean
   onGuest?: () => void
   onLogin: (accessState: FriendsFamilyAccess) => void
+  onAvatarDialogClose?: () => void
+  useAvatarDialog?: boolean
 }) {
   const [code, setCode] = useState('')
   const [firstName, setFirstName] = useState('')
@@ -2329,24 +2405,23 @@ function FriendsFamilyAccessForm({
         throw new Error('Could not sign in')
       }
 
-	      const cachedAvatar = loadCachedAvatar(
-	        responseBody.identity.userId,
-	        responseBody.identity.displayName,
-	      )
-	      const nextAccessState = {
-	        avatar:
-	          cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
-	        ...responseBody.identity,
-	        token: responseBody.token,
-	      }
+      const cachedAvatar = loadCachedAvatar(
+        responseBody.identity.userId,
+        responseBody.identity.displayName,
+      )
+      const nextAccessState = {
+        avatar: cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
+        ...responseBody.identity,
+        token: responseBody.token,
+      }
 
-	      if (cachedAvatar) {
-	        onLogin(nextAccessState)
-	        return
-	      }
+      if (cachedAvatar) {
+        onLogin(nextAccessState)
+        return
+      }
 
-	      setPendingAccess(nextAccessState)
-	      setStep('avatar')
+      setPendingAccess(nextAccessState)
+      setStep('avatar')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
     } finally {
@@ -2430,15 +2505,77 @@ function FriendsFamilyAccessForm({
           </button>
         </>
       ) : pendingAccess ? (
-        <AvatarBuilder
-          displayName={pendingAccess.displayName}
-          initialAvatar={pendingAccess.avatar}
-          onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
-          saveLabel="Save avatar"
-        />
+        useAvatarDialog ? (
+          <>
+            <p className="access-confirmed">Code accepted.</p>
+            <AvatarDialog
+              ariaLabel="Choose your avatar"
+              displayName={pendingAccess.displayName}
+              initialAvatar={pendingAccess.avatar}
+              onClose={onAvatarDialogClose}
+              onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
+              saveLabel="Save avatar"
+            />
+          </>
+        ) : (
+          <AvatarBuilder
+            displayName={pendingAccess.displayName}
+            initialAvatar={pendingAccess.avatar}
+            onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
+            saveLabel="Save avatar"
+          />
+        )
       ) : null}
 
       {error && <p className="access-error">{error}</p>}
+    </div>
+  )
+}
+
+function AvatarDialog({
+  ariaLabel,
+  displayName,
+  initialAvatar,
+  onCancel,
+  onClose,
+  onSave,
+  saveLabel,
+}: {
+  ariaLabel: string
+  displayName: string
+  initialAvatar: AvatarConfig
+  onCancel?: () => void
+  onClose?: () => void
+  onSave: (avatar: AvatarConfig) => void
+  saveLabel: string
+}) {
+  return (
+    <div className="avatar-backdrop" onClick={onClose}>
+      <section
+        aria-label={ariaLabel}
+        aria-modal="true"
+        className="avatar-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        {onClose && (
+          <button
+            aria-label="Close avatar builder"
+            className="avatar-close"
+            onClick={onClose}
+            type="button"
+          >
+            <InlineIcon markup={closeIconMarkup} />
+          </button>
+        )}
+        <AvatarBuilder
+          displayName={displayName}
+          initialAvatar={initialAvatar}
+          onCancel={onCancel}
+          onSave={onSave}
+          saveLabel={saveLabel}
+        />
+      </section>
     </div>
   )
 }
@@ -2710,6 +2847,7 @@ function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
 function WordbeeMenu({
   canOpenStats,
   maxPastDate,
+  minPastDate,
   onDaily,
   onOpenStats,
   onPast,
@@ -2719,6 +2857,7 @@ function WordbeeMenu({
 }: {
   canOpenStats: boolean
   maxPastDate: string
+  minPastDate: string
   onDaily: () => void
   onOpenStats: (view: FamilyStatsView) => void
   onPast: () => void
@@ -2740,6 +2879,7 @@ function WordbeeMenu({
           <input
             id="wordbee-past-date"
             max={maxPastDate}
+            min={minPastDate}
             onChange={(event) => onPastDateChange(event.target.value)}
             type="date"
             value={pastDate}
@@ -2752,11 +2892,8 @@ function WordbeeMenu({
       {canOpenStats && (
         <>
           <span className="wordbee-menu-divider" />
-          <button onClick={() => onOpenStats('comparison')} role="menuitem" type="button">
+          <button onClick={() => onOpenStats('overview')} role="menuitem" type="button">
             Stats comparison
-          </button>
-          <button onClick={() => onOpenStats('profiles')} role="menuitem" type="button">
-            Player pages
           </button>
         </>
       )}
@@ -2912,7 +3049,6 @@ function DefinitionPanel({
         <span className="definition-panel__part">{definition.partOfSpeech}</span>
       )}
       <p>{definition?.definition || 'Short definition is still loading.'}</p>
-      {definition?.example && <blockquote>{definition.example}</blockquote>}
       {synonyms.length > 0 && (
         <div className="definition-panel__synonyms">
           <span>Synonyms</span>
@@ -2932,13 +3068,13 @@ function StatValue({ label, value }: { label: string; value: number }) {
   )
 }
 
-function FamilyStatsDialog({
+function FamilyStatsPage({
   currentUserId,
   dashboard,
   error,
   initialView,
   isLoading,
-  onClose,
+  onBack,
   onReload,
 }: {
   currentUserId: string
@@ -2946,204 +3082,642 @@ function FamilyStatsDialog({
   error: string
   initialView: FamilyStatsView
   isLoading: boolean
-  onClose: () => void
+  onBack: () => void
   onReload: () => void
 }) {
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
+  const [selectedResultId, setSelectedResultId] = useState('')
+  const [selectedDate, setSelectedDate] = useState('')
   const [view, setView] = useState<FamilyStatsView>(initialView)
   const users = dashboard?.users ?? []
+  const group = dashboard?.group ?? createFallbackGroupStats(users)
   const selectedUser =
     users.find((user) => user.id === selectedUserId) ??
     users.find((user) => user.id === currentUserId) ??
     users[0]
-  const [selectedResultId, setSelectedResultId] = useState('')
-  const selectedResult =
-    selectedUser?.history.find((result) => result.id === selectedResultId) ??
-    selectedUser?.history[0]
-
-  useEffect(() => {
-    if (!selectedUser) return
-    if (selectedUser.history.some((result) => result.id === selectedResultId)) return
-    setSelectedResultId(selectedUser.history[0]?.id ?? '')
-  }, [selectedResultId, selectedUser])
+  const selectedUserOpenHistory =
+    selectedUser?.history.filter((result) => !isLockedResult(result)) ?? []
+  const playerResult =
+    selectedUserOpenHistory.find((result) => result.id === selectedResultId) ??
+    selectedUserOpenHistory[0]
+  const selectedDay =
+    group.timeline.find((day) => day.date === selectedDate) ??
+    group.timeline[group.timeline.length - 1]
+  const selectedDayResults = selectedDay ? getResultsForDate(users, selectedDay.date) : []
+  const selectedDayOpenResults = selectedDayResults.filter((result) => !isLockedResult(result))
+  const dayResult =
+    selectedDayOpenResults.find((result) => result.id === selectedResultId) ??
+    selectedDayOpenResults[0]
+  const isInitialStatsLoad = isLoading && !dashboard
 
   useEffect(() => {
     setView(initialView)
   }, [initialView])
 
-  return (
-    <div className="family-stats-backdrop" onClick={onClose}>
-      <section
-        aria-labelledby="family-stats-title"
-        aria-modal="true"
-        className="family-stats-panel"
-        onClick={(event) => event.stopPropagation()}
-        role="dialog"
-      >
-        <div className="family-stats-header">
-          <div>
-	            <h2 id="family-stats-title">Friends & family stats</h2>
-            <p>Daily play only. Random and past-word games are not tracked.</p>
-          </div>
-          <button className="settings-close" type="button" aria-label="Close" onClick={onClose}>
-            <InlineIcon markup={closeIconMarkup} />
-          </button>
-        </div>
+  useEffect(() => {
+    if (!selectedUser) return
+    if (
+      selectedUser.history.some(
+        (result) => result.id === selectedResultId && !isLockedResult(result),
+      )
+    ) {
+      return
+    }
+    setSelectedResultId(getFirstUnlockedResult(selectedUser.history)?.id ?? '')
+  }, [selectedResultId, selectedUser])
 
-        {isLoading && <p className="family-stats-status">Loading stats...</p>}
+  useEffect(() => {
+    if (selectedDate && group.timeline.some((day) => day.date === selectedDate)) return
+    setSelectedDate(group.timeline[group.timeline.length - 1]?.date ?? '')
+  }, [group.timeline, selectedDate])
+
+  const openPlayer = (userId: string) => {
+    setSelectedUserId(userId)
+    setView('players')
+  }
+
+  return (
+    <main className="stats-page" aria-labelledby="stats-page-title">
+      <div className="stats-page__inner">
+        <section className="stats-hero">
+          <div>
+            <span className="stats-kicker">Friends & family</span>
+            <h2 id="stats-page-title">Stats</h2>
+            <p>Daily play only. Random and past-word games stay untracked.</p>
+          </div>
+          <div className="stats-hero__actions">
+            <button className="stats-secondary-button" onClick={onBack} type="button">
+              Back to game
+            </button>
+            <button
+              className="stats-primary-button"
+              disabled={isLoading}
+              onClick={onReload}
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+        </section>
+
         {error && (
-          <div className="family-stats-error">
+          <div className="stats-error">
             <span>{error}</span>
-            <button type="button" onClick={onReload}>
+            <button disabled={isLoading} onClick={onReload} type="button">
               Retry
             </button>
           </div>
         )}
 
-        {users.length > 0 && (
+        {isInitialStatsLoad ? null : users.length === 0 && !isLoading ? (
+          <section className="stats-empty">
+            <h3>No tracked daily results yet</h3>
+            <p>Friends-and-family daily completions will appear here.</p>
+          </section>
+        ) : (
           <>
-            <div className="family-stats-tabs" role="tablist" aria-label="Stats views">
-              <button
-                aria-selected={view === 'comparison'}
-                onClick={() => setView('comparison')}
-                role="tab"
-                type="button"
-              >
-                Comparison
-              </button>
-              <button
-                aria-selected={view === 'profiles'}
-                onClick={() => setView('profiles')}
-                role="tab"
-                type="button"
-              >
-                Player pages
-              </button>
-            </div>
-
-            {view === 'comparison' && (
-              <div className="family-stats-table-wrap">
-              <table className="family-stats-table">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Wins</th>
-                    <th>Win %</th>
-                    <th>Avg</th>
-                    <th>Win streak</th>
-                    <th>Play streak</th>
-                    <th>Best</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((user) => (
-                    <tr
-                      data-selected={user.id === selectedUser?.id}
-                      key={user.id}
-                      onClick={() => {
-                        setSelectedUserId(user.id)
-                        setView('profiles')
-                      }}
-                    >
-                      <td>
-                        <button type="button">{user.displayName}</button>
-                      </td>
-                      <td>{user.stats.wins}</td>
-                      <td>{user.stats.winPercentage}</td>
-                      <td>{formatAverage(user.stats.averageGuesses)}</td>
-                      <td>{user.stats.currentWinStreak}</td>
-                      <td>{user.stats.currentPlayStreak}</td>
-                      <td>{user.stats.bestWinStreak}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              </div>
+            <StatsPageTabs onChange={setView} view={view} />
+            {view === 'overview' && (
+              <StatsOverview group={group} onSelectUser={openPlayer} users={users} />
             )}
-
-            {view === 'profiles' && selectedUser && (
-              <section className="family-profile" aria-label={`${selectedUser.displayName} stats`}>
-                <div className="family-user-tabs" aria-label="Players">
-                  {users.map((user) => (
-                    <button
-                      aria-pressed={user.id === selectedUser.id}
-                      key={user.id}
-                      onClick={() => setSelectedUserId(user.id)}
-                      type="button"
-                    >
-                      {user.displayName}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="family-profile__heading">
-                  <h3>{selectedUser.displayName}</h3>
-                  <span>{selectedUser.stats.played} played</span>
-                </div>
-
-                <div className="family-profile-grid">
-                  <StatValue label="Wins" value={selectedUser.stats.wins} />
-                  <StatValue label="Win %" value={selectedUser.stats.winPercentage} />
-                  <StatValue
-                    label="Avg Guesses"
-                    value={Number(formatAverage(selectedUser.stats.averageGuesses))}
-                  />
-                  <StatValue label="Current Win Streak" value={selectedUser.stats.currentWinStreak} />
-                  <StatValue label="Best Win Streak" value={selectedUser.stats.bestWinStreak} />
-                  <StatValue
-                    label="Best Play Streak"
-                    value={selectedUser.stats.bestPlayStreak}
-                  />
-                </div>
-
-                <div className="family-profile-columns">
-                  <section className="starter-list" aria-labelledby="starter-title">
-                    <h4 id="starter-title">Top starters</h4>
-                    {selectedUser.stats.topStarters.length > 0 ? (
-                      <ol>
-                        {selectedUser.stats.topStarters.map((starter) => (
-                          <li key={starter.word}>
-                            <strong>{starter.word}</strong>
-                            <span>
-                              {starter.count} times · {starter.percentage}%
-                            </span>
-                          </li>
-                        ))}
-                      </ol>
-                    ) : (
-                      <p>No starter words yet.</p>
-                    )}
-                  </section>
-
-                  <section className="daily-history" aria-labelledby="history-title">
-                    <h4 id="history-title">Daily history</h4>
-                    {selectedUser.history.length > 0 ? (
-                      <div className="daily-history__list">
-                        {selectedUser.history.map((result) => (
-                          <button
-                            data-selected={result.id === selectedResult?.id}
-                            key={result.id}
-                            onClick={() => setSelectedResultId(result.id)}
-                            type="button"
-                          >
-                            <span>{formatHistoryDate(result.date)}</span>
-                            <strong>{formatOutcome(result)}</strong>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <p>No completed days yet.</p>
-                    )}
-                  </section>
-                </div>
-
-                {selectedResult && <FamilyResultBoard result={selectedResult} />}
-              </section>
+            {view === 'players' && selectedUser && (
+              <StatsPlayerView
+                onSelectResult={setSelectedResultId}
+                onSelectUser={setSelectedUserId}
+                result={playerResult}
+                selectedUser={selectedUser}
+                users={users}
+              />
+            )}
+            {view === 'daily' && (
+              <StatsDailyView
+                day={selectedDay}
+                onSelectDate={setSelectedDate}
+                onSelectResult={setSelectedResultId}
+                result={dayResult}
+                results={selectedDayResults}
+                selectedDate={selectedDate}
+                timeline={group.timeline}
+              />
             )}
           </>
         )}
-      </section>
+      </div>
+    </main>
+  )
+}
+
+function StatsPageTabs({
+  onChange,
+  view,
+}: {
+  onChange: (view: FamilyStatsView) => void
+  view: FamilyStatsView
+}) {
+  return (
+    <div className="stats-tabs" role="tablist" aria-label="Stats views">
+      {(
+        [
+          ['overview', 'Overview'],
+          ['players', 'Players'],
+          ['daily', 'Daily review'],
+        ] as const
+      ).map(([value, label]) => (
+        <button
+          aria-selected={view === value}
+          key={value}
+          onClick={() => onChange(value)}
+          role="tab"
+          type="button"
+        >
+          {label}
+        </button>
+      ))}
     </div>
+  )
+}
+
+function StatsOverview({
+  group,
+  onSelectUser,
+  users,
+}: {
+  group: FamilyGroupStats
+  onSelectUser: (userId: string) => void
+  users: FamilyStatsUser[]
+}) {
+  const commonStarter = group.topStarters[0]
+  const averageLeader = getAverageLeader(users)
+  const winsLeader = getWinsLeader(users)
+
+  return (
+    <section className="stats-section" aria-label="Stats overview">
+      <div className="stats-metric-grid">
+        <StatsMetric label="Plays" value={group.played} />
+        <StatsMetric label="Win rate" value={`${group.winPercentage}%`} />
+        <StatsMetric label="Avg guesses" value={formatAverage(group.averageGuesses)} />
+        <StatsMetric help={SKILL_HELP_TEXT} label="Skill" value={group.averageSkill || 0} />
+        <StatsMetric help={LUCK_HELP_TEXT} label="Luck" value={group.averageLuck || 0} />
+      </div>
+
+      <div className="stats-insight-grid">
+        <InsightCard
+          detail={
+            commonStarter
+              ? `${commonStarter.count} starts by ${commonStarter.users} player${commonStarter.users === 1 ? '' : 's'}`
+              : 'No opener data yet'
+          }
+          label="Most common first word"
+          value={commonStarter?.word ?? '--'}
+        />
+        <InsightCard
+          avatar={
+            averageLeader
+              ? { displayName: averageLeader.displayName, userId: averageLeader.id }
+              : undefined
+          }
+          detail={averageLeader ? `${formatAverage(averageLeader.stats.averageGuesses)} avg guesses` : 'No wins yet'}
+          label="Lowest average"
+          value={averageLeader?.displayName ?? '--'}
+        />
+        <InsightCard
+          avatar={
+            winsLeader ? { displayName: winsLeader.displayName, userId: winsLeader.id } : undefined
+          }
+          detail={winsLeader ? `${winsLeader.stats.wins} wins` : 'No wins yet'}
+          label="Most wins"
+          value={winsLeader?.displayName ?? '--'}
+        />
+      </div>
+
+      <div className="stats-chart-grid">
+        <GuessDistributionChart distribution={group.guessDistribution} title="Guess distribution" />
+        <StarterBarChart starters={group.topStarters} title="First-word habits" />
+      </div>
+
+      <TrendChart timeline={group.timeline} />
+      <PlayerLeaderboard onSelectUser={onSelectUser} users={users} />
+    </section>
+  )
+}
+
+function StatsPlayerView({
+  onSelectResult,
+  onSelectUser,
+  result,
+  selectedUser,
+  users,
+}: {
+  onSelectResult: (resultId: string) => void
+  onSelectUser: (userId: string) => void
+  result?: FamilyDailyResult
+  selectedUser: FamilyStatsUser
+  users: FamilyStatsUser[]
+}) {
+  return (
+    <section className="stats-section" aria-label={`${selectedUser.displayName} stats`}>
+      <div className="stats-player-tabs" aria-label="Players">
+        {users.map((user) => (
+          <button
+            aria-pressed={user.id === selectedUser.id}
+            key={user.id}
+            onClick={() => onSelectUser(user.id)}
+            type="button"
+          >
+            <PlayerAvatar displayName={user.displayName} size={30} userId={user.id} />
+            <span>{user.displayName}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="stats-profile-heading">
+        <div className="stats-profile-identity">
+          <PlayerAvatar displayName={selectedUser.displayName} size={54} userId={selectedUser.id} />
+          <div>
+            <span className="stats-kicker">Player insight</span>
+            <h3>{selectedUser.displayName}</h3>
+          </div>
+        </div>
+        <span>{selectedUser.stats.played} daily plays</span>
+      </div>
+
+      <div className="stats-metric-grid stats-metric-grid--player">
+        <StatsMetric label="Wins" value={selectedUser.stats.wins} />
+        <StatsMetric label="Win rate" value={`${selectedUser.stats.winPercentage}%`} />
+        <StatsMetric label="Avg guesses" value={formatAverage(selectedUser.stats.averageGuesses)} />
+        <StatsMetric
+          help={SKILL_HELP_TEXT}
+          label="Skill"
+          value={selectedUser.stats.averageSkill ?? 0}
+        />
+        <StatsMetric
+          help={LUCK_HELP_TEXT}
+          label="Luck"
+          value={selectedUser.stats.averageLuck ?? 0}
+        />
+        <StatsMetric label="Best streak" value={selectedUser.stats.bestWinStreak} />
+      </div>
+
+      <div className="stats-chart-grid">
+        <GuessDistributionChart
+          distribution={selectedUser.stats.guessDistribution}
+          title="Personal distribution"
+        />
+        <StarterBarChart starters={selectedUser.stats.topStarters} title="Favorite first words" />
+      </div>
+
+      <div className="stats-history-layout">
+        <section className="stats-history-panel" aria-labelledby="player-history-title">
+          <h4 id="player-history-title">Daily history</h4>
+          {selectedUser.history.length > 0 ? (
+            <div className="stats-history-list">
+              {selectedUser.history.map((historyResult) => {
+                const locked = isLockedResult(historyResult)
+
+                return (
+                  <button
+                    data-locked={locked}
+                    data-selected={!locked && historyResult.id === result?.id}
+                    disabled={locked}
+                    key={historyResult.id}
+                    onClick={() => onSelectResult(historyResult.id)}
+                    type="button"
+                  >
+                    <span>{formatHistoryDate(historyResult.date)}</span>
+                    <strong>{formatOutcome(historyResult)}</strong>
+                    <em>{locked ? 'Solve today to reveal' : historyResult.starterWord}</em>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <p>No completed days yet.</p>
+          )}
+        </section>
+
+        {result && <FamilyResultBoard result={result} />}
+      </div>
+    </section>
+  )
+}
+
+function StatsDailyView({
+  day,
+  onSelectDate,
+  onSelectResult,
+  result,
+  results,
+  selectedDate,
+  timeline,
+}: {
+  day?: FamilyTimelineDay
+  onSelectDate: (dateValue: string) => void
+  onSelectResult: (resultId: string) => void
+  result?: FamilyDailyResult
+  results: FamilyDailyResult[]
+  selectedDate: string
+  timeline: FamilyTimelineDay[]
+}) {
+  const isLockedDay = Boolean(day?.locked)
+
+  return (
+    <section className="stats-section" aria-label="Daily stats review">
+      <div className="stats-day-rail" aria-label="Tracked days">
+        {timeline.map((timelineDay) => (
+          <button
+            aria-pressed={timelineDay.date === selectedDate}
+            data-locked={Boolean(timelineDay.locked)}
+            key={timelineDay.date}
+            onClick={() => onSelectDate(timelineDay.date)}
+            type="button"
+          >
+            <span>{formatHistoryDate(timelineDay.date)}</span>
+            <strong>{timelineDay.locked ? 'Locked' : formatAverage(timelineDay.averageGuesses)}</strong>
+          </button>
+        ))}
+      </div>
+
+      {day ? (
+        <>
+          <div className="stats-day-summary">
+            <InsightCard
+              detail={
+                isLockedDay
+                  ? `${day.players} player${day.players === 1 ? '' : 's'} finished`
+                  : `${day.players} players, ${day.winPercentage}% wins`
+              }
+              label="Answer"
+              locked={isLockedDay}
+              value={isLockedDay ? 'Locked' : day.answer}
+            />
+            <InsightCard
+              detail={isLockedDay ? 'Solve today to reveal' : `${day.bestScore} by ${day.bestPlayer}`}
+              label="Best solve"
+              locked={isLockedDay}
+              value={isLockedDay ? 'Locked' : day.bestPlayer}
+            />
+            <InsightCard
+              detail={isLockedDay ? 'Solve today to reveal' : `${day.topStarter} led the day`}
+              label="Common opener"
+              locked={isLockedDay}
+              value={isLockedDay ? 'Locked' : day.topStarter}
+            />
+          </div>
+
+          <div className="stats-daily-results" aria-label={`${formatHistoryDate(day.date)} results`}>
+            {results.map((dailyResult) => {
+              const locked = isLockedResult(dailyResult)
+
+              return (
+                <button
+                  data-locked={locked}
+                  data-selected={!locked && dailyResult.id === result?.id}
+                  disabled={locked}
+                  key={dailyResult.id}
+                  onClick={() => onSelectResult(dailyResult.id)}
+                  type="button"
+                >
+                  <PlayerAvatar
+                    displayName={dailyResult.displayName}
+                    size={34}
+                    userId={dailyResult.userId}
+                  />
+                  <span>{dailyResult.displayName}</span>
+                  <strong>{formatOutcome(dailyResult)}</strong>
+                  <em>
+                    {locked
+                      ? 'Solve today to reveal'
+                      : dailyResult.analysis?.pathLabel ?? dailyResult.starterWord}
+                  </em>
+                </button>
+              )
+            })}
+          </div>
+
+          {result && !isLockedResult(result) && <FamilyResultBoard result={result} />}
+        </>
+      ) : (
+        <section className="stats-empty">
+          <h3>No daily results yet</h3>
+          <p>Completed friends-and-family days will appear here.</p>
+        </section>
+      )}
+    </section>
+  )
+}
+
+function StatsMetric({
+  help,
+  label,
+  value,
+}: {
+  help?: string
+  label: string
+  value: number | string
+}) {
+  return (
+    <article className="stats-metric">
+      <strong>{value}</strong>
+      <span>
+        {label}
+        {help && <StatsHelpTooltip text={help} />}
+      </span>
+    </article>
+  )
+}
+
+function StatsHelpTooltip({ text }: { text: string }) {
+  return (
+    <button
+      aria-label={text}
+      className="stats-help"
+      data-tooltip={text}
+      title={text}
+      type="button"
+    >
+      ?
+    </button>
+  )
+}
+
+function InsightCard({
+  avatar,
+  detail,
+  label,
+  locked = false,
+  value,
+}: {
+  avatar?: { displayName: string; userId: string }
+  detail: string
+  label: string
+  locked?: boolean
+  value: string
+}) {
+  return (
+    <article className="stats-insight-card" data-locked={locked}>
+      <span>{label}</span>
+      <div className="stats-insight-card__value">
+        {avatar && (
+          <PlayerAvatar displayName={avatar.displayName} size={36} userId={avatar.userId} />
+        )}
+        <strong>{value}</strong>
+      </div>
+      <p>{detail}</p>
+    </article>
+  )
+}
+
+function GuessDistributionChart({
+  distribution,
+  title,
+}: {
+  distribution: Record<number, number>
+  title: string
+}) {
+  const max = Math.max(1, ...Array.from({ length: MAX_GUESSES }, (_, index) => distribution[index + 1] ?? 0))
+
+  return (
+    <section className="stats-chart-card" aria-labelledby={`${toSlug(title)}-title`}>
+      <h4 id={`${toSlug(title)}-title`}>{title}</h4>
+      <div className="stats-distribution-chart">
+        {Array.from({ length: MAX_GUESSES }, (_, index) => {
+          const guessNumber = index + 1
+          const count = distribution[guessNumber] ?? 0
+
+          return (
+            <div className="stats-distribution-row" key={guessNumber}>
+              <span>{guessNumber}</span>
+              <strong
+                style={
+                  {
+                    '--bar-width': `${Math.max(4, (count / max) * 100)}%`,
+                  } as CSSProperties
+                }
+              >
+                {count}
+              </strong>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function StarterBarChart({
+  starters,
+  title,
+}: {
+  starters: Array<StarterStat | StarterInsight>
+  title: string
+}) {
+  const visibleStarters = starters.slice(0, 8)
+  const max = Math.max(1, ...visibleStarters.map((starter) => starter.count))
+
+  return (
+    <section className="stats-chart-card" aria-labelledby={`${toSlug(title)}-title`}>
+      <h4 id={`${toSlug(title)}-title`}>{title}</h4>
+      {visibleStarters.length > 0 ? (
+        <div className="stats-starter-bars">
+          {visibleStarters.map((starter) => (
+            <div className="stats-starter-bar" key={starter.word}>
+              <div>
+                <strong>{starter.word}</strong>
+                <span>
+                  {starter.count} plays · {starter.percentage}%
+                </span>
+              </div>
+              <em
+                style={
+                  {
+                    '--bar-width': `${Math.max(6, (starter.count / max) * 100)}%`,
+                  } as CSSProperties
+                }
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="stats-muted">No first-word data yet.</p>
+      )}
+    </section>
+  )
+}
+
+function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
+  const visibleDays = timeline.filter((day) => !day.locked).slice(-18)
+  const width = 360
+  const height = 150
+  const padding = 18
+  const minValue = 1
+  const maxValue = 6
+  const points = visibleDays.map((day, index) => {
+    const x =
+      visibleDays.length === 1
+        ? width / 2
+        : padding + (index / (visibleDays.length - 1)) * (width - padding * 2)
+    const y =
+      height -
+      padding -
+      ((day.averageGuesses - minValue) / (maxValue - minValue)) * (height - padding * 2)
+    return { day, x, y }
+  })
+  const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+
+  return (
+    <section className="stats-chart-card stats-chart-card--wide" aria-labelledby="stats-trend-title">
+      <div className="stats-chart-heading">
+        <h4 id="stats-trend-title">Daily average trend</h4>
+        <span>{visibleDays.length} tracked days</span>
+      </div>
+      {points.length > 0 ? (
+        <svg className="stats-trend-chart" viewBox={`0 0 ${width} ${height}`} role="img">
+          <title>Average guesses by day</title>
+          <path className="stats-trend-grid" d={`M ${padding} ${padding} H ${width - padding}`} />
+          <path className="stats-trend-grid" d={`M ${padding} ${height - padding} H ${width - padding}`} />
+          <path className="stats-trend-line" d={path} />
+          {points.map((point) => (
+            <circle className="stats-trend-point" cx={point.x} cy={point.y} key={point.day.date} r="4">
+              <title>
+                {formatHistoryDate(point.day.date)}: {formatAverage(point.day.averageGuesses)} average
+              </title>
+            </circle>
+          ))}
+        </svg>
+      ) : (
+        <p className="stats-muted">Trend data will appear after daily completions.</p>
+      )}
+    </section>
+  )
+}
+
+function PlayerLeaderboard({
+  onSelectUser,
+  users,
+}: {
+  onSelectUser: (userId: string) => void
+  users: FamilyStatsUser[]
+}) {
+  const rankedUsers = [...users].sort(compareLeaderboardUsers)
+
+  return (
+    <section className="stats-leaderboard" aria-labelledby="stats-leaderboard-title">
+      <div className="stats-chart-heading">
+        <h4 id="stats-leaderboard-title">Player comparison</h4>
+        <span>{users.length} players</span>
+      </div>
+      <div className="stats-leaderboard-list">
+        {rankedUsers.map((user, index) => (
+          <button key={user.id} onClick={() => onSelectUser(user.id)} type="button">
+            <span>{index + 1}</span>
+            <PlayerAvatar displayName={user.displayName} size={34} userId={user.id} />
+            <strong>{user.displayName}</strong>
+            <em>{formatAverage(user.stats.averageGuesses)} avg</em>
+            <i>{user.stats.averageSkill ?? 0} skill</i>
+          </button>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -3151,25 +3725,217 @@ function FamilyResultBoard({ result }: { result: FamilyDailyResult }) {
   return (
     <section className="family-result-board" aria-label={`${result.displayName} ${result.date}`}>
       <div className="family-result-board__heading">
-        <span>{formatHistoryDate(result.date)}</span>
-        <strong>{formatOutcome(result)}</strong>
-      </div>
-      <div className="family-mini-board">
-        {result.guesses.map((guess, rowIndex) => (
-          <div className="family-mini-board__row" key={`${result.id}-${rowIndex}`}>
-            {guess.split('').map((letter, tileIndex) => (
-              <span
-                data-state={result.board[rowIndex]?.[tileIndex] ?? 'absent'}
-                key={`${result.id}-${rowIndex}-${tileIndex}`}
-              >
-                {letter}
-              </span>
-            ))}
+        <div className="family-result-board__player">
+          <PlayerAvatar displayName={result.displayName} size={42} userId={result.userId} />
+          <div>
+            <span>{formatHistoryDate(result.date)}</span>
+            <strong>{result.displayName}</strong>
           </div>
-        ))}
+        </div>
+        <em>{formatOutcome(result)}</em>
+      </div>
+      <div className="family-result-board__body">
+        <div className="family-mini-board">
+          {result.guesses.map((guess, rowIndex) => (
+            <div className="family-mini-board__row" key={`${result.id}-${rowIndex}`}>
+              {guess.split('').map((letter, tileIndex) => (
+                <span
+                  data-state={result.board[rowIndex]?.[tileIndex] ?? 'absent'}
+                  key={`${result.id}-${rowIndex}-${tileIndex}`}
+                >
+                  {letter}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+        {result.analysis && <SolveAnalysisPanel analysis={result.analysis} />}
       </div>
     </section>
   )
+}
+
+function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
+  return (
+    <div className="solve-analysis">
+      <div className="solve-analysis__scores">
+        <ScoreMeter help={SKILL_HELP_TEXT} label="Skill" value={analysis.skill} />
+        <ScoreMeter help={LUCK_HELP_TEXT} label="Luck" value={analysis.luck} />
+      </div>
+      <div className="solve-analysis__path">
+        <span>{analysis.pathLabel}</span>
+        <strong>{analysis.remainingAfterLast} left after final guess</strong>
+      </div>
+      <ol className="solve-analysis__steps">
+        {analysis.steps.map((step) => (
+          <li key={`${step.turn}-${step.guess}`}>
+            <div className="solve-analysis__step-heading">
+              <strong>
+                {step.turn}. {step.guess}
+              </strong>
+              <span>
+                {step.before} to {step.after}
+              </span>
+            </div>
+            <div className="solve-analysis__step-bar">
+              <span
+                style={
+                  {
+                    '--bar-width': `${Math.max(3, ((step.before - step.after) / step.before) * 100)}%`,
+                  } as CSSProperties
+                }
+              />
+            </div>
+            <p>
+              {step.eliminatedPercentage}% eliminated. Best expected play: {step.bestWord} (
+              {formatAverage(step.bestRemaining)} expected).
+            </p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+function ScoreMeter({
+  help,
+  label,
+  value,
+}: {
+  help?: string
+  label: string
+  value: number
+}) {
+  return (
+    <div className="score-meter">
+      <div>
+        <span>
+          {label}
+          {help && <StatsHelpTooltip text={help} />}
+        </span>
+        <strong>{value}</strong>
+      </div>
+      <em
+        style={
+          {
+            '--meter-width': `${Math.max(4, Math.min(100, value))}%`,
+          } as CSSProperties
+        }
+      />
+    </div>
+  )
+}
+
+function PlayerAvatar({
+  displayName,
+  size,
+  userId,
+}: {
+  displayName: string
+  size: number
+  userId: string
+}) {
+  const avatar = loadCachedAvatar(userId, displayName) ?? createDefaultAvatarConfig(displayName)
+
+  return (
+    <span
+      aria-hidden="true"
+      className="stats-player-avatar"
+      style={{ height: size, width: size }}
+    >
+      <AvatarImage
+        avatar={avatar}
+        className="stats-player-avatar__image"
+        displayName={displayName}
+        size={size * 3}
+      />
+    </span>
+  )
+}
+
+function createFallbackGroupStats(users: FamilyStatsUser[]): FamilyGroupStats {
+  const results = users.flatMap((user) => user.history)
+  const wins = results.filter((result) => result.outcome === 'won')
+  const distribution = { ...EMPTY_STATS.guessDistribution }
+  wins.forEach((result) => {
+    distribution[result.guessesUsed] = (distribution[result.guessesUsed] ?? 0) + 1
+  })
+
+  return {
+    played: results.length,
+    wins: wins.length,
+    winPercentage: results.length ? Math.round((wins.length / results.length) * 100) : 0,
+    averageGuesses: results.length
+      ? Number(formatAverage(results.reduce((total, result) => total + result.guessesUsed, 0) / results.length))
+      : 0,
+    averageSkill: 0,
+    averageLuck: 0,
+    daysTracked: new Set(results.map((result) => result.date)).size,
+    players: users.length,
+    guessDistribution: distribution,
+    topStarters: [],
+    timeline: [],
+    recentResults: results.slice(0, 36),
+    bestDay: null,
+    toughestDay: null,
+  }
+}
+
+function getResultsForDate(users: FamilyStatsUser[], dateValue: string) {
+  return users
+    .flatMap((user) => user.history)
+    .filter((result) => result.date === dateValue)
+    .sort((first, second) => {
+      if (isLockedResult(first) !== isLockedResult(second)) {
+        return isLockedResult(first) ? 1 : -1
+      }
+      if (first.outcome !== second.outcome) return first.outcome === 'won' ? -1 : 1
+      if (first.guessesUsed !== second.guessesUsed) return first.guessesUsed - second.guessesUsed
+      return first.completedAt.localeCompare(second.completedAt)
+    })
+}
+
+function isLockedResult(result?: FamilyDailyResult) {
+  return Boolean(result?.locked)
+}
+
+function getFirstUnlockedResult(results: FamilyDailyResult[]) {
+  return results.find((result) => !isLockedResult(result))
+}
+
+function getAverageLeader(users: FamilyStatsUser[]) {
+  return users
+    .filter((user) => user.stats.played > 0)
+    .sort((first, second) => first.stats.averageGuesses - second.stats.averageGuesses)[0]
+}
+
+function getWinsLeader(users: FamilyStatsUser[]) {
+  return users
+    .filter((user) => user.stats.wins > 0)
+    .sort((first, second) => {
+      if (second.stats.wins !== first.stats.wins) return second.stats.wins - first.stats.wins
+      return first.stats.averageGuesses - second.stats.averageGuesses
+    })[0]
+}
+
+function compareLeaderboardUsers(first: FamilyStatsUser, second: FamilyStatsUser) {
+  if (first.stats.played === 0 || second.stats.played === 0) {
+    if (first.stats.played === second.stats.played) return first.displayName.localeCompare(second.displayName)
+    return first.stats.played === 0 ? 1 : -1
+  }
+
+  if (first.stats.averageGuesses !== second.stats.averageGuesses) {
+    return first.stats.averageGuesses - second.stats.averageGuesses
+  }
+  if ((second.stats.averageSkill ?? 0) !== (first.stats.averageSkill ?? 0)) {
+    return (second.stats.averageSkill ?? 0) - (first.stats.averageSkill ?? 0)
+  }
+
+  return second.stats.winPercentage - first.stats.winPercentage
+}
+
+function toSlug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 function formatAverage(value: number) {
@@ -3187,6 +3953,8 @@ function formatHistoryDate(dateValue: string) {
 }
 
 function formatOutcome(result: FamilyDailyResult) {
+  if (isLockedResult(result)) return 'Locked'
+
   return result.outcome === 'won' ? `${result.guessesUsed}/6` : 'X/6'
 }
 
@@ -3255,7 +4023,11 @@ function SettingsDialog({
             />
           )}
           {accessState?.kind === 'guest' && (
-            <SettingsAccessSection clientSessionId={clientSessionId} onLogin={onAccessLogin} />
+            <SettingsAccessSection
+              clientSessionId={clientSessionId}
+              onAvatarDialogClose={onClose}
+              onLogin={onAccessLogin}
+            />
           )}
           <div className="settings-links" aria-label="Project links">
             <a
@@ -3280,9 +4052,11 @@ function SettingsDialog({
 
 function SettingsAccessSection({
   clientSessionId,
+  onAvatarDialogClose,
   onLogin,
 }: {
   clientSessionId: string
+  onAvatarDialogClose: () => void
   onLogin: (accessState: FriendsFamilyAccess) => void
 }) {
   return (
@@ -3292,7 +4066,9 @@ function SettingsAccessSection({
         clientSessionId={clientSessionId}
         className="access-form--settings"
         hideCodeLabel
+        onAvatarDialogClose={onAvatarDialogClose}
         onLogin={onLogin}
+        useAvatarDialog
       />
     </div>
   )

@@ -7,11 +7,14 @@ The current backend fetches and caches the daily answer, exposes the game metada
 Current responsibilities:
 
 - Serve daily puzzle metadata without exposing the answer up front.
+- Fetch and cache one official daily answer per date, with official historical play starting on `2021-06-19`.
+- Keep development fallback answers out of the historical cache.
 - Score guesses server-side.
 - Validate friends-and-family access codes without exposing private codes to the client.
 - Keep one active friends-and-family session per user.
 - Store one completed daily result per friends-and-family user per puzzle date.
-- Expose family comparison, profile, starter-word, and daily-history stats.
+- Expose family overview, player, daily-review, starter-word, leaderboard, trend, skill/luck, and solve-path stats.
+- Lock current-day answer, guesses, board, and analysis data in stats until the requesting user has solved the current daily puzzle.
 - Store fetched daily answers in SQLite for a future archive replayer.
 
 Planned responsibilities:

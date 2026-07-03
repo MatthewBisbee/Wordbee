@@ -212,7 +212,13 @@ def friends_family_stats():
     if identity is None:
         return jsonify({"error": "Session is active elsewhere"}), 409
 
-    return jsonify(get_family_dashboard(requesting_user_id=identity["userId"]))
+    current_puzzle_date = get_puzzle_date().isoformat()
+    return jsonify(
+        get_family_dashboard(
+            current_puzzle_date=current_puzzle_date,
+            requesting_user_id=identity["userId"],
+        )
+    )
 
 
 @api.post("/guess")

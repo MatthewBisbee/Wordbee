@@ -48,6 +48,7 @@ RECOMMENDED_STARTERS = (
 )
 MAX_OPENING_GUESSES_TO_SCORE = 56
 MAX_MIDGAME_GUESSES_TO_SCORE = 90
+MAX_DASHBOARD_HISTORY_RESULTS = 60
 
 
 def save_completed_game(
@@ -231,7 +232,7 @@ def get_family_dashboard(
         history = [
             lock_current_day_result(result) if is_locked_current_day_result(result) else result
             for result in reversed(user_results)
-        ]
+        ][:MAX_DASHBOARD_HISTORY_RESULTS]
         stats = calculate_user_stats(visible_user_results)
         users.append(
             {
@@ -619,11 +620,14 @@ def analyze_guess_step(
         smallest_after=min(partition.values(), default=after),
         largest_after=max(partition.values(), default=after),
     )
-    skill = calculate_skill_score(
-        before=before,
-        after=expected_after,
-        best_after=best_after,
-    )
+    if before <= 1:
+        skill = 100 if guess == best_guess else 0
+    else:
+        skill = calculate_skill_score(
+            before=before,
+            after=expected_after,
+            best_after=best_after,
+        )
 
     return (
         {
@@ -650,6 +654,9 @@ def find_best_available_guess(
     candidates: tuple[str, ...],
     turn: int,
 ) -> tuple[str, float]:
+    if len(candidates) <= 1:
+        return (candidates[0] if candidates else actual_guess), 1.0
+
     guess_pool = get_analysis_guess_pool(
         actual_guess=actual_guess,
         candidates=candidates,

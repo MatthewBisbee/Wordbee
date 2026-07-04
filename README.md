@@ -6,7 +6,7 @@ Wordbee is a self-hosted daily word game for a private friends and family group.
 
 - Frontend: playable Vite + React + TypeScript daily word game with mobile-first game, settings, avatar, results, and stats surfaces.
 - Gameplay: six guesses, five-letter answer, valid-word checks, daily play, untracked endless random play, untracked past-word play for official dates starting `2021-06-19`, high-contrast mode, theme settings, friends-and-family avatar setup, on-screen keyboard, keyboard state, tile reveal animations, win/loss states, and local settings persistence.
-- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive, validating friends-and-family access codes server-side, reclaiming saved profiles on load, and tracking friends-and-family-only daily stats.
+- Backend: Flask + SQLite API fetches, caches, and scores the daily answer while preserving a dated answer archive, validating friends-and-family access codes server-side, creating new family users only after avatar save, reclaiming saved profiles on load, and tracking friends-and-family-only daily stats.
 - Stats: friends-and-family stats are a full-page dashboard with overview, player, daily-review, starter-word, trend, leaderboard, skill, luck, and solve-path analysis views. Current-day answers, guesses, boards, and analysis remain locked for a signed-in user until that user solves the current daily puzzle.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the future Raspberry Pi setup.
 
@@ -85,9 +85,9 @@ Friends-and-family access codes and ntfy notification values are configured with
 
 ## Backend Status
 
-The backend currently provides daily answer fetching, SQLite caching, guess scoring, signed untracked random and past puzzle tokens, friends-and-family sign-in, daily result lockout, ntfy-safe first-save notifications, and friends-and-family-only stats/history.
+The backend currently provides daily answer fetching, SQLite caching, guess scoring, signed untracked random and past puzzle tokens, friends-and-family sign-in with pending avatar setup for new names, daily result lockout, ntfy-safe first-save notifications, and friends-and-family-only stats/history.
 
-Answer caching uses one `daily_answers` row per date. Official historical play is guarded to dates on or after `2021-06-19`; development fallback answers are not persisted as historical truth.
+Answer caching uses one `daily_answers` row per date. Official historical play starts on `2021-06-19`; past-word requests before that date open the first playable puzzle. Development fallback answers are not persisted as historical truth.
 
 Planned additions include:
 

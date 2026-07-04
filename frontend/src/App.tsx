@@ -103,9 +103,9 @@ const STATS_BAR_CONFIG = [
   { selector: '.stats-bar--mid', highScale: 1.25, lowScale: 0.9, durationMs: 980 },
 ]
 const SKILL_HELP_TEXT =
-  'Skill compares each guess with the best expected play from the current candidate set. Higher means your choices reduced the puzzle closer to optimal.'
+  'Skill scores how efficiently your guesses split the remaining possible answers. If only one answer is left, only playing that answer scores well.'
 const LUCK_HELP_TEXT =
-  "Luck compares the clue you actually received with that guess's expected clue spread. Higher means the answer gave more help than average."
+  "Luck compares the clue you actually received with that guess's average clue spread. Higher means the answer gave more help than expected."
 const EMPTY_STATS: StatsSummary = {
   played: 0,
   wins: 0,
@@ -284,6 +284,7 @@ type GameResult = {
   guesses: string[]
   stats: StatsSummary
   answer?: string
+  analysis?: SolveAnalysis
   copied: boolean
   definition?: DefinitionSummary
   saved: boolean
@@ -312,14 +313,22 @@ type FriendsFamilyIdentity = {
   firstName: string
   lastInitial: string
 }
+type PendingFriendsFamilyIdentity = Omit<FriendsFamilyIdentity, 'userId'> & {
+  userId?: string
+}
 type FriendsFamilyAccess = FriendsFamilyIdentity & {
   avatar: AvatarConfig
   token: string
 }
+type PendingFriendsFamilyAccess = PendingFriendsFamilyIdentity & {
+  avatar: AvatarConfig
+}
 type AccessState = GuestAccess | FriendsFamilyAccess
 type AccessLoginResponse = {
-  identity: FriendsFamilyIdentity
-  token: string
+  identity?: FriendsFamilyIdentity
+  pendingIdentity?: PendingFriendsFamilyIdentity
+  requiresAvatar?: boolean
+  token?: string
 }
 type AccessVerifyResponse = {
   identity: FriendsFamilyIdentity
@@ -756,11 +765,68 @@ function formatDateInput(dateValue: Date) {
   return `${year}-${month}-${day}`
 }
 
+function getPuzzleHeaderLabel(puzzle: PuzzleMetadata | null) {
+  if (!puzzle) return ''
+  if (puzzle.mode === 'random') return 'Random puzzle'
+  if (puzzle.mode === 'past') return formatPuzzleHeaderDate(puzzle.date)
+  return ''
+}
+
+function formatPuzzleHeaderDate(dateValue: string) {
+  const [year, month, day] = dateValue.split('-').map(Number)
+  if (!year || !month || !day) return dateValue
+
+  const monthLabel = new Intl.DateTimeFormat(undefined, { month: 'short' }).format(
+    new Date(year, month - 1, day),
+  )
+
+  return `${monthLabel} ${day}${getOrdinalSuffix(day)}, ${year}`
+}
+
+function getOrdinalSuffix(day: number) {
+  const teenRemainder = day % 100
+  if (teenRemainder >= 11 && teenRemainder <= 13) return 'th'
+
+  switch (day % 10) {
+    case 1:
+      return 'st'
+    case 2:
+      return 'nd'
+    case 3:
+      return 'rd'
+    default:
+      return 'th'
+  }
+}
+
 function isSessionConflict(error: unknown) {
   return (
     error instanceof ApiError &&
     error.status === 409 &&
     error.message === 'Session is active elsewhere'
+  )
+}
+
+function isCompleteAccessLoginResponse(
+  responseBody: AccessLoginResponse,
+): responseBody is AccessLoginResponse & {
+  identity: FriendsFamilyIdentity
+  token: string
+} {
+  return responseBody.identity?.kind === 'friends-family' && typeof responseBody.token === 'string'
+}
+
+function isPendingAccessLoginResponse(
+  responseBody: AccessLoginResponse,
+): responseBody is AccessLoginResponse & {
+  pendingIdentity: PendingFriendsFamilyIdentity
+} {
+  return (
+    responseBody.requiresAvatar === true &&
+    responseBody.pendingIdentity?.kind === 'friends-family' &&
+    typeof responseBody.pendingIdentity.displayName === 'string' &&
+    typeof responseBody.pendingIdentity.firstName === 'string' &&
+    typeof responseBody.pendingIdentity.lastInitial === 'string'
   )
 }
 
@@ -1053,6 +1119,7 @@ function App() {
     clientSessionIdRef.current = getClientSessionId()
   }
   const clientSessionId = clientSessionIdRef.current
+  const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
 
   useStatsIconAnimation()
 
@@ -1315,22 +1382,20 @@ function App() {
         return
       }
 
-      if (dateValue < FIRST_OFFICIAL_PUZZLE_DATE) {
-        showToast('Choose a date on or after Jun 19, 2021')
-        return
-      }
-
       try {
-        const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
-          '/api/puzzle/past',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ date: dateValue }),
+        const responseBody = await requestJson<
+          Partial<PuzzleMetadata> & {
+            clampedToOldest?: boolean
+            error?: string
+            oldestDate?: string
+          }
+        >('/api/puzzle/past', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
           },
-        )
+          body: JSON.stringify({ date: dateValue }),
+        })
 
         if (
           responseBody.mode !== 'past' ||
@@ -1351,6 +1416,14 @@ function App() {
           puzzleId: responseBody.puzzleId,
           status: responseBody.status,
         })
+        setPastWordDate(responseBody.date)
+
+        if (responseBody.clampedToOldest) {
+          showToast(
+            `${formatPuzzleHeaderDate(responseBody.oldestDate ?? FIRST_OFFICIAL_PUZZLE_DATE)} is the oldest day playable.`,
+            2400,
+          )
+        }
       } catch (error) {
         console.warn('Could not start past puzzle', error)
         showToast(error instanceof Error ? error.message : 'Could not start past puzzle')
@@ -1499,6 +1572,7 @@ function App() {
         }
         setCompletedResult({
           ...baseResult,
+          analysis: result.result?.analysis,
           answer: result.answer || answer,
           board: result.result?.board ?? baseResult.board,
           definition: result.definition,
@@ -2070,7 +2144,13 @@ function App() {
           )}
         </div>
 
-        <h1 className="wordbee-title">Wordbee</h1>
+        <h1
+          className={['wordbee-title', puzzleHeaderLabel ? 'wordbee-title--visible' : '']
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {puzzleHeaderLabel || 'Wordbee'}
+        </h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
           {!isFamilyStatsOpen && completedResult && (
@@ -2348,7 +2428,7 @@ function FriendsFamilyAccessForm({
   const [firstName, setFirstName] = useState('')
   const [lastInitial, setLastInitial] = useState('')
   const [step, setStep] = useState<'code' | 'profile' | 'avatar'>('code')
-  const [pendingAccess, setPendingAccess] = useState<FriendsFamilyAccess | null>(null)
+  const [pendingAccess, setPendingAccess] = useState<PendingFriendsFamilyAccess | null>(null)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -2380,53 +2460,87 @@ function FriendsFamilyAccessForm({
     }
   }
 
+  const requestLogin = (createUser = false) =>
+    requestJson<AccessLoginResponse>('/api/friends-family/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        clientSessionId,
+        code,
+        createUser,
+        firstName,
+        lastInitial,
+      }),
+    })
+
+  const completeSignedInLogin = (responseBody: AccessLoginResponse, avatar?: AvatarConfig) => {
+    if (!isCompleteAccessLoginResponse(responseBody)) {
+      throw new Error('Could not sign in')
+    }
+
+    const cachedAvatar = loadCachedAvatar(
+      responseBody.identity.userId,
+      responseBody.identity.displayName,
+    )
+    onLogin({
+      avatar:
+        avatar ?? cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
+      ...responseBody.identity,
+      token: responseBody.token,
+    })
+  }
+
   const login = async () => {
     setError('')
     setIsSubmitting(true)
 
     try {
-      const responseBody = await requestJson<AccessLoginResponse>('/api/friends-family/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          clientSessionId,
-          code,
-          firstName,
-          lastInitial,
-        }),
-      })
+      const responseBody = await requestLogin(false)
 
-      if (
-        responseBody.identity?.kind !== 'friends-family' ||
-        typeof responseBody.token !== 'string'
-      ) {
-        throw new Error('Could not sign in')
-      }
-
-      const cachedAvatar = loadCachedAvatar(
-        responseBody.identity.userId,
-        responseBody.identity.displayName,
-      )
-      const nextAccessState = {
-        avatar: cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
-        ...responseBody.identity,
-        token: responseBody.token,
-      }
-
-      if (cachedAvatar) {
-        onLogin(nextAccessState)
+      if (isCompleteAccessLoginResponse(responseBody)) {
+        completeSignedInLogin(responseBody)
         return
       }
 
-      setPendingAccess(nextAccessState)
-      setStep('avatar')
+      if (isPendingAccessLoginResponse(responseBody)) {
+        setPendingAccess({
+          avatar: createDefaultAvatarConfig(responseBody.pendingIdentity.displayName),
+          ...responseBody.pendingIdentity,
+        })
+        setStep('avatar')
+        return
+      }
+
+      throw new Error('Could not sign in')
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const savePendingAvatar = async (avatar: AvatarConfig) => {
+    if (!pendingAccess || isSubmitting) return
+
+    setError('')
+    setIsSubmitting(true)
+
+    try {
+      const responseBody = await requestLogin(true)
+      completeSignedInLogin(responseBody, avatar)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Could not save avatar')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const cancelPendingAvatar = () => {
+    setPendingAccess(null)
+    setStep('profile')
+    onAvatarDialogClose?.()
   }
 
   return (
@@ -2512,8 +2626,9 @@ function FriendsFamilyAccessForm({
               ariaLabel="Choose your avatar"
               displayName={pendingAccess.displayName}
               initialAvatar={pendingAccess.avatar}
-              onClose={onAvatarDialogClose}
-              onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
+              onCancel={cancelPendingAvatar}
+              onClose={cancelPendingAvatar}
+              onSave={(avatar) => void savePendingAvatar(avatar)}
               saveLabel="Save avatar"
             />
           </>
@@ -2521,7 +2636,8 @@ function FriendsFamilyAccessForm({
           <AvatarBuilder
             displayName={pendingAccess.displayName}
             initialAvatar={pendingAccess.avatar}
-            onSave={(avatar) => onLogin({ ...pendingAccess, avatar })}
+            onCancel={cancelPendingAvatar}
+            onSave={(avatar) => void savePendingAvatar(avatar)}
             saveLabel="Save avatar"
           />
         )
@@ -2998,6 +3114,16 @@ function ResultsDialog({
               ›
             </span>
           </button>
+        )}
+
+        {!isDailyResult && result.analysis && (
+          <section
+            className="results-section results-section--analysis"
+            aria-labelledby="session-insights-title"
+          >
+            <h3 id="session-insights-title">Solve insights</h3>
+            <SolveAnalysisPanel analysis={result.analysis} />
+          </section>
         )}
 
 	        <div className="results-secondary-actions">
@@ -3527,16 +3653,31 @@ function StatsMetric({
 }
 
 function StatsHelpTooltip({ text }: { text: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+
   return (
-    <button
-      aria-label={text}
-      className="stats-help"
-      data-tooltip={text}
-      title={text}
-      type="button"
+    <span
+      className="stats-help-wrap"
+      data-open={isOpen}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setIsOpen(false)
+        }
+      }}
     >
-      ?
-    </button>
+      <button
+        aria-expanded={isOpen}
+        aria-label={text}
+        className="stats-help"
+        onClick={() => setIsOpen((wasOpen) => !wasOpen)}
+        type="button"
+      >
+        ?
+      </button>
+      <span className="stats-help__content" role="tooltip">
+        {text}
+      </span>
+    </span>
   )
 }
 
@@ -3766,6 +3907,10 @@ function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
         <span>{analysis.pathLabel}</span>
         <strong>{analysis.remainingAfterLast} left after final guess</strong>
       </div>
+      <p className="solve-analysis__note">
+        Counts show possible answers before and after each clue. Expected remaining is an
+        average over possible clue patterns.
+      </p>
       <ol className="solve-analysis__steps">
         {analysis.steps.map((step) => (
           <li key={`${step.turn}-${step.guess}`}>
@@ -3774,7 +3919,7 @@ function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
                 {step.turn}. {step.guess}
               </strong>
               <span>
-                {step.before} to {step.after}
+                {formatCandidateCountChange(step)}
               </span>
             </div>
             <div className="solve-analysis__step-bar">
@@ -3786,15 +3931,30 @@ function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
                 }
               />
             </div>
-            <p>
-              {step.eliminatedPercentage}% eliminated. Best expected play: {step.bestWord} (
-              {formatAverage(step.bestRemaining)} expected).
-            </p>
+            <p>{formatStepInsight(step)}</p>
           </li>
         ))}
       </ol>
     </div>
   )
+}
+
+function formatCandidateCountChange(step: GuessAnalysisStep) {
+  return step.before <= 1
+    ? '1 possible answer'
+    : `${step.before} possible -> ${step.after}`
+}
+
+function formatStepInsight(step: GuessAnalysisStep) {
+  if (step.before <= 1) {
+    if (step.guess === step.bestWord) {
+      return `${step.bestWord} was the only remaining answer; this guess confirmed it.`
+    }
+
+    return `${step.bestWord} was the only remaining answer; ${step.guess} could not improve the path.`
+  }
+
+  return `${step.eliminatedPercentage}% eliminated. Expected remaining for ${step.guess}: ${formatAverage(step.expectedRemaining)}. Best sampled play: ${step.bestWord} (${formatAverage(step.bestRemaining)} expected).`
 }
 
 function ScoreMeter({

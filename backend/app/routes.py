@@ -16,12 +16,13 @@ from .auth import (
     validate_friends_family_code,
     verify_friends_family_token,
 )
-from .daily_answer import get_daily_answer, get_puzzle_date
+from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE, get_daily_answer, get_puzzle_date
 from .definitions import get_definition
 from .game import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification
 from .stats import (
     EMPTY_STATS,
+    analyze_solve_path,
     get_family_dashboard,
     get_family_result_for_user,
     get_family_today_status,
@@ -98,7 +99,8 @@ def past_puzzle():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        requested_puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = max(requested_puzzle_date, FIRST_OFFICIAL_PUZZLE_DATE)
         if puzzle_date >= get_puzzle_date():
             return jsonify({"error": "Choose an earlier date"}), 400
 
@@ -108,16 +110,19 @@ def past_puzzle():
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
-    return jsonify(
-        public_play_puzzle(
-            answer=answer_record["answer"],
-            mode="past",
-            puzzle_date=answer_record["puzzle_date"],
-            status=answer_record["status"],
-            confidence=answer_record["confidence"],
-            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
-        )
+    response = public_play_puzzle(
+        answer=answer_record["answer"],
+        mode="past",
+        puzzle_date=answer_record["puzzle_date"],
+        status=answer_record["status"],
+        confidence=answer_record["confidence"],
+        created_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )
+    if requested_puzzle_date < FIRST_OFFICIAL_PUZZLE_DATE:
+        response["clampedToOldest"] = True
+        response["oldestDate"] = FIRST_OFFICIAL_PUZZLE_DATE.isoformat()
+
+    return jsonify(response)
 
 
 @api.post("/friends-family/validate-code")
@@ -137,6 +142,7 @@ def friends_family_login():
     try:
         session = create_friends_family_session(
             code=payload.get("code"),
+            create_user=bool(payload.get("createUser")),
             client_session_id=payload.get("clientSessionId"),
             first_name=payload.get("firstName"),
             last_initial=payload.get("lastInitial"),
@@ -464,11 +470,17 @@ def get_untracked_result(
     if len(normalized_board) != guesses_used or len(normalized_guesses) != guesses_used:
         raise ValueError("Completed result does not match guess count")
 
+    normalized_answer = answer.upper()
     return {
         "board": normalized_board,
         "created": False,
         "result": {
-            "answer": answer.upper(),
+            "analysis": analyze_solve_path(
+                answer=normalized_answer,
+                guesses=tuple(normalized_guesses),
+                outcome=outcome,
+            ),
+            "answer": normalized_answer,
             "board": normalized_board,
             "completedAt": datetime.now(UTC).isoformat(timespec="seconds"),
             "date": puzzle_date,

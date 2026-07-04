@@ -39,6 +39,7 @@ def create_friends_family_session(
     first_name: object,
     last_initial: object,
     client_session_id: object = None,
+    create_user: bool = True,
 ) -> dict[str, Any]:
     configured_code = validate_friends_family_code(code)
     if configured_code is None:
@@ -48,6 +49,17 @@ def create_friends_family_session(
     normalized_last_initial = normalize_last_initial(last_initial)
     normalized_client_session_id = normalize_client_session_id(client_session_id)
     code_id = configured_code["codeId"]
+
+    if not create_user and get_friends_family_user(
+        code_id=code_id,
+        first_name=normalized_first_name,
+        last_initial=normalized_last_initial,
+    ) is None:
+        return {
+            "pendingIdentity": create_identity(normalized_first_name, normalized_last_initial),
+            "requiresAvatar": True,
+        }
+
     user = upsert_friends_family_user(
         code_id=code_id,
         first_name=normalized_first_name,
@@ -67,6 +79,7 @@ def create_friends_family_session(
 
     return {
         "identity": public_identity(user),
+        "requiresAvatar": False,
         "token": encode_token(payload),
     }
 
@@ -351,6 +364,37 @@ def upsert_friends_family_user(
         "displayName": display_name,
         "firstName": first_name,
         "lastInitial": last_initial,
+    }
+
+
+def get_friends_family_user(
+    *,
+    code_id: str,
+    first_name: str,
+    last_initial: str,
+) -> dict[str, str] | None:
+    user_id = create_user_id(code_id, first_name, last_initial)
+
+    with connect() as connection:
+        user_row = connection.execute(
+            """
+            SELECT id, code_id, first_name, last_initial, display_name
+            FROM friends_family_users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+    if user_row is None:
+        return None
+
+    return {
+        "kind": TOKEN_KIND,
+        "userId": user_row["id"],
+        "codeId": user_row["code_id"],
+        "displayName": user_row["display_name"],
+        "firstName": user_row["first_name"],
+        "lastInitial": user_row["last_initial"],
     }
 
 

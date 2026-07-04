@@ -13,6 +13,12 @@ Current tables:
 
 Random and past-word play are intentionally excluded from friends-and-family stats tables.
 
+Stats derivation notes:
+
+- Daily result rows are the raw recording layer for future stats work: date, answer, outcome, guesses, board states, and completion time are stored.
+- Skill, luck, solve-path labels, starter aggregates, trends, and leaderboard values are derived from raw rows at response time rather than persisted as source-of-truth fields.
+- Dashboard responses cap display history, recent results, and daily timeline windows so the browser does not receive every historical board as the dataset grows.
+
 Daily answer archive notes:
 
 - Official historical play starts on `2021-06-19`.

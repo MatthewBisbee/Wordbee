@@ -965,6 +965,9 @@ function App() {
   const clientSessionId = clientSessionIdRef.current
   const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
   const isStandaloneApp = getIsStandaloneApp()
+  const isSolvedUntrackedPuzzle = Boolean(
+    completedResult && puzzle?.mode !== 'daily' && completedResult.mode === puzzle?.mode,
+  )
 
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
@@ -2072,7 +2075,11 @@ function App() {
         </div>
 
         <h1
-          className={['wordbee-title', puzzleHeaderLabel ? 'wordbee-title--visible' : '']
+          className={[
+            'wordbee-title',
+            puzzleHeaderLabel ? 'wordbee-title--visible' : '',
+            isSolvedUntrackedPuzzle ? 'wordbee-title--left-anchor' : '',
+          ]
             .filter(Boolean)
             .join(' ')}
         >

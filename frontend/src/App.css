@@ -322,6 +322,16 @@
   flex-direction: column;
 }
 
+@media (max-width: 640px) {
+  .wordbee-game {
+    height: calc(100dvh - var(--header-height));
+  }
+
+  .wordbee-app:not(.wordbee-app--standalone) .wordbee-game {
+    height: min(665px, calc(100dvh - var(--header-height)));
+  }
+}
+
 .wordbee-board-container {
   display: flex;
   align-items: center;
@@ -741,6 +751,16 @@
   padding: 0 44px 12px 0;
 }
 
+.avatar-modal .avatar-builder__preview-row {
+  position: sticky;
+  z-index: 4;
+  top: max(12px, env(safe-area-inset-top));
+  margin: 0 -14px;
+  border-bottom: 1px solid var(--settings-border);
+  padding: 0 58px 12px 14px;
+  background: var(--color-background);
+}
+
 .avatar-preview {
   overflow: hidden;
   border: 0;
@@ -838,6 +858,10 @@
   border-top: 1px solid var(--settings-border);
   border-bottom: 1px solid var(--settings-border);
   padding: 12px 14px;
+}
+
+.avatar-modal .avatar-builder__controls {
+  border-top: 0;
 }
 
 .avatar-feature {
@@ -1019,10 +1043,14 @@
     min-height: 0;
   }
 
-  .avatar-builder__preview-row {
+  .avatar-modal .avatar-builder__preview-row {
+    position: static;
     grid-template-columns: 176px minmax(0, 1fr);
     gap: 18px;
+    margin: 0;
+    border-bottom: 0;
     padding: 0;
+    background: transparent;
   }
 
   .avatar-preview {

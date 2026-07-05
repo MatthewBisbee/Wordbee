@@ -652,6 +652,14 @@ function getDevicePrefersDark() {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
 }
 
+function getIsStandaloneApp() {
+  const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean }
+  return (
+    navigatorWithStandalone.standalone === true ||
+    (window.matchMedia?.('(display-mode: standalone)').matches ?? false)
+  )
+}
+
 function createBoard() {
   return Array.from({ length: MAX_GUESSES }, () =>
     Array.from({ length: WORD_LENGTH }, () => ({
@@ -956,6 +964,7 @@ function App() {
   }
   const clientSessionId = clientSessionIdRef.current
   const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
+  const isStandaloneApp = getIsStandaloneApp()
 
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
@@ -2009,6 +2018,7 @@ function App() {
         'wordbee-app',
         isDarkTheme ? 'wordbee-app--dark' : 'wordbee-app--light',
         settings.highContrast ? 'wordbee-app--high-contrast' : '',
+        isStandaloneApp ? 'wordbee-app--standalone' : '',
       ]
         .filter(Boolean)
         .join(' ')}

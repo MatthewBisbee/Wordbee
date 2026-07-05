@@ -323,8 +323,8 @@
 }
 
 @media (max-width: 640px) {
-  .wordbee-game {
-    height: calc(100dvh - var(--header-height));
+  .wordbee-app--standalone .wordbee-game {
+    height: calc(100dvh - var(--header-height) - 8px);
   }
 
   .wordbee-app:not(.wordbee-app--standalone) .wordbee-game {

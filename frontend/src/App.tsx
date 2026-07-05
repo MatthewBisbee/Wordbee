@@ -2059,10 +2059,12 @@ function App() {
                 <WordbeeMenu
                   maxPastDate={getDefaultPastDate()}
                   minPastDate={FIRST_OFFICIAL_PUZZLE_DATE}
+                  onDaily={() => void loadDailyPuzzle()}
                   onPast={() => void startPastPuzzle(pastWordDate)}
                   onPastDateChange={setPastWordDate}
                   onRandom={() => void startRandomPuzzle()}
                   pastDate={pastWordDate}
+                  showDaily={puzzle?.mode !== 'daily'}
                 />
               )}
             </>
@@ -2878,20 +2880,29 @@ function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
 function WordbeeMenu({
   maxPastDate,
   minPastDate,
+  onDaily,
   onPast,
   onPastDateChange,
   onRandom,
   pastDate,
+  showDaily,
 }: {
   maxPastDate: string
   minPastDate: string
+  onDaily: () => void
   onPast: () => void
   onPastDateChange: (dateValue: string) => void
   onRandom: () => void
   pastDate: string
+  showDaily: boolean
 }) {
   return (
     <div className="wordbee-menu-popover" role="menu">
+      {showDaily && (
+        <button onClick={onDaily} role="menuitem" type="button">
+          Daily puzzle
+        </button>
+      )}
       <button onClick={onRandom} role="menuitem" type="button">
         Endless random
       </button>

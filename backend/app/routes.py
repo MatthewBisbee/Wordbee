@@ -22,6 +22,7 @@ from .definitions import get_definition
 from .game import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification
 from .stats import (
+    AttemptConflictError,
     EMPTY_STATS,
     analyze_solve_path,
     get_family_dashboard,
@@ -31,6 +32,7 @@ from .stats import (
     normalize_board,
     normalize_guesses,
     save_completed_game,
+    save_family_daily_attempt,
 )
 
 
@@ -266,6 +268,7 @@ def guess():
 
     puzzle_mode = answer_record["mode"]
     friends_family_token = payload.get("friendsFamilyToken")
+    friends_family_identity = None
     if puzzle_mode == "daily" and friends_family_token:
         friends_family_identity = verify_friends_family_token(
             friends_family_token,
@@ -291,6 +294,20 @@ def guess():
     scores = score_guess(answer_record["answer"], normalized_guess)
     did_win = all(score == "correct" for score in scores)
     should_reveal = bool(payload.get("reveal"))
+
+    if puzzle_mode == "daily" and friends_family_identity and not did_win and not should_reveal:
+        try:
+            save_family_daily_attempt(
+                user_id=friends_family_identity["userId"],
+                puzzle_date=answer_record["puzzle_date"],
+                guess=normalized_guess,
+                scores=scores,
+                expected_guess_index=get_attempt_index(payload.get("attemptIndex")),
+            )
+        except AttemptConflictError as exc:
+            return jsonify({"error": str(exc)}), 409
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
 
     response = {
         "date": answer_record["puzzle_date"],
@@ -418,6 +435,21 @@ def get_payload_mode(payload) -> str:
         raise ValueError("Invalid puzzle mode")
 
     return normalized_mode
+
+
+def get_attempt_index(raw_index) -> int | None:
+    if raw_index is None:
+        return None
+
+    try:
+        attempt_index = int(raw_index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid attempt index") from exc
+
+    if attempt_index < 0 or attempt_index >= 6:
+        raise ValueError("Invalid attempt index")
+
+    return attempt_index
 
 
 def get_answer_record_for_payload(payload):

@@ -1239,12 +1239,30 @@
 }
 
 .settings-profile {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.settings-profile-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-profile-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .settings-avatar-preview {
@@ -2359,6 +2377,39 @@
   line-height: 15px;
 }
 
+.stats-leaderboard .stats-chart-heading {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.stats-leaderboard-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--result-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.stats-leaderboard-sort select {
+  max-width: min(190px, 52vw);
+  min-height: 32px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 28px 0 10px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font: inherit;
+  font-weight: 800;
+}
+
+.stats-leaderboard-sort select:focus {
+  outline: 2px solid var(--color-correct);
+  outline-offset: 2px;
+}
+
 .stats-distribution-chart,
 .stats-starter-bars,
 .stats-leaderboard-list,
@@ -2624,14 +2675,14 @@
 }
 
 .stats-day-rail button {
-  min-width: 92px;
-  min-height: 54px;
+  min-width: 86px;
+  min-height: 40px;
   flex: 0 0 auto;
   border: 1px solid var(--settings-border);
   border-radius: 8px;
   display: grid;
-  gap: 4px;
-  padding: 8px;
+  place-items: center;
+  padding: 8px 10px;
   background: transparent;
   color: var(--color-tone-1);
   cursor: pointer;
@@ -2651,9 +2702,10 @@
 }
 
 .stats-day-rail strong {
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 800;
-  line-height: 20px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .stats-daily-results {
@@ -2662,11 +2714,24 @@
 }
 
 .stats-daily-results button {
-  grid-template-columns: 34px minmax(0, 1fr) auto;
+  min-height: 56px;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 4px 10px 4px 4px;
 }
 
-.stats-daily-results em {
-  grid-column: 2 / -1;
+.stats-daily-results button > .stats-daily-result-name {
+  color: var(--color-tone-1);
+  text-align: left;
+}
+
+.stats-daily-results button > .stats-daily-result-outcome {
+  color: var(--result-muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .family-result-board {

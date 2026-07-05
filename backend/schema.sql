@@ -80,6 +80,20 @@ ON friends_family_daily_results (user_id, puzzle_date);
 CREATE INDEX IF NOT EXISTS idx_friends_family_daily_results_date
 ON friends_family_daily_results (puzzle_date);
 
+CREATE TABLE IF NOT EXISTS friends_family_daily_attempts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  puzzle_date TEXT NOT NULL,
+  guesses_json TEXT NOT NULL,
+  board_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
+  UNIQUE (user_id, puzzle_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_daily_attempts_user_date
+ON friends_family_daily_attempts (user_id, puzzle_date);
+
 CREATE TABLE IF NOT EXISTS word_definitions (
   word TEXT PRIMARY KEY,
   phonetic TEXT,

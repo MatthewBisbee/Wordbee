@@ -52,6 +52,10 @@ MAX_MIDGAME_GUESSES_TO_SCORE = 90
 MAX_DASHBOARD_HISTORY_RESULTS = 60
 
 
+class AttemptConflictError(ValueError):
+    pass
+
+
 def save_completed_game(
     *,
     game_id: str,
@@ -119,6 +123,13 @@ def save_completed_game(
             ),
         )
         created = cursor.rowcount == 1
+        connection.execute(
+            """
+            DELETE FROM friends_family_daily_attempts
+            WHERE user_id = ? AND puzzle_date = ?
+            """,
+            (user_id, puzzle_date),
+        )
 
     result = get_family_result_for_user(user_id=user_id, puzzle_date=puzzle_date)
 
@@ -128,6 +139,101 @@ def save_completed_game(
         "result": result,
         "stats": calculate_user_stats_for_id(user_id),
     }
+
+
+def save_family_daily_attempt(
+    *,
+    user_id: str,
+    puzzle_date: str,
+    guess: str,
+    scores: list[str],
+    expected_guess_index: int | None,
+) -> dict[str, Any]:
+    if not user_id:
+        raise ValueError("Friends and family sign-in required")
+
+    normalized_guess = normalize_guesses([guess])[0]
+    normalized_scores = normalize_board([scores])[0]
+    now = datetime.now().astimezone().isoformat()
+
+    with connect() as connection:
+        completed_row = connection.execute(
+            """
+            SELECT id
+            FROM friends_family_daily_results
+            WHERE user_id = ? AND puzzle_date = ?
+            """,
+            (user_id, puzzle_date),
+        ).fetchone()
+        if completed_row is not None:
+            raise AttemptConflictError("Already completed today")
+
+        attempt_row = connection.execute(
+            """
+            SELECT guesses_json, board_json
+            FROM friends_family_daily_attempts
+            WHERE user_id = ? AND puzzle_date = ?
+            """,
+            (user_id, puzzle_date),
+        ).fetchone()
+
+        guesses: list[str] = []
+        board: list[list[str]] = []
+        if attempt_row is not None:
+            guesses = normalize_guesses(json.loads(attempt_row["guesses_json"]))
+            board = normalize_board(json.loads(attempt_row["board_json"]))
+            if len(guesses) != len(board):
+                raise ValueError("Invalid daily attempt")
+
+        if expected_guess_index is not None and expected_guess_index != len(guesses):
+            raise AttemptConflictError("Puzzle progress changed. Refreshing latest guesses.")
+
+        if len(guesses) >= 6:
+            raise AttemptConflictError("Already completed today")
+
+        guesses.append(normalized_guess)
+        board.append(normalized_scores)
+
+        connection.execute(
+            """
+            INSERT INTO friends_family_daily_attempts (
+              id, user_id, puzzle_date, guesses_json, board_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, puzzle_date) DO UPDATE SET
+              guesses_json = excluded.guesses_json,
+              board_json = excluded.board_json,
+              updated_at = excluded.updated_at
+            """,
+            (
+                f"{user_id}:{puzzle_date}",
+                user_id,
+                puzzle_date,
+                json.dumps(guesses, separators=(",", ":")),
+                json.dumps(board, separators=(",", ":")),
+                now,
+            ),
+        )
+
+    attempt = get_family_daily_attempt(user_id=user_id, puzzle_date=puzzle_date)
+    if attempt is None:
+        raise RuntimeError("Unable to save daily attempt")
+
+    return attempt
+
+
+def get_family_daily_attempt(*, user_id: str, puzzle_date: str) -> dict[str, Any] | None:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, puzzle_date, guesses_json, board_json, updated_at
+            FROM friends_family_daily_attempts
+            WHERE user_id = ? AND puzzle_date = ?
+            """,
+            (user_id, puzzle_date),
+        ).fetchone()
+
+    return serialize_attempt(row) if row else None
 
 
 def get_family_result_for_user(*, user_id: str, puzzle_date: str) -> dict[str, Any] | None:
@@ -154,9 +260,16 @@ def get_family_today_status(
         user_id=identity["userId"],
         puzzle_date=puzzle_date,
     )
+    attempt = None
+    if result is None:
+        attempt = get_family_daily_attempt(
+            user_id=identity["userId"],
+            puzzle_date=puzzle_date,
+        )
 
     return {
         "completed": result is not None,
+        "attempt": attempt,
         "result": result,
         "stats": calculate_user_stats_for_id(identity["userId"]),
     }
@@ -381,6 +494,22 @@ def calculate_best_streak(results: list[dict[str, Any]], *, require_win: bool) -
         previous_date = result_date
 
     return best
+
+
+def serialize_attempt(row: Any) -> dict[str, Any]:
+    guesses = normalize_guesses(json.loads(row["guesses_json"]))
+    board = normalize_board(json.loads(row["board_json"]))
+    if len(guesses) != len(board):
+        raise ValueError("Invalid daily attempt")
+
+    return {
+        "userId": row["user_id"],
+        "date": row["puzzle_date"],
+        "guesses": guesses,
+        "guessesUsed": len(guesses),
+        "board": board,
+        "updatedAt": row["updated_at"],
+    }
 
 
 def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, Any]:

@@ -9,6 +9,7 @@ Current tables:
 - `friends_family_users`: one row per unique friends-and-family code group plus first name, last initial, and synced avatar config JSON.
 - `friends_family_sessions`: server-issued login sessions. Newer sessions replace older active sessions for the same user.
 - `friends_family_daily_results`: one row per friends-and-family user per puzzle date, including answer, outcome, guess count, starter word, guesses JSON, board states JSON, and completion timestamp.
+- `friends_family_daily_attempts`: one active in-progress daily attempt per friends-and-family user per puzzle date, including submitted guesses, scored board states, and update timestamp. Rows are cleared when the daily result is completed.
 - `word_definitions`: one row per fetched definition, including pronunciation text, part of speech, definition, an intentionally blank example field, synonyms JSON, source URL, and timestamps.
 
 Random and past-word play are intentionally excluded from friends-and-family stats tables.

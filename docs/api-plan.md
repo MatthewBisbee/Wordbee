@@ -33,11 +33,11 @@ Current endpoints:
 
 `POST /api/friends-family/sign-out` clears the active session for the signed-in user when possible.
 
-`POST /api/friends-family/today-status` returns whether the signed-in family user has already completed the requested daily puzzle, plus their stored result when complete.
+`POST /api/friends-family/today-status` returns whether the signed-in family user has already completed the requested daily puzzle, plus their stored result when complete or their active in-progress attempt when not complete.
 
 `POST /api/friends-family/stats` returns full-page stats dashboard data: family overview, per-user summaries, starter-word counts, capped daily history, capped timeline data, leaderboard data, and derived solve analysis. If the requesting user has not solved the current daily puzzle, other players' current-day answer, guesses, board, and analysis are replaced with locked placeholders.
 
-`POST /api/guess` accepts a date or signed untracked puzzle token, guess, and optional final-reveal flag. It validates the guess, returns tile scores, and returns the answer only when the final-reveal flag is set.
+`POST /api/guess` accepts a date or signed untracked puzzle token, guess, optional daily attempt index, and optional final-reveal flag. It validates the guess, records signed-in daily in-progress attempts, returns tile scores, and returns the answer only when the final-reveal flag is set.
 
 `POST /api/results` stores a completed daily result for verified friends-and-family users and returns updated stats.
 It also returns the completed answer and definition summary for the completion popup.

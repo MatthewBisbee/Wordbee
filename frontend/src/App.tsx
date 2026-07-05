@@ -272,10 +272,19 @@ type FamilyStatsDashboard = {
   users: FamilyStatsUser[]
 }
 type FamilyTodayStatus = {
+  attempt?: FamilyDailyAttempt
   completed: boolean
   result?: FamilyDailyResult
   stats: StatsSummary
   definition?: DefinitionSummary
+}
+type FamilyDailyAttempt = {
+  userId: string
+  date: string
+  guesses: string[]
+  guessesUsed: number
+  board: EvaluatedState[][]
+  updatedAt: string
 }
 type ResultsResponse = {
   stats: StatsSummary
@@ -827,7 +836,7 @@ function getCompletedGuesses(board: Tile[][], activeRow: number) {
     .map((row) => row.map((tile) => tile.letter).join(''))
 }
 
-function hydrateBoardFromResult(result: FamilyDailyResult) {
+function hydrateBoardFromResult(result: { guesses: string[]; board: EvaluatedState[][] }) {
   const nextBoard = createBoard()
 
   result.guesses.forEach((guess, rowIndex) => {
@@ -845,7 +854,7 @@ function hydrateBoardFromResult(result: FamilyDailyResult) {
   return nextBoard
 }
 
-function getKeyboardStateFromResult(result: FamilyDailyResult) {
+function getKeyboardStateFromResult(result: { guesses: string[]; board: EvaluatedState[][] }) {
   return result.guesses.reduce<Record<string, EvaluatedState>>((nextState, guess, rowIndex) => {
     guess.split('').forEach((letter, tileIndex) => {
       const state = result.board[rowIndex]?.[tileIndex]
@@ -1505,6 +1514,7 @@ function App() {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
+            attemptIndex: row,
             clientSessionId,
             date: puzzle.date,
             friendsFamilyToken: puzzle.mode === 'daily' ? friendsFamilyToken : '',
@@ -1532,7 +1542,11 @@ function App() {
     } catch (error) {
       setIsRevealing(false)
 
-      if (error instanceof ApiError && error.message === 'Already completed today') {
+      if (
+        error instanceof ApiError &&
+        (error.message === 'Already completed today' ||
+          error.message === 'Puzzle progress changed. Refreshing latest guesses.')
+      ) {
         setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
       }
 
@@ -1766,6 +1780,16 @@ function App() {
             saved: true,
             stats: responseBody.stats,
           })
+        } else if (responseBody.attempt && responseBody.attempt.guessesUsed > 0) {
+          const serverAttempt = responseBody.attempt
+          setBoard(hydrateBoardFromResult(serverAttempt))
+          setKeyboardState(getKeyboardStateFromResult(serverAttempt))
+          setCurrentRow(Math.min(serverAttempt.guessesUsed, MAX_GUESSES - 1))
+          setCurrentColumn(0)
+          setStatus('playing')
+          setWinningRow(null)
+          setCompletedResult(null)
+          setIsResultsOpen(false)
         } else if (completedResult?.saved) {
           resetCurrentGame()
         }
@@ -3105,6 +3129,7 @@ function FamilyStatsPage({
   }, [initialView])
 
   useEffect(() => {
+    if (view !== 'players') return
     if (!selectedUser) return
     if (
       selectedUser.history.some(
@@ -3114,12 +3139,21 @@ function FamilyStatsPage({
       return
     }
     setSelectedResultId(getFirstUnlockedResult(selectedUser.history)?.id ?? '')
-  }, [selectedResultId, selectedUser])
+  }, [selectedResultId, selectedUser, view])
 
   useEffect(() => {
     if (selectedDate && group.timeline.some((day) => day.date === selectedDate)) return
     setSelectedDate(group.timeline[group.timeline.length - 1]?.date ?? '')
   }, [group.timeline, selectedDate])
+
+  useEffect(() => {
+    if (view !== 'daily') return
+
+    const dayResultId = dayResult?.id ?? ''
+    if (selectedResultId === dayResultId) return
+
+    setSelectedResultId(dayResultId)
+  }, [dayResult?.id, selectedResultId, view])
 
   const openPlayer = (userId: string) => {
     setSelectedUserId(userId)
@@ -3424,8 +3458,7 @@ function StatsDailyView({
             onClick={() => onSelectDate(timelineDay.date)}
             type="button"
           >
-            <span>{formatHistoryDate(timelineDay.date)}</span>
-            <strong>{timelineDay.locked ? 'Locked' : formatAverage(timelineDay.averageGuesses)}</strong>
+            <strong>{formatHistoryDate(timelineDay.date)}</strong>
           </button>
         ))}
       </div>
@@ -3467,16 +3500,13 @@ function StatsDailyView({
                   <PlayerAvatar
                     avatar={dailyResult.avatar}
                     displayName={dailyResult.displayName}
-                    size={34}
+                    size={48}
                     userId={dailyResult.userId}
                   />
-                  <span>{dailyResult.displayName}</span>
-                  <strong>{formatOutcome(dailyResult)}</strong>
-                  <em>
-                    {locked
-                      ? 'Solve today to reveal'
-                      : dailyResult.analysis?.pathLabel ?? dailyResult.starterWord}
-                  </em>
+                  <strong className="stats-daily-result-name">{dailyResult.displayName}</strong>
+                  <span className="stats-daily-result-outcome">
+                    {locked ? 'Solve today to reveal' : formatOutcomeWithGuesses(dailyResult)}
+                  </span>
                 </button>
               )
             })}
@@ -3828,6 +3858,75 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
   )
 }
 
+type LeaderboardSortKey =
+  | 'averageGuesses'
+  | 'winPercentage'
+  | 'wins'
+  | 'currentWinStreak'
+  | 'bestWinStreak'
+  | 'averageSkill'
+  | 'played'
+
+type LeaderboardSortOption = {
+  direction: 'asc' | 'desc'
+  formatValue: (user: FamilyStatsUser) => string
+  getValue: (user: FamilyStatsUser) => number
+  key: LeaderboardSortKey
+  label: string
+}
+
+const LEADERBOARD_SORT_OPTIONS: LeaderboardSortOption[] = [
+  {
+    direction: 'asc',
+    formatValue: (user) => `${formatAverage(user.stats.averageGuesses)} avg guesses`,
+    getValue: (user) => user.stats.averageGuesses,
+    key: 'averageGuesses',
+    label: 'Average guesses',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.winPercentage}% win rate`,
+    getValue: (user) => user.stats.winPercentage,
+    key: 'winPercentage',
+    label: 'Win rate',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.wins} wins`,
+    getValue: (user) => user.stats.wins,
+    key: 'wins',
+    label: 'Wins',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.currentWinStreak} current streak`,
+    getValue: (user) => user.stats.currentWinStreak,
+    key: 'currentWinStreak',
+    label: 'Current streak',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.bestWinStreak} best streak`,
+    getValue: (user) => user.stats.bestWinStreak,
+    key: 'bestWinStreak',
+    label: 'Best streak',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.averageSkill ?? 0} skill`,
+    getValue: (user) => user.stats.averageSkill ?? 0,
+    key: 'averageSkill',
+    label: 'Skill',
+  },
+  {
+    direction: 'desc',
+    formatValue: (user) => `${user.stats.played} plays`,
+    getValue: (user) => user.stats.played,
+    key: 'played',
+    label: 'Total plays',
+  },
+]
+
 function PlayerLeaderboard({
   onSelectUser,
   users,
@@ -3835,13 +3934,30 @@ function PlayerLeaderboard({
   onSelectUser: (userId: string) => void
   users: FamilyStatsUser[]
 }) {
-  const rankedUsers = [...users].sort(compareLeaderboardUsers)
+  const [sortKey, setSortKey] = useState<LeaderboardSortKey>('averageGuesses')
+  const selectedSort = getLeaderboardSortOption(sortKey)
+  const rankedUsers = [...users].sort((first, second) =>
+    compareLeaderboardUsers(first, second, sortKey),
+  )
 
   return (
     <section className="stats-leaderboard" aria-labelledby="stats-leaderboard-title">
       <div className="stats-chart-heading">
         <h4 id="stats-leaderboard-title">Leaderboard</h4>
-        <span>Ranked by average guesses</span>
+        <label className="stats-leaderboard-sort">
+          <span>Ranked by</span>
+          <select
+            aria-label="Rank leaderboard by"
+            onChange={(event) => setSortKey(event.target.value as LeaderboardSortKey)}
+            value={sortKey}
+          >
+            {LEADERBOARD_SORT_OPTIONS.map((option) => (
+              <option key={option.key} value={option.key}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="stats-leaderboard-list">
         {rankedUsers.map((user, index) => (
@@ -3854,8 +3970,8 @@ function PlayerLeaderboard({
               userId={user.id}
             />
             <strong>{user.displayName}</strong>
-            <em>{formatAverage(user.stats.averageGuesses)} avg guesses</em>
-            <i>{user.stats.averageSkill ?? 0} skill</i>
+            <em>{formatLeaderboardValue(user, selectedSort)}</em>
+            <i>{formatLeaderboardSecondaryValue(user, sortKey)}</i>
           </button>
         ))}
       </div>
@@ -3879,7 +3995,7 @@ function FamilyResultBoard({ result }: { result: FamilyDailyResult }) {
             <strong>{result.displayName}</strong>
           </div>
         </div>
-        <em>{formatOutcome(result)}</em>
+        <em>{formatOutcomeWithGuesses(result)}</em>
       </div>
       <div className="family-result-board__body">
         <div className="family-mini-board">
@@ -3910,7 +4026,7 @@ function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
         <ScoreMeter help={LUCK_HELP_TEXT} label="Luck" value={analysis.luck} />
       </div>
       <div className="solve-analysis__path">
-        <span>{analysis.pathLabel}</span>
+        <span>Solve path</span>
         <strong>{analysis.remainingAfterLast} left after final guess</strong>
       </div>
       <p className="solve-analysis__note">
@@ -4121,20 +4237,71 @@ function getWinRateLeader(users: FamilyStatsUser[]) {
     })[0]
 }
 
-function compareLeaderboardUsers(first: FamilyStatsUser, second: FamilyStatsUser) {
+function getLeaderboardSortOption(sortKey: LeaderboardSortKey) {
+  return (
+    LEADERBOARD_SORT_OPTIONS.find((option) => option.key === sortKey) ??
+    LEADERBOARD_SORT_OPTIONS[0]
+  )
+}
+
+function compareLeaderboardUsers(
+  first: FamilyStatsUser,
+  second: FamilyStatsUser,
+  sortKey: LeaderboardSortKey,
+) {
   if (first.stats.played === 0 || second.stats.played === 0) {
-    if (first.stats.played === second.stats.played) return first.displayName.localeCompare(second.displayName)
-    return first.stats.played === 0 ? 1 : -1
+    if (first.stats.played !== second.stats.played) return first.stats.played === 0 ? 1 : -1
   }
 
-  if (first.stats.averageGuesses !== second.stats.averageGuesses) {
-    return first.stats.averageGuesses - second.stats.averageGuesses
-  }
-  if ((second.stats.averageSkill ?? 0) !== (first.stats.averageSkill ?? 0)) {
-    return (second.stats.averageSkill ?? 0) - (first.stats.averageSkill ?? 0)
+  const sortOption = getLeaderboardSortOption(sortKey)
+  const firstValue = sortOption.getValue(first)
+  const secondValue = sortOption.getValue(second)
+
+  if (firstValue !== secondValue) {
+    return sortOption.direction === 'asc' ? firstValue - secondValue : secondValue - firstValue
   }
 
-  return second.stats.winPercentage - first.stats.winPercentage
+  return compareLeaderboardTiebreakers(first, second, sortKey)
+}
+
+function compareLeaderboardTiebreakers(
+  first: FamilyStatsUser,
+  second: FamilyStatsUser,
+  sortKey: LeaderboardSortKey,
+) {
+  const tiebreakers =
+    sortKey === 'averageGuesses'
+      ? [
+          compareStat(first.stats.averageSkill ?? 0, second.stats.averageSkill ?? 0, 'desc'),
+          compareStat(first.stats.winPercentage, second.stats.winPercentage, 'desc'),
+          compareStat(first.stats.wins, second.stats.wins, 'desc'),
+        ]
+      : [
+          compareStat(first.stats.averageGuesses, second.stats.averageGuesses, 'asc'),
+          compareStat(first.stats.averageSkill ?? 0, second.stats.averageSkill ?? 0, 'desc'),
+          compareStat(first.stats.winPercentage, second.stats.winPercentage, 'desc'),
+          compareStat(first.stats.wins, second.stats.wins, 'desc'),
+        ]
+
+  return (
+    tiebreakers.find((result) => result !== 0) ??
+    first.displayName.localeCompare(second.displayName)
+  )
+}
+
+function compareStat(firstValue: number, secondValue: number, direction: 'asc' | 'desc') {
+  return direction === 'asc' ? firstValue - secondValue : secondValue - firstValue
+}
+
+function formatLeaderboardValue(user: FamilyStatsUser, sortOption: LeaderboardSortOption) {
+  if (user.stats.played === 0) return 'No plays yet'
+  return sortOption.formatValue(user)
+}
+
+function formatLeaderboardSecondaryValue(user: FamilyStatsUser, sortKey: LeaderboardSortKey) {
+  if (user.stats.played === 0) return ''
+  if (sortKey === 'averageGuesses') return `${user.stats.averageSkill ?? 0} skill`
+  return `${formatAverage(user.stats.averageGuesses)} avg guesses`
 }
 
 function toSlug(value: string) {
@@ -4159,6 +4326,12 @@ function formatOutcome(result: FamilyDailyResult) {
   if (isLockedResult(result)) return 'Locked'
 
   return result.outcome === 'won' ? `${result.guessesUsed}/6` : 'X/6'
+}
+
+function formatOutcomeWithGuesses(result: FamilyDailyResult) {
+  if (isLockedResult(result)) return 'Locked'
+
+  return `${formatOutcome(result)} guesses`
 }
 
 function SettingsDialog({
@@ -4296,16 +4469,20 @@ function SettingsIdentityRow({
         <span className="settings-row__label">{label}</span>
       </span>
       <span className="settings-profile">
-        <span className="settings-avatar-preview">
-          <AvatarImage avatar={avatar} displayName={value} size={96} />
+        <span className="settings-profile-identity">
+          <span className="settings-avatar-preview">
+            <AvatarImage avatar={avatar} displayName={value} size={96} />
+          </span>
+          <span className="settings-identity-value">{value}</span>
         </span>
-        <span className="settings-identity-value">{value}</span>
-        <button className="settings-avatar-button" onClick={onAvatarChange} type="button">
-          Change avatar
-        </button>
-        <button className="settings-avatar-button" onClick={onSignOut} type="button">
-          Sign out
-        </button>
+        <span className="settings-profile-actions">
+          <button className="settings-avatar-button" onClick={onAvatarChange} type="button">
+            Change avatar
+          </button>
+          <button className="settings-avatar-button" onClick={onSignOut} type="button">
+            Sign out
+          </button>
+        </span>
       </span>
     </div>
   )

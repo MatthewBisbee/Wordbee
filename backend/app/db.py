@@ -34,3 +34,13 @@ def connect() -> sqlite3.Connection:
 def init_db() -> None:
     with connect() as connection:
         connection.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        migrate_db(connection)
+
+
+def migrate_db(connection: sqlite3.Connection) -> None:
+    user_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(friends_family_users)").fetchall()
+    }
+    if "avatar_json" not in user_columns:
+        connection.execute("ALTER TABLE friends_family_users ADD COLUMN avatar_json TEXT")

@@ -8,10 +8,11 @@ from functools import lru_cache
 from typing import Any
 
 from .db import connect
+from .auth import decode_avatar_json
 from .game import load_valid_guesses, score_guess
 
 
-DEFAULT_DISTRIBUTION = {str(index): 0 for index in range(1, 7)}
+DEFAULT_DISTRIBUTION = {**{str(index): 0 for index in range(1, 7)}, "fail": 0}
 EMPTY_STATS = {
     "played": 0,
     "wins": 0,
@@ -133,7 +134,7 @@ def get_family_result_for_user(*, user_id: str, puzzle_date: str) -> dict[str, A
     with connect() as connection:
         row = connection.execute(
             """
-            SELECT results.*, users.display_name
+            SELECT results.*, users.display_name, users.avatar_json
             FROM friends_family_daily_results AS results
             JOIN friends_family_users AS users ON users.id = results.user_id
             WHERE results.user_id = ? AND results.puzzle_date = ?
@@ -186,7 +187,7 @@ def get_family_dashboard(
 
         user_rows = connection.execute(
             """
-            SELECT id, display_name, first_name, last_initial
+            SELECT id, display_name, first_name, last_initial, avatar_json
             FROM friends_family_users
             WHERE code_id = ?
             ORDER BY first_name COLLATE NOCASE ASC, last_initial COLLATE NOCASE ASC
@@ -195,7 +196,7 @@ def get_family_dashboard(
         ).fetchall()
         result_rows = connection.execute(
             """
-            SELECT results.*, users.display_name
+            SELECT results.*, users.display_name, users.avatar_json
             FROM friends_family_daily_results AS results
             JOIN friends_family_users AS users ON users.id = results.user_id
             WHERE users.code_id = ?
@@ -234,16 +235,19 @@ def get_family_dashboard(
             for result in reversed(user_results)
         ][:MAX_DASHBOARD_HISTORY_RESULTS]
         stats = calculate_user_stats(visible_user_results)
-        users.append(
-            {
-                "id": user_row["id"],
-                "displayName": user_row["display_name"],
-                "firstName": user_row["first_name"],
-                "lastInitial": user_row["last_initial"],
-                "stats": stats,
-                "history": history,
-            }
-        )
+        user = {
+            "id": user_row["id"],
+            "displayName": user_row["display_name"],
+            "firstName": user_row["first_name"],
+            "lastInitial": user_row["last_initial"],
+            "stats": stats,
+            "history": history,
+        }
+        avatar = decode_avatar_json(user_row["avatar_json"])
+        if avatar is not None:
+            user["avatar"] = avatar
+
+        users.append(user)
 
     visible_results = [
         result for result in raw_results if not is_locked_current_day_result(result)
@@ -277,7 +281,7 @@ def calculate_user_stats_for_id(user_id: str) -> dict[str, Any]:
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT results.*, users.display_name
+            SELECT results.*, users.display_name, users.avatar_json
             FROM friends_family_daily_results AS results
             JOIN friends_family_users AS users ON users.id = results.user_id
             WHERE results.user_id = ?
@@ -300,6 +304,7 @@ def calculate_user_stats(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     for result in wins:
         distribution[str(result["guessesUsed"])] += 1
+    distribution["fail"] = played - len(wins)
 
     starter_counts = Counter(result["starterWord"] for result in sorted_results)
     top_starters = [
@@ -395,6 +400,10 @@ def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, A
         "board": board,
         "completedAt": row["completed_at"],
     }
+    if "avatar_json" in row.keys():
+        avatar = decode_avatar_json(row["avatar_json"])
+        if avatar is not None:
+            result["avatar"] = avatar
 
     if include_analysis:
         result["analysis"] = analyze_solve_path(
@@ -407,7 +416,7 @@ def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, A
 
 
 def lock_current_day_result(result: dict[str, Any]) -> dict[str, Any]:
-    return {
+    locked_result = {
         "id": result["id"],
         "userId": result["userId"],
         "displayName": result["displayName"],
@@ -420,6 +429,10 @@ def lock_current_day_result(result: dict[str, Any]) -> dict[str, Any]:
         "completedAt": result["completedAt"],
         "locked": True,
     }
+    if result.get("avatar") is not None:
+        locked_result["avatar"] = result["avatar"]
+
+    return locked_result
 
 
 def add_locked_timeline_day(
@@ -455,6 +468,7 @@ def calculate_group_stats(
     distribution = dict(DEFAULT_DISTRIBUTION)
     for result in wins:
         distribution[str(result["guessesUsed"])] += 1
+    distribution["fail"] = played - len(wins)
 
     analyses = [result["analysis"] for result in sorted_results if result.get("analysis")]
     starter_stats = calculate_starter_stats(sorted_results)
@@ -814,6 +828,7 @@ def get_stats(mode: str = "daily") -> dict[str, Any]:
 
     for row in wins:
         distribution[str(row["guesses_used"])] += 1
+    distribution["fail"] = played - len(wins)
 
     current_streak = 0
     for row in reversed(rows):

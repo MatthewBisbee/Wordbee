@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import json
 import random
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -13,6 +13,7 @@ from .auth import (
     encode_token,
     sign_out_friends_family_session,
     sign_payload,
+    update_friends_family_avatar,
     validate_friends_family_code,
     verify_friends_family_token,
 )
@@ -100,9 +101,11 @@ def past_puzzle():
 
     try:
         requested_puzzle_date = get_puzzle_date(payload.get("date"))
-        puzzle_date = max(requested_puzzle_date, FIRST_OFFICIAL_PUZZLE_DATE)
-        if puzzle_date >= get_puzzle_date():
-            return jsonify({"error": "Choose an earlier date"}), 400
+        newest_past_date = get_puzzle_date() - timedelta(days=1)
+        puzzle_date = min(
+            max(requested_puzzle_date, FIRST_OFFICIAL_PUZZLE_DATE),
+            newest_past_date,
+        )
 
         answer_record = get_daily_answer(puzzle_date)
     except ValueError as exc:
@@ -121,6 +124,9 @@ def past_puzzle():
     if requested_puzzle_date < FIRST_OFFICIAL_PUZZLE_DATE:
         response["clampedToOldest"] = True
         response["oldestDate"] = FIRST_OFFICIAL_PUZZLE_DATE.isoformat()
+    if requested_puzzle_date > newest_past_date:
+        response["clampedToNewest"] = True
+        response["newestDate"] = newest_past_date.isoformat()
 
     return jsonify(response)
 
@@ -142,6 +148,7 @@ def friends_family_login():
     try:
         session = create_friends_family_session(
             code=payload.get("code"),
+            avatar=payload.get("avatar"),
             create_user=bool(payload.get("createUser")),
             client_session_id=payload.get("clientSessionId"),
             first_name=payload.get("firstName"),
@@ -151,6 +158,25 @@ def friends_family_login():
         return jsonify({"error": str(exc)}), 400
 
     return jsonify(session)
+
+
+@api.post("/friends-family/avatar")
+def friends_family_avatar():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        identity = update_friends_family_avatar(
+            payload.get("token"),
+            avatar=payload.get("avatar"),
+            client_session_id=payload.get("clientSessionId"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    if identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    return jsonify({"identity": identity})
 
 
 @api.post("/friends-family/verify")

@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import closeIconMarkup from './assets/icons/icon-close.svg?raw'
 import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
 import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
@@ -8,6 +9,15 @@ import './App.css'
 
 const WORD_LENGTH = 5
 const MAX_GUESSES = 6
+const GUESS_DISTRIBUTION_ROWS = [
+  { key: '1', label: '1' },
+  { key: '2', label: '2' },
+  { key: '3', label: '3' },
+  { key: '4', label: '4' },
+  { key: '5', label: '5' },
+  { key: '6', label: '6' },
+  { key: 'fail', label: 'X' },
+] as const
 const FLIP_HALF_MS = 250
 const REVEAL_STEP_MS = 250
 const DANCE_STEP_MS = 100
@@ -17,7 +27,7 @@ const RESULTS_REVEAL_DELAY_MS = 950
 const COPY_FEEDBACK_MS = 1300
 const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
-const AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
+const LEGACY_AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
 const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
 const FIRST_OFFICIAL_PUZZLE_DATE = '2021-06-19'
 const AVATAR_API_URL = 'https://api.dicebear.com/10.x/notionists/svg'
@@ -96,12 +106,6 @@ const DICE_REST_SRC =
   DICE_ROLL_FRAMES.find(({ frame }) => frame === DICE_REST_FRAME)?.src ??
   DICE_ROLL_FRAMES[DICE_ROLL_FRAMES.length - 1]?.src ??
   ''
-const STATS_ICON_SELECTOR = '.wordbee-icon-button--stats, .results-link-card--stats'
-const STATS_BAR_CONFIG = [
-  { selector: '.stats-bar--short', highScale: 1.45, lowScale: 0.86, durationMs: 900 },
-  { selector: '.stats-bar--tall', highScale: 0.7, lowScale: 1.16, durationMs: 840 },
-  { selector: '.stats-bar--mid', highScale: 1.25, lowScale: 0.9, durationMs: 980 },
-]
 const SKILL_HELP_TEXT =
   'Skill scores how efficiently your guesses split the remaining possible answers. If only one answer is left, only playing that answer scores well.'
 const LUCK_HELP_TEXT =
@@ -124,6 +128,7 @@ const EMPTY_STATS: StatsSummary = {
     4: 0,
     5: 0,
     6: 0,
+    fail: 0,
   },
   topStarters: [],
 }
@@ -166,7 +171,7 @@ type StatsSummary = {
   bestWinStreak: number
   currentPlayStreak: number
   bestPlayStreak: number
-  guessDistribution: Record<number, number>
+  guessDistribution: Record<string, number>
   topStarters: StarterStat[]
   averageSkill?: number
   averageLuck?: number
@@ -208,6 +213,7 @@ type FamilyDailyResult = {
   id: string
   userId: string
   displayName: string
+  avatar?: AvatarConfig
   date: string
   answer?: string
   outcome: Exclude<GameStatus, 'playing'>
@@ -222,6 +228,7 @@ type FamilyDailyResult = {
 type FamilyStatsUser = {
   id: string
   displayName: string
+  avatar?: AvatarConfig
   firstName: string
   lastInitial: string
   stats: StatsSummary
@@ -250,7 +257,7 @@ type FamilyGroupStats = {
   averageLuck: number
   daysTracked: number
   players: number
-  guessDistribution: Record<number, number>
+  guessDistribution: Record<string, number>
   topStarters: StarterInsight[]
   timeline: FamilyTimelineDay[]
   recentResults: FamilyDailyResult[]
@@ -312,6 +319,7 @@ type FriendsFamilyIdentity = {
   displayName: string
   firstName: string
   lastInitial: string
+  avatar?: AvatarConfig
 }
 type PendingFriendsFamilyIdentity = Omit<FriendsFamilyIdentity, 'userId'> & {
   userId?: string
@@ -568,45 +576,6 @@ function decodeTokenPayload(rawToken: unknown) {
   }
 }
 
-function getAvatarCacheKey(userId: string, displayName: string) {
-  return userId || displayName.trim().toLowerCase()
-}
-
-function loadAvatarCache() {
-  try {
-    const rawAvatars = window.localStorage.getItem(AVATAR_STORAGE_KEY)
-    if (!rawAvatars) return {}
-
-    const avatars = JSON.parse(rawAvatars)
-    return avatars && typeof avatars === 'object'
-      ? (avatars as Record<string, unknown>)
-      : {}
-  } catch {
-    return {}
-  }
-}
-
-function loadCachedAvatar(userId: string, displayName: string) {
-  const cacheKey = getAvatarCacheKey(userId, displayName)
-  if (!cacheKey) return null
-
-  const cachedAvatar = loadAvatarCache()[cacheKey]
-  return cachedAvatar ? sanitizeAvatarConfig(cachedAvatar, displayName) : null
-}
-
-function saveCachedAvatar(userId: string, displayName: string, avatar: AvatarConfig) {
-  const cacheKey = getAvatarCacheKey(userId, displayName)
-  if (!cacheKey) return
-
-  try {
-    const avatarCache = loadAvatarCache()
-    avatarCache[cacheKey] = avatar
-    window.localStorage.setItem(AVATAR_STORAGE_KEY, JSON.stringify(avatarCache))
-  } catch {
-    // Best effort only. The signed-in access record still carries the avatar.
-  }
-}
-
 function loadSettings(): Settings {
   try {
     const rawSettings = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
@@ -628,6 +597,7 @@ function loadSettings(): Settings {
 
 function loadAccessState(): AccessState | null {
   try {
+    window.localStorage.removeItem(LEGACY_AVATAR_STORAGE_KEY)
     const rawAccess = window.localStorage.getItem(ACCESS_STORAGE_KEY)
     if (!rawAccess) return null
 
@@ -636,30 +606,28 @@ function loadAccessState(): AccessState | null {
       return { kind: 'guest' }
     }
 
-	    if (
-	      storedAccess.kind === 'friends-family' &&
-	      typeof storedAccess.displayName === 'string' &&
-	      typeof storedAccess.firstName === 'string' &&
-	      typeof storedAccess.lastInitial === 'string' &&
-	      typeof storedAccess.token === 'string'
-	    ) {
-	      const displayName = storedAccess.displayName.slice(0, 64)
-	      const tokenPayload = decodeTokenPayload(storedAccess.token)
-	      const userId =
-	        typeof storedAccess.userId === 'string'
-	          ? storedAccess.userId.slice(0, 80)
-	          : typeof tokenPayload?.userId === 'string'
-	            ? tokenPayload.userId.slice(0, 80)
-	            : ''
-	      const avatar =
-	        storedAccess.avatar || loadCachedAvatar(userId, displayName) || undefined
+    if (
+      storedAccess.kind === 'friends-family' &&
+      typeof storedAccess.displayName === 'string' &&
+      typeof storedAccess.firstName === 'string' &&
+      typeof storedAccess.lastInitial === 'string' &&
+      typeof storedAccess.token === 'string'
+    ) {
+      const displayName = storedAccess.displayName.slice(0, 64)
+      const tokenPayload = decodeTokenPayload(storedAccess.token)
+      const userId =
+        typeof storedAccess.userId === 'string'
+          ? storedAccess.userId.slice(0, 80)
+          : typeof tokenPayload?.userId === 'string'
+            ? tokenPayload.userId.slice(0, 80)
+            : ''
 
-	      return {
-	        avatar: sanitizeAvatarConfig(avatar, displayName),
-	        kind: 'friends-family',
-	        userId,
-	        displayName,
-	        firstName: storedAccess.firstName.slice(0, 40),
+      return {
+        avatar: createDefaultAvatarConfig(displayName),
+        kind: 'friends-family',
+        userId,
+        displayName,
+        firstName: storedAccess.firstName.slice(0, 40),
         lastInitial: storedAccess.lastInitial.slice(0, 1),
         token: storedAccess.token,
       }
@@ -935,147 +903,6 @@ function getDistributionMax(stats: StatsSummary) {
   return Math.max(1, ...Object.values(stats.guessDistribution))
 }
 
-function getStatsTrigger(target: EventTarget | null) {
-  if (!(target instanceof Element)) return null
-  return target.closest<HTMLElement>(STATS_ICON_SELECTOR)
-}
-
-function normalizeTransform(transform: string) {
-  return transform === 'none' ? 'scaleY(1)' : transform
-}
-
-function useStatsIconAnimation() {
-  useEffect(() => {
-    if (!Element.prototype.animate) return
-
-    const hoverAnimations = new WeakMap<Element, Animation>()
-    const returnAnimations = new WeakMap<Element, Animation>()
-    const activeAnimations = new Set<Animation>()
-
-    const cancelAnimation = (animation?: Animation) => {
-      if (!animation) return
-
-      animation.cancel()
-      activeAnimations.delete(animation)
-    }
-
-    const getStatsBars = (trigger: Element) =>
-      STATS_BAR_CONFIG.flatMap((config) => {
-        const bar = trigger.querySelector(config.selector)
-        return bar ? [{ bar, config }] : []
-      })
-
-    const startBarAnimation = (trigger: Element) => {
-      getStatsBars(trigger).forEach(({ bar, config }) => {
-        const currentTransform = normalizeTransform(window.getComputedStyle(bar).transform)
-
-        cancelAnimation(returnAnimations.get(bar))
-        cancelAnimation(hoverAnimations.get(bar))
-        returnAnimations.delete(bar)
-
-        const animation = bar.animate(
-          [
-            { transform: currentTransform, offset: 0 },
-            { transform: `scaleY(${config.highScale})`, offset: 0.48 },
-            { transform: `scaleY(${config.lowScale})`, offset: 1 },
-          ],
-          {
-            duration: config.durationMs,
-            easing: 'ease-in-out',
-            direction: 'alternate',
-            iterations: Infinity,
-          },
-        )
-
-        hoverAnimations.set(bar, animation)
-        activeAnimations.add(animation)
-      })
-    }
-
-    const returnBarToRest = (trigger: Element) => {
-      getStatsBars(trigger).forEach(({ bar }) => {
-        const currentTransform = normalizeTransform(window.getComputedStyle(bar).transform)
-
-        cancelAnimation(hoverAnimations.get(bar))
-        hoverAnimations.delete(bar)
-        cancelAnimation(returnAnimations.get(bar))
-
-        const animation = bar.animate(
-          [
-            { transform: currentTransform },
-            { transform: 'scaleY(1)' },
-          ],
-          {
-            duration: 280,
-            easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
-          },
-        )
-
-        returnAnimations.set(bar, animation)
-        activeAnimations.add(animation)
-        animation.addEventListener(
-          'finish',
-          () => {
-            activeAnimations.delete(animation)
-
-            if (returnAnimations.get(bar) === animation) {
-              returnAnimations.delete(bar)
-            }
-          },
-          { once: true },
-        )
-      })
-    }
-
-    const onPointerOver = (event: PointerEvent) => {
-      const trigger = getStatsTrigger(event.target)
-      if (!trigger || (event.relatedTarget instanceof Node && trigger.contains(event.relatedTarget))) {
-        return
-      }
-
-      startBarAnimation(trigger)
-    }
-
-    const onPointerOut = (event: PointerEvent) => {
-      const trigger = getStatsTrigger(event.target)
-      if (!trigger || (event.relatedTarget instanceof Node && trigger.contains(event.relatedTarget))) {
-        return
-      }
-
-      returnBarToRest(trigger)
-    }
-
-    const onFocusIn = (event: FocusEvent) => {
-      const trigger = getStatsTrigger(event.target)
-      if (trigger) {
-        startBarAnimation(trigger)
-      }
-    }
-
-    const onFocusOut = (event: FocusEvent) => {
-      const trigger = getStatsTrigger(event.target)
-      if (trigger) {
-        returnBarToRest(trigger)
-      }
-    }
-
-    document.addEventListener('pointerover', onPointerOver)
-    document.addEventListener('pointerout', onPointerOut)
-    document.addEventListener('focusin', onFocusIn)
-    document.addEventListener('focusout', onFocusOut)
-
-    return () => {
-      document.removeEventListener('pointerover', onPointerOver)
-      document.removeEventListener('pointerout', onPointerOut)
-      document.removeEventListener('focusin', onFocusIn)
-      document.removeEventListener('focusout', onFocusOut)
-
-      activeAnimations.forEach((animation) => animation.cancel())
-      activeAnimations.clear()
-    }
-  }, [])
-}
-
 function App() {
   const [board, setBoard] = useState(createBoard)
   const [settings, setSettings] = useState(loadSettings)
@@ -1121,8 +948,6 @@ function App() {
   const clientSessionId = clientSessionIdRef.current
   const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
 
-  useStatsIconAnimation()
-
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
       window.clearTimeout(toastTimerRef.current)
@@ -1148,14 +973,6 @@ function App() {
     },
     [],
   )
-
-  const updateAvatar = useCallback((avatar: AvatarConfig) => {
-    setAccessState((previousAccess) =>
-      previousAccess?.kind === 'friends-family'
-        ? { ...previousAccess, avatar }
-        : previousAccess,
-    )
-  }, [])
 
   const resetGameState = useCallback((nextPuzzle: PuzzleMetadata | null) => {
     setBoard(createBoard())
@@ -1241,7 +1058,9 @@ function App() {
       return {
         ...previousAccess,
         ...responseBody.identity,
-        avatar: previousAccess.avatar,
+        avatar: responseBody.identity.avatar
+          ? sanitizeAvatarConfig(responseBody.identity.avatar, responseBody.identity.displayName)
+          : createDefaultAvatarConfig(responseBody.identity.displayName),
         token: friendsFamilyToken,
       }
     })
@@ -1263,6 +1082,49 @@ function App() {
       }
     },
     [claimCurrentSession, friendsFamilyToken],
+  )
+
+  const saveAvatarChange = useCallback(
+    (avatar: AvatarConfig) => {
+      const token = friendsFamilyToken
+      if (!token) return
+
+      void requestWithSessionRecovery<AccessVerifyResponse>('/api/friends-family/avatar', () => ({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          avatar,
+          clientSessionId,
+          token,
+        }),
+      }))
+        .then((responseBody) => {
+          setAccessState((previousAccess) => {
+            if (previousAccess?.kind !== 'friends-family' || previousAccess.token !== token) {
+              return previousAccess
+            }
+
+            return {
+              ...previousAccess,
+              ...responseBody.identity,
+              avatar: responseBody.identity.avatar
+                ? sanitizeAvatarConfig(
+                    responseBody.identity.avatar,
+                    responseBody.identity.displayName,
+                  )
+                : createDefaultAvatarConfig(responseBody.identity.displayName),
+              token,
+            }
+          })
+        })
+        .catch((error) => {
+          console.warn('Could not sync avatar', error)
+          showToast('Could not sync avatar')
+        })
+    },
+    [clientSessionId, friendsFamilyToken, requestWithSessionRecovery, showToast],
   )
 
   const loadFamilyStats = useCallback(async () => {
@@ -1386,7 +1248,9 @@ function App() {
         const responseBody = await requestJson<
           Partial<PuzzleMetadata> & {
             clampedToOldest?: boolean
+            clampedToNewest?: boolean
             error?: string
+            newestDate?: string
             oldestDate?: string
           }
         >('/api/puzzle/past', {
@@ -1421,6 +1285,11 @@ function App() {
         if (responseBody.clampedToOldest) {
           showToast(
             `${formatPuzzleHeaderDate(responseBody.oldestDate ?? FIRST_OFFICIAL_PUZZLE_DATE)} is the oldest day playable.`,
+            2400,
+          )
+        } else if (responseBody.clampedToNewest) {
+          showToast(
+            `${formatPuzzleHeaderDate(responseBody.newestDate ?? responseBody.date)} is the newest day playable.`,
             2400,
           )
         }
@@ -1980,14 +1849,27 @@ function App() {
   useEffect(() => {
     if (accessState === null) {
       window.localStorage.removeItem(ACCESS_STORAGE_KEY)
+      window.localStorage.removeItem(LEGACY_AVATAR_STORAGE_KEY)
+      return
+    }
+
+    if (accessState.kind === 'friends-family') {
+      window.localStorage.removeItem(LEGACY_AVATAR_STORAGE_KEY)
+      window.localStorage.setItem(
+        ACCESS_STORAGE_KEY,
+        JSON.stringify({
+          kind: accessState.kind,
+          userId: accessState.userId,
+          displayName: accessState.displayName,
+          firstName: accessState.firstName,
+          lastInitial: accessState.lastInitial,
+          token: accessState.token,
+        }),
+      )
       return
     }
 
     window.localStorage.setItem(ACCESS_STORAGE_KEY, JSON.stringify(accessState))
-
-    if (accessState.kind === 'friends-family') {
-      saveCachedAvatar(accessState.userId, accessState.displayName, accessState.avatar)
-    }
   }, [accessState])
 
   useEffect(() => {
@@ -2020,7 +1902,9 @@ function App() {
           return {
             ...previousAccess,
             ...responseBody.identity,
-            avatar: previousAccess.avatar,
+            avatar: responseBody.identity.avatar
+              ? sanitizeAvatarConfig(responseBody.identity.avatar, responseBody.identity.displayName)
+              : createDefaultAvatarConfig(responseBody.identity.displayName),
             token,
           }
         })
@@ -2125,15 +2009,22 @@ function App() {
                 aria-haspopup="menu"
                 onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
               >
-                <InlineIcon markup={menuIconMarkup} />
+                {accessState?.kind === 'friends-family' ? (
+                  <span className="wordbee-menu-avatar">
+                    <AvatarImage
+                      avatar={accessState.avatar}
+                      displayName={accessState.displayName}
+                      size={72}
+                    />
+                  </span>
+                ) : (
+                  <InlineIcon markup={menuIconMarkup} />
+                )}
               </button>
               {isMenuOpen && (
                 <WordbeeMenu
-                  canOpenStats={accessState?.kind === 'friends-family'}
                   maxPastDate={getDefaultPastDate()}
                   minPastDate={FIRST_OFFICIAL_PUZZLE_DATE}
-                  onDaily={() => void loadDailyPuzzle()}
-                  onOpenStats={openFamilyStats}
                   onPast={() => void startPastPuzzle(pastWordDate)}
                   onPastDateChange={setPastWordDate}
                   onRandom={() => void startRandomPuzzle()}
@@ -2172,33 +2063,20 @@ function App() {
               <InlineIcon markup={statsIconMarkup} />
             </button>
           )}
-          {accessState?.kind === 'friends-family' ? (
-            <button
-              aria-label={`Settings for ${accessState.displayName}`}
-              aria-haspopup="dialog"
-              aria-expanded={isSettingsOpen}
-              className="wordbee-profile-button"
-              onClick={() => setIsSettingsOpen(true)}
-              type="button"
-            >
-              <AvatarImage
-                avatar={accessState.avatar}
-                displayName={accessState.displayName}
-                size={72}
-              />
-            </button>
-          ) : (
-            <button
-              className="wordbee-icon-button wordbee-icon-button--settings"
-              type="button"
-              aria-label="Settings"
-              aria-haspopup="dialog"
-              aria-expanded={isSettingsOpen}
-              onClick={() => setIsSettingsOpen(true)}
-            >
-              <InlineIcon markup={settingsIconMarkup} />
-            </button>
-          )}
+          <button
+            className="wordbee-icon-button wordbee-icon-button--settings"
+            type="button"
+            aria-label={
+              accessState?.kind === 'friends-family'
+                ? `Settings for ${accessState.displayName}`
+                : 'Settings'
+            }
+            aria-haspopup="dialog"
+            aria-expanded={isSettingsOpen}
+            onClick={() => setIsSettingsOpen(true)}
+          >
+            <InlineIcon markup={settingsIconMarkup} />
+          </button>
         </div>
       </header>
 
@@ -2285,7 +2163,7 @@ function App() {
           onClose={() => setIsAvatarBuilderOpen(false)}
           onCancel={() => setIsAvatarBuilderOpen(false)}
           onSave={(avatar) => {
-            updateAvatar(avatar)
+            saveAvatarChange(avatar)
             setIsAvatarBuilderOpen(false)
           }}
           saveLabel="Save avatar"
@@ -2310,7 +2188,8 @@ function App() {
             setIsResultsOpen(false)
           }}
           onOpenStats={() => {
-            openFamilyStats('overview')
+            setIsResultsOpen(false)
+            openFamilyStats('daily')
           }}
           onPlayRandom={() => void startRandomPuzzle()}
           result={completedResult}
@@ -2460,7 +2339,7 @@ function FriendsFamilyAccessForm({
     }
   }
 
-  const requestLogin = (createUser = false) =>
+  const requestLogin = (createUser = false, avatar?: AvatarConfig) =>
     requestJson<AccessLoginResponse>('/api/friends-family/login', {
       method: 'POST',
       headers: {
@@ -2470,6 +2349,7 @@ function FriendsFamilyAccessForm({
         clientSessionId,
         code,
         createUser,
+        ...(avatar ? { avatar } : {}),
         firstName,
         lastInitial,
       }),
@@ -2480,14 +2360,15 @@ function FriendsFamilyAccessForm({
       throw new Error('Could not sign in')
     }
 
-    const cachedAvatar = loadCachedAvatar(
-      responseBody.identity.userId,
-      responseBody.identity.displayName,
-    )
+    const serverAvatar = responseBody.identity.avatar
+      ? sanitizeAvatarConfig(responseBody.identity.avatar, responseBody.identity.displayName)
+      : null
     onLogin({
-      avatar:
-        avatar ?? cachedAvatar ?? createDefaultAvatarConfig(responseBody.identity.displayName),
       ...responseBody.identity,
+      avatar:
+        serverAvatar ??
+        avatar ??
+        createDefaultAvatarConfig(responseBody.identity.displayName),
       token: responseBody.token,
     })
   }
@@ -2528,7 +2409,7 @@ function FriendsFamilyAccessForm({
     setIsSubmitting(true)
 
     try {
-      const responseBody = await requestLogin(true)
+      const responseBody = await requestLogin(true, avatar)
       completeSignedInLogin(responseBody, avatar)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Could not save avatar')
@@ -2961,21 +2842,15 @@ function DiceRandomButton({ onRandomize }: { onRandomize: () => void }) {
 }
 
 function WordbeeMenu({
-  canOpenStats,
   maxPastDate,
   minPastDate,
-  onDaily,
-  onOpenStats,
   onPast,
   onPastDateChange,
   onRandom,
   pastDate,
 }: {
-  canOpenStats: boolean
   maxPastDate: string
   minPastDate: string
-  onDaily: () => void
-  onOpenStats: (view: FamilyStatsView) => void
   onPast: () => void
   onPastDateChange: (dateValue: string) => void
   onRandom: () => void
@@ -2983,9 +2858,6 @@ function WordbeeMenu({
 }) {
   return (
     <div className="wordbee-menu-popover" role="menu">
-      <button onClick={onDaily} role="menuitem" type="button">
-        Today
-      </button>
       <button onClick={onRandom} role="menuitem" type="button">
         Endless random
       </button>
@@ -3005,14 +2877,6 @@ function WordbeeMenu({
           </button>
         </div>
       </div>
-      {canOpenStats && (
-        <>
-          <span className="wordbee-menu-divider" />
-          <button onClick={() => onOpenStats('overview')} role="menuitem" type="button">
-            Stats comparison
-          </button>
-        </>
-      )}
     </div>
   )
 }
@@ -3065,17 +2929,17 @@ function ResultsDialog({
             </section>
 
             <section className="results-section" aria-labelledby="distribution-title">
-              <h3 id="distribution-title">Guess Distribution</h3>
+              <h3 id="distribution-title">Solve Distribution</h3>
               <div className="distribution-list">
-                {Array.from({ length: MAX_GUESSES }, (_, index) => {
-                  const guessNumber = index + 1
-                  const count = result.stats.guessDistribution[guessNumber] ?? 0
+                {GUESS_DISTRIBUTION_ROWS.map((row) => {
+                  const count = result.stats.guessDistribution[row.key] ?? 0
                   const isCurrentGuess =
-                    result.outcome === 'won' && result.guessesUsed === guessNumber
+                    (result.outcome === 'won' && result.guessesUsed === Number(row.key)) ||
+                    (result.outcome === 'lost' && row.key === 'fail')
 
                   return (
-                    <div className="distribution-row" key={guessNumber}>
-                      <span className="distribution-row__label">{guessNumber}</span>
+                    <div className="distribution-row" key={row.key}>
+                      <span className="distribution-row__label">{row.label}</span>
                       <span
                         className={[
                           'distribution-row__bar',
@@ -3372,52 +3236,45 @@ function StatsOverview({
   onSelectUser: (userId: string) => void
   users: FamilyStatsUser[]
 }) {
-  const commonStarter = group.topStarters[0]
   const averageLeader = getAverageLeader(users)
   const winsLeader = getWinsLeader(users)
+  const currentStreakLeader = getCurrentPlayStreakLeader(users)
+  const playsLeader = getPlaysLeader(users)
+  const winRateLeader = getWinRateLeader(users)
 
   return (
     <section className="stats-section" aria-label="Stats overview">
       <div className="stats-metric-grid">
-        <StatsMetric label="Plays" value={group.played} />
-        <StatsMetric label="Win rate" value={`${group.winPercentage}%`} />
-        <StatsMetric label="Avg guesses" value={formatAverage(group.averageGuesses)} />
-        <StatsMetric help={SKILL_HELP_TEXT} label="Skill" value={group.averageSkill || 0} />
-        <StatsMetric help={LUCK_HELP_TEXT} label="Luck" value={group.averageLuck || 0} />
-      </div>
-
-      <div className="stats-insight-grid">
-        <InsightCard
-          detail={
-            commonStarter
-              ? `${commonStarter.count} starts by ${commonStarter.users} player${commonStarter.users === 1 ? '' : 's'}`
-              : 'No opener data yet'
-          }
-          label="Most common first word"
-          value={commonStarter?.word ?? '--'}
-        />
-        <InsightCard
-          avatar={
-            averageLeader
-              ? { displayName: averageLeader.displayName, userId: averageLeader.id }
-              : undefined
-          }
-          detail={averageLeader ? `${formatAverage(averageLeader.stats.averageGuesses)} avg guesses` : 'No wins yet'}
+        <StatsMetric label="Total plays" value={group.played} />
+        <StatsMetric
           label="Lowest average"
-          value={averageLeader?.displayName ?? '--'}
+          player={averageLeader}
+          value={averageLeader ? formatAverage(averageLeader.stats.averageGuesses) : '--'}
         />
-        <InsightCard
-          avatar={
-            winsLeader ? { displayName: winsLeader.displayName, userId: winsLeader.id } : undefined
-          }
-          detail={winsLeader ? `${winsLeader.stats.wins} wins` : 'No wins yet'}
+        <StatsMetric
           label="Most wins"
-          value={winsLeader?.displayName ?? '--'}
+          player={winsLeader}
+          value={winsLeader?.stats.wins ?? '--'}
+        />
+        <StatsMetric
+          label="Longest current streak"
+          player={currentStreakLeader}
+          value={currentStreakLeader?.stats.currentPlayStreak ?? '--'}
+        />
+        <StatsMetric
+          label="Most plays"
+          player={playsLeader}
+          value={playsLeader?.stats.played ?? '--'}
+        />
+        <StatsMetric
+          label="Highest win rate"
+          player={winRateLeader}
+          value={winRateLeader ? `${winRateLeader.stats.winPercentage}%` : '--'}
         />
       </div>
 
       <div className="stats-chart-grid">
-        <GuessDistributionChart distribution={group.guessDistribution} title="Guess distribution" />
+        <GuessDistributionChart distribution={group.guessDistribution} title="Solve distribution" />
         <StarterBarChart starters={group.topStarters} title="First-word habits" />
       </div>
 
@@ -3450,7 +3307,12 @@ function StatsPlayerView({
             onClick={() => onSelectUser(user.id)}
             type="button"
           >
-            <PlayerAvatar displayName={user.displayName} size={30} userId={user.id} />
+            <PlayerAvatar
+              avatar={user.avatar}
+              displayName={user.displayName}
+              size={30}
+              userId={user.id}
+            />
             <span>{user.displayName}</span>
           </button>
         ))}
@@ -3458,7 +3320,12 @@ function StatsPlayerView({
 
       <div className="stats-profile-heading">
         <div className="stats-profile-identity">
-          <PlayerAvatar displayName={selectedUser.displayName} size={54} userId={selectedUser.id} />
+          <PlayerAvatar
+            avatar={selectedUser.avatar}
+            displayName={selectedUser.displayName}
+            size={54}
+            userId={selectedUser.id}
+          />
           <div>
             <span className="stats-kicker">Player insight</span>
             <h3>{selectedUser.displayName}</h3>
@@ -3582,12 +3449,6 @@ function StatsDailyView({
               locked={isLockedDay}
               value={isLockedDay ? 'Locked' : day.bestPlayer}
             />
-            <InsightCard
-              detail={isLockedDay ? 'Solve today to reveal' : `${day.topStarter} led the day`}
-              label="Common opener"
-              locked={isLockedDay}
-              value={isLockedDay ? 'Locked' : day.topStarter}
-            />
           </div>
 
           <div className="stats-daily-results" aria-label={`${formatHistoryDate(day.date)} results`}>
@@ -3604,6 +3465,7 @@ function StatsDailyView({
                   type="button"
                 >
                   <PlayerAvatar
+                    avatar={dailyResult.avatar}
                     displayName={dailyResult.displayName}
                     size={34}
                     userId={dailyResult.userId}
@@ -3635,15 +3497,34 @@ function StatsDailyView({
 function StatsMetric({
   help,
   label,
+  player,
   value,
 }: {
   help?: string
   label: string
+  player?: FamilyStatsUser
   value: number | string
 }) {
+  const variant = player ? 'player' : 'number'
+
   return (
-    <article className="stats-metric">
-      <strong>{value}</strong>
+    <article className={`stats-metric stats-metric--${variant}`}>
+      {player ? (
+        <div className="stats-metric__value-row">
+          <strong>{value}</strong>
+          <span className="stats-metric__player">
+            <PlayerAvatar
+              avatar={player.avatar}
+              displayName={player.displayName}
+              size={28}
+              userId={player.id}
+            />
+            <span>{player.displayName}</span>
+          </span>
+        </div>
+      ) : (
+        <strong>{value}</strong>
+      )}
       <span>
         {label}
         {help && <StatsHelpTooltip text={help} />}
@@ -3654,29 +3535,91 @@ function StatsMetric({
 
 function StatsHelpTooltip({ text }: { text: string }) {
   const [isOpen, setIsOpen] = useState(false)
+  const [popoverStyle, setPopoverStyle] = useState<CSSProperties>({})
+  const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const contentRef = useRef<HTMLSpanElement | null>(null)
+  const tooltipId = useId()
+
+  const updatePopoverPosition = useCallback(() => {
+    const button = buttonRef.current
+    if (!button) return
+
+    const buttonRect = button.getBoundingClientRect()
+    const width = Math.min(286, Math.max(180, window.innerWidth - 24))
+    const left = Math.min(
+      Math.max(12, buttonRect.left + buttonRect.width / 2 - width / 2),
+      window.innerWidth - width - 12,
+    )
+    const contentHeight = contentRef.current?.offsetHeight ?? 96
+    const belowTop = buttonRect.bottom + 8
+    const hasRoomBelow = belowTop + contentHeight + 12 <= window.innerHeight
+    const top = hasRoomBelow
+      ? belowTop
+      : Math.max(12, buttonRect.top - contentHeight - 8)
+
+    setPopoverStyle({
+      left,
+      top,
+      width,
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+
+    updatePopoverPosition()
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) return
+      if (buttonRef.current?.contains(target) || contentRef.current?.contains(target)) return
+      setIsOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', updatePopoverPosition)
+    window.addEventListener('scroll', updatePopoverPosition, true)
+
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', updatePopoverPosition)
+      window.removeEventListener('scroll', updatePopoverPosition, true)
+    }
+  }, [isOpen, updatePopoverPosition])
 
   return (
-    <span
-      className="stats-help-wrap"
-      data-open={isOpen}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setIsOpen(false)
-        }
-      }}
-    >
+    <span className="stats-help-wrap">
       <button
+        aria-describedby={isOpen ? tooltipId : undefined}
         aria-expanded={isOpen}
         aria-label={text}
         className="stats-help"
+        ref={buttonRef}
         onClick={() => setIsOpen((wasOpen) => !wasOpen)}
         type="button"
       >
         ?
       </button>
-      <span className="stats-help__content" role="tooltip">
-        {text}
-      </span>
+      {isOpen &&
+        createPortal(
+          <span
+            className="stats-help__content"
+            id={tooltipId}
+            ref={contentRef}
+            role="tooltip"
+            style={popoverStyle}
+          >
+            {text}
+          </span>,
+          document.body,
+        )}
     </span>
   )
 }
@@ -3688,7 +3631,7 @@ function InsightCard({
   locked = false,
   value,
 }: {
-  avatar?: { displayName: string; userId: string }
+  avatar?: { avatar?: AvatarConfig; displayName: string; userId: string }
   detail: string
   label: string
   locked?: boolean
@@ -3699,7 +3642,12 @@ function InsightCard({
       <span>{label}</span>
       <div className="stats-insight-card__value">
         {avatar && (
-          <PlayerAvatar displayName={avatar.displayName} size={36} userId={avatar.userId} />
+          <PlayerAvatar
+            avatar={avatar.avatar}
+            displayName={avatar.displayName}
+            size={36}
+            userId={avatar.userId}
+          />
         )}
         <strong>{value}</strong>
       </div>
@@ -3712,22 +3660,21 @@ function GuessDistributionChart({
   distribution,
   title,
 }: {
-  distribution: Record<number, number>
+  distribution: Record<string, number>
   title: string
 }) {
-  const max = Math.max(1, ...Array.from({ length: MAX_GUESSES }, (_, index) => distribution[index + 1] ?? 0))
+  const max = Math.max(1, ...GUESS_DISTRIBUTION_ROWS.map((row) => distribution[row.key] ?? 0))
 
   return (
     <section className="stats-chart-card" aria-labelledby={`${toSlug(title)}-title`}>
       <h4 id={`${toSlug(title)}-title`}>{title}</h4>
       <div className="stats-distribution-chart">
-        {Array.from({ length: MAX_GUESSES }, (_, index) => {
-          const guessNumber = index + 1
-          const count = distribution[guessNumber] ?? 0
+        {GUESS_DISTRIBUTION_ROWS.map((row) => {
+          const count = distribution[row.key] ?? 0
 
           return (
-            <div className="stats-distribution-row" key={guessNumber}>
-              <span>{guessNumber}</span>
+            <div className="stats-distribution-row" key={row.key}>
+              <span>{row.label}</span>
               <strong
                 style={
                   {
@@ -3786,36 +3733,68 @@ function StarterBarChart({
 }
 
 function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
+  const chartTitleId = useId()
   const visibleDays = timeline.filter((day) => !day.locked).slice(-18)
   const width = 360
-  const height = 150
-  const padding = 18
+  const height = 176
+  const plotLeft = 34
+  const plotRight = 14
+  const plotTop = 16
+  const plotBottom = 34
   const minValue = 1
   const maxValue = 6
+  const yTicks = [1, 2, 3, 4, 5, 6]
+  const plotWidth = width - plotLeft - plotRight
+  const plotHeight = height - plotTop - plotBottom
+  const yForValue = (value: number) =>
+    plotTop + ((maxValue - value) / (maxValue - minValue)) * plotHeight
   const points = visibleDays.map((day, index) => {
+    const value = Math.min(maxValue, Math.max(minValue, day.averageGuesses))
     const x =
       visibleDays.length === 1
         ? width / 2
-        : padding + (index / (visibleDays.length - 1)) * (width - padding * 2)
-    const y =
-      height -
-      padding -
-      ((day.averageGuesses - minValue) / (maxValue - minValue)) * (height - padding * 2)
+        : plotLeft + (index / (visibleDays.length - 1)) * plotWidth
+    const y = yForValue(value)
     return { day, x, y }
   })
   const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
+  const firstDay = visibleDays[0]
+  const lastDay = visibleDays[visibleDays.length - 1]
 
   return (
     <section className="stats-chart-card stats-chart-card--wide" aria-labelledby="stats-trend-title">
       <div className="stats-chart-heading">
-        <h4 id="stats-trend-title">Daily average trend</h4>
+        <h4 id="stats-trend-title">Daily average guesses</h4>
         <span>{visibleDays.length} tracked days</span>
       </div>
       {points.length > 0 ? (
-        <svg className="stats-trend-chart" viewBox={`0 0 ${width} ${height}`} role="img">
-          <title>Average guesses by day</title>
-          <path className="stats-trend-grid" d={`M ${padding} ${padding} H ${width - padding}`} />
-          <path className="stats-trend-grid" d={`M ${padding} ${height - padding} H ${width - padding}`} />
+        <svg
+          aria-labelledby={chartTitleId}
+          className="stats-trend-chart"
+          role="img"
+          viewBox={`0 0 ${width} ${height}`}
+        >
+          <title id={chartTitleId}>Average guesses by day</title>
+          {yTicks.map((tick) => {
+            const y = yForValue(tick)
+
+            return (
+              <g key={tick}>
+                <path className="stats-trend-grid" d={`M ${plotLeft} ${y} H ${width - plotRight}`} />
+                <text
+                  className="stats-trend-axis-label stats-trend-axis-label--y"
+                  x={plotLeft - 9}
+                  y={y}
+                >
+                  {tick}
+                </text>
+              </g>
+            )
+          })}
+          <path
+            className="stats-trend-axis"
+            d={`M ${plotLeft} ${plotTop} V ${height - plotBottom} H ${width - plotRight}`}
+          />
           <path className="stats-trend-line" d={path} />
           {points.map((point) => (
             <circle className="stats-trend-point" cx={point.x} cy={point.y} key={point.day.date} r="4">
@@ -3824,6 +3803,23 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
               </title>
             </circle>
           ))}
+          {firstDay && (
+            <text className="stats-trend-axis-label" x={plotLeft} y={height - 10}>
+              {formatHistoryDate(firstDay.date)}
+            </text>
+          )}
+          {lastDay && lastDay.date !== firstDay?.date && (
+            <text
+              className="stats-trend-axis-label stats-trend-axis-label--end"
+              x={width - plotRight}
+              y={height - 10}
+            >
+              {formatHistoryDate(lastDay.date)}
+            </text>
+          )}
+          <text className="stats-trend-axis-title" x={plotLeft} y={10}>
+            Avg guesses
+          </text>
         </svg>
       ) : (
         <p className="stats-muted">Trend data will appear after daily completions.</p>
@@ -3844,16 +3840,21 @@ function PlayerLeaderboard({
   return (
     <section className="stats-leaderboard" aria-labelledby="stats-leaderboard-title">
       <div className="stats-chart-heading">
-        <h4 id="stats-leaderboard-title">Player comparison</h4>
-        <span>{users.length} players</span>
+        <h4 id="stats-leaderboard-title">Leaderboard</h4>
+        <span>Ranked by average guesses</span>
       </div>
       <div className="stats-leaderboard-list">
         {rankedUsers.map((user, index) => (
           <button key={user.id} onClick={() => onSelectUser(user.id)} type="button">
-            <span>{index + 1}</span>
-            <PlayerAvatar displayName={user.displayName} size={34} userId={user.id} />
+            <span>#{index + 1}</span>
+            <PlayerAvatar
+              avatar={user.avatar}
+              displayName={user.displayName}
+              size={34}
+              userId={user.id}
+            />
             <strong>{user.displayName}</strong>
-            <em>{formatAverage(user.stats.averageGuesses)} avg</em>
+            <em>{formatAverage(user.stats.averageGuesses)} avg guesses</em>
             <i>{user.stats.averageSkill ?? 0} skill</i>
           </button>
         ))}
@@ -3867,7 +3868,12 @@ function FamilyResultBoard({ result }: { result: FamilyDailyResult }) {
     <section className="family-result-board" aria-label={`${result.displayName} ${result.date}`}>
       <div className="family-result-board__heading">
         <div className="family-result-board__player">
-          <PlayerAvatar displayName={result.displayName} size={42} userId={result.userId} />
+          <PlayerAvatar
+            avatar={result.avatar}
+            displayName={result.displayName}
+            size={42}
+            userId={result.userId}
+          />
           <div>
             <span>{formatHistoryDate(result.date)}</span>
             <strong>{result.displayName}</strong>
@@ -3987,15 +3993,18 @@ function ScoreMeter({
 }
 
 function PlayerAvatar({
+  avatar,
   displayName,
   size,
-  userId,
 }: {
+  avatar?: AvatarConfig
   displayName: string
   size: number
   userId: string
 }) {
-  const avatar = loadCachedAvatar(userId, displayName) ?? createDefaultAvatarConfig(displayName)
+  const displayAvatar =
+    (avatar ? sanitizeAvatarConfig(avatar, displayName) : null) ??
+    createDefaultAvatarConfig(displayName)
 
   return (
     <span
@@ -4004,7 +4013,7 @@ function PlayerAvatar({
       style={{ height: size, width: size }}
     >
       <AvatarImage
-        avatar={avatar}
+        avatar={displayAvatar}
         className="stats-player-avatar__image"
         displayName={displayName}
         size={size * 3}
@@ -4018,8 +4027,10 @@ function createFallbackGroupStats(users: FamilyStatsUser[]): FamilyGroupStats {
   const wins = results.filter((result) => result.outcome === 'won')
   const distribution = { ...EMPTY_STATS.guessDistribution }
   wins.forEach((result) => {
-    distribution[result.guessesUsed] = (distribution[result.guessesUsed] ?? 0) + 1
+    const distributionKey = String(result.guessesUsed)
+    distribution[distributionKey] = (distribution[distributionKey] ?? 0) + 1
   })
+  distribution.fail = results.length - wins.length
 
   return {
     played: results.length,
@@ -4073,6 +4084,38 @@ function getWinsLeader(users: FamilyStatsUser[]) {
   return users
     .filter((user) => user.stats.wins > 0)
     .sort((first, second) => {
+      if (second.stats.wins !== first.stats.wins) return second.stats.wins - first.stats.wins
+      return first.stats.averageGuesses - second.stats.averageGuesses
+    })[0]
+}
+
+function getCurrentPlayStreakLeader(users: FamilyStatsUser[]) {
+  return users
+    .filter((user) => user.stats.currentPlayStreak > 0)
+    .sort((first, second) => {
+      if (second.stats.currentPlayStreak !== first.stats.currentPlayStreak) {
+        return second.stats.currentPlayStreak - first.stats.currentPlayStreak
+      }
+      return first.stats.averageGuesses - second.stats.averageGuesses
+    })[0]
+}
+
+function getPlaysLeader(users: FamilyStatsUser[]) {
+  return users
+    .filter((user) => user.stats.played > 0)
+    .sort((first, second) => {
+      if (second.stats.played !== first.stats.played) return second.stats.played - first.stats.played
+      return first.stats.averageGuesses - second.stats.averageGuesses
+    })[0]
+}
+
+function getWinRateLeader(users: FamilyStatsUser[]) {
+  return users
+    .filter((user) => user.stats.played > 0)
+    .sort((first, second) => {
+      if (second.stats.winPercentage !== first.stats.winPercentage) {
+        return second.stats.winPercentage - first.stats.winPercentage
+      }
       if (second.stats.wins !== first.stats.wins) return second.stats.wins - first.stats.wins
       return first.stats.averageGuesses - second.stats.averageGuesses
     })[0]

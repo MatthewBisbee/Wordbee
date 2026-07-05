@@ -19,6 +19,7 @@ TOKEN_VERSION = 2
 FIRST_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z' -]{0,39}$")
 CODE_ID_PATTERN = re.compile(r"[^A-Za-z0-9_-]+")
 CLIENT_SESSION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{8,96}$")
+MAX_AVATAR_JSON_LENGTH = 4096
 
 
 def validate_friends_family_code(raw_code: object) -> dict[str, str] | None:
@@ -38,6 +39,7 @@ def create_friends_family_session(
     code: object,
     first_name: object,
     last_initial: object,
+    avatar: object = None,
     client_session_id: object = None,
     create_user: bool = True,
 ) -> dict[str, Any]:
@@ -48,6 +50,7 @@ def create_friends_family_session(
     normalized_first_name = normalize_first_name(first_name)
     normalized_last_initial = normalize_last_initial(last_initial)
     normalized_client_session_id = normalize_client_session_id(client_session_id)
+    normalized_avatar_json = normalize_avatar_json(avatar)
     code_id = configured_code["codeId"]
 
     if not create_user and get_friends_family_user(
@@ -64,6 +67,7 @@ def create_friends_family_session(
         code_id=code_id,
         first_name=normalized_first_name,
         last_initial=normalized_last_initial,
+        avatar_json=normalized_avatar_json,
         client_session_id=normalized_client_session_id,
     )
     payload = {
@@ -89,7 +93,7 @@ def verify_friends_family_token(
     *,
     client_session_id: object = None,
     claim_client_session: bool = False,
-) -> dict[str, str] | None:
+) -> dict[str, Any] | None:
     if not isinstance(raw_token, str) or "." not in raw_token:
         return None
 
@@ -127,7 +131,7 @@ def verify_friends_family_token(
         user_row = connection.execute(
             """
             SELECT id, code_id, first_name, last_initial, display_name,
-                   active_session_id, active_client_session_id
+                   avatar_json, active_session_id, active_client_session_id
             FROM friends_family_users
             WHERE id = ?
             """,
@@ -188,7 +192,7 @@ def verify_friends_family_token(
                 (normalized_client_session_id, now, session_id),
             )
 
-    return {
+    identity = {
         "kind": TOKEN_KIND,
         "userId": user_row["id"],
         "codeId": user_row["code_id"],
@@ -196,6 +200,47 @@ def verify_friends_family_token(
         "firstName": user_row["first_name"],
         "lastInitial": user_row["last_initial"],
     }
+    avatar = decode_avatar_json(user_row["avatar_json"])
+    if avatar is not None:
+        identity["avatar"] = avatar
+
+    return identity
+
+
+def update_friends_family_avatar(
+    raw_token: object,
+    *,
+    avatar: object,
+    client_session_id: object = None,
+) -> dict[str, Any] | None:
+    identity = verify_friends_family_token(
+        raw_token,
+        client_session_id=client_session_id,
+        claim_client_session=True,
+    )
+    if identity is None:
+        return None
+
+    avatar_json = normalize_avatar_json(avatar)
+    if avatar_json is None:
+        raise ValueError("Invalid avatar")
+
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE friends_family_users
+            SET avatar_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                avatar_json,
+                datetime.now(UTC).isoformat(timespec="seconds"),
+                identity["userId"],
+            ),
+        )
+
+    identity["avatar"] = decode_avatar_json(avatar_json)
+    return identity
 
 
 def sign_out_friends_family_session(
@@ -308,11 +353,42 @@ def normalize_last_initial(raw_last_initial: object) -> str:
     return last_initial.upper()
 
 
+def normalize_avatar_json(raw_avatar: object) -> str | None:
+    if raw_avatar is None:
+        return None
+
+    if not isinstance(raw_avatar, dict):
+        raise ValueError("Invalid avatar")
+
+    try:
+        avatar_json = json.dumps(raw_avatar, separators=(",", ":"), sort_keys=True)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid avatar") from exc
+
+    if len(avatar_json) > MAX_AVATAR_JSON_LENGTH:
+        raise ValueError("Invalid avatar")
+
+    return avatar_json
+
+
+def decode_avatar_json(raw_avatar_json: object) -> dict[str, Any] | None:
+    if not isinstance(raw_avatar_json, str) or not raw_avatar_json:
+        return None
+
+    try:
+        avatar = json.loads(raw_avatar_json)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    return avatar if isinstance(avatar, dict) else None
+
+
 def upsert_friends_family_user(
     *,
     code_id: str,
     first_name: str,
     last_initial: str,
+    avatar_json: str | None,
     client_session_id: str,
 ) -> dict[str, str]:
     user_id = create_user_id(code_id, first_name, last_initial)
@@ -324,12 +400,13 @@ def upsert_friends_family_user(
         connection.execute(
             """
             INSERT INTO friends_family_users (
-              id, code_id, first_name, last_initial, display_name,
+              id, code_id, first_name, last_initial, display_name, avatar_json,
               active_session_id, active_client_session_id, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               display_name = excluded.display_name,
+              avatar_json = COALESCE(excluded.avatar_json, friends_family_users.avatar_json),
               active_session_id = excluded.active_session_id,
               active_client_session_id = excluded.active_client_session_id,
               updated_at = excluded.updated_at
@@ -340,6 +417,7 @@ def upsert_friends_family_user(
                 first_name,
                 last_initial,
                 display_name,
+                avatar_json,
                 session_id,
                 client_session_id,
                 now,
@@ -355,6 +433,14 @@ def upsert_friends_family_user(
             """,
             (session_id, user_id, client_session_id, now, now),
         )
+        user_row = connection.execute(
+            """
+            SELECT avatar_json
+            FROM friends_family_users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
 
     return {
         "kind": TOKEN_KIND,
@@ -364,6 +450,7 @@ def upsert_friends_family_user(
         "displayName": display_name,
         "firstName": first_name,
         "lastInitial": last_initial,
+        "avatarJson": (user_row["avatar_json"] if user_row else "") or "",
     }
 
 
@@ -378,7 +465,7 @@ def get_friends_family_user(
     with connect() as connection:
         user_row = connection.execute(
             """
-            SELECT id, code_id, first_name, last_initial, display_name
+            SELECT id, code_id, first_name, last_initial, display_name, avatar_json
             FROM friends_family_users
             WHERE id = ?
             """,
@@ -388,24 +475,31 @@ def get_friends_family_user(
     if user_row is None:
         return None
 
-    return {
+    user = {
         "kind": TOKEN_KIND,
         "userId": user_row["id"],
         "codeId": user_row["code_id"],
         "displayName": user_row["display_name"],
         "firstName": user_row["first_name"],
         "lastInitial": user_row["last_initial"],
+        "avatarJson": user_row["avatar_json"] or "",
     }
+    return user
 
 
-def public_identity(user: dict[str, str]) -> dict[str, str]:
-    return {
+def public_identity(user: dict[str, str]) -> dict[str, Any]:
+    identity: dict[str, Any] = {
         "kind": TOKEN_KIND,
         "userId": user["userId"],
         "displayName": user["displayName"],
         "firstName": user["firstName"],
         "lastInitial": user["lastInitial"],
     }
+    avatar = decode_avatar_json(user.get("avatarJson"))
+    if avatar is not None:
+        identity["avatar"] = avatar
+
+    return identity
 
 
 def create_user_id(code_id: str, first_name: str, last_initial: str) -> str:

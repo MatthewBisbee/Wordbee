@@ -87,7 +87,7 @@ Friends-and-family access codes and ntfy notification values are configured with
 
 The backend currently provides daily answer fetching, SQLite caching, guess scoring, signed untracked random and past puzzle tokens, friends-and-family sign-in with pending avatar setup for new names, daily result lockout, ntfy-safe first-save notifications, and friends-and-family-only stats/history.
 
-Answer caching uses one `daily_answers` row per date. Official historical play starts on `2021-06-19`; past-word requests before that date open the first playable puzzle. Development fallback answers are not persisted as historical truth.
+Answer caching uses one `daily_answers` row per date. Official historical play starts on `2021-06-19`; out-of-range past-word requests open the nearest playable puzzle between the first playable day and yesterday. Development fallback answers are not persisted as historical truth.
 
 Planned additions include:
 
@@ -101,7 +101,7 @@ See the planning docs in `docs/` for more detail.
 
 Word metadata is enriched with the Free Dictionary API and the Datamuse API. Definition usage sentences are intentionally not shown because third-party examples were unreliable for this game.
 
-Friends-and-family profile avatars are generated with DiceBear's Notionists SVG HTTP API.
+Friends-and-family profile avatars are synced as server profile metadata and rendered with DiceBear's Notionists SVG HTTP API.
 
 ## Deployment Roadmap
 

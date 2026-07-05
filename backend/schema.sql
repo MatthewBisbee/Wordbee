@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS friends_family_users (
   first_name TEXT NOT NULL,
   last_initial TEXT NOT NULL,
   display_name TEXT NOT NULL,
+  avatar_json TEXT,
   active_session_id TEXT,
   active_client_session_id TEXT,
   created_at TEXT NOT NULL,

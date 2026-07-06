@@ -31,10 +31,13 @@ import {
   createDefaultAvatarConfig,
   sanitizeAvatarConfig,
 } from './features/avatar/avatar-config'
+import { ConnectionsGame } from './features/connections/ConnectionsGame'
 import { WordbeeMenu } from './features/navigation/WordbeeMenu'
 import { ResultsDialog } from './features/results/ResultsDialog'
 import { SettingsDialog } from './features/settings/SettingsDialog'
 import { FamilyStatsPage } from './features/stats/FamilyStatsPage'
+import { StrandsGame } from './features/strands/StrandsGame'
+import { SudokuGame } from './features/sudoku/SudokuGame'
 import { Keyboard } from './features/wordle/Keyboard'
 import {
   createBoard,
@@ -60,6 +63,7 @@ import { getClientSessionId, loadAccessState, loadSettings } from './lib/storage
 import type {
   AccessState,
   AccessVerifyResponse,
+  AdditionalGameKey,
   AvatarConfig,
   CompletedResultInput,
   EvaluatedState,
@@ -74,10 +78,12 @@ import type {
   ResultsResponse,
   Settings,
   StatsSummary,
+  WordbeeGameKey,
 } from './types'
 import './styles/index.css'
 
 function App() {
+  const [activeGame, setActiveGame] = useState<WordbeeGameKey>('wordle')
   const [board, setBoard] = useState(createBoard)
   const [settings, setSettings] = useState(loadSettings)
   const [accessState, setAccessState] = useState<AccessState | null>(loadAccessState)
@@ -122,6 +128,8 @@ function App() {
   }
   const clientSessionId = clientSessionIdRef.current
   const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
+  const activeAdditionalGameLabel =
+    activeGame === 'wordle' ? '' : additionalGameLabels[activeGame]
   const isStandaloneApp = getIsStandaloneApp()
   const isSolvedUntrackedPuzzle = Boolean(
     completedResult && puzzle?.mode !== 'daily' && completedResult.mode === puzzle?.mode,
@@ -337,6 +345,7 @@ function App() {
 
   const beginPuzzle = useCallback(
     (nextPuzzle: PuzzleMetadata) => {
+      setActiveGame('wordle')
       setPuzzle(nextPuzzle)
       setPuzzleError('')
       setIsMenuOpen(false)
@@ -494,6 +503,13 @@ function App() {
   )
   const closeFamilyStats = useCallback(() => {
     setIsFamilyStatsOpen(false)
+  }, [])
+
+  const selectAdditionalGame = useCallback((gameKey: AdditionalGameKey) => {
+    setActiveGame(gameKey)
+    setIsMenuOpen(false)
+    setIsFamilyStatsOpen(false)
+    setIsResultsOpen(false)
   }, [])
 
   const shakeRow = useCallback((row: number) => {
@@ -1029,6 +1045,10 @@ function App() {
         return
       }
 
+      if (activeGame !== 'wordle') {
+        return
+      }
+
       if (
         isSettingsOpen ||
         isAccessPromptOpen ||
@@ -1047,6 +1067,7 @@ function App() {
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [
+    activeGame,
     handleKey,
     isAccessPromptOpen,
     isFamilyStatsOpen,
@@ -1259,8 +1280,16 @@ function App() {
                   onPast={() => void startPastPuzzle(pastWordDate)}
                   onPastDateChange={setPastWordDate}
                   onRandom={() => void startRandomPuzzle()}
+                  onSelectGame={(gameKey) => {
+                    if (gameKey === 'wordle') {
+                      setActiveGame('wordle')
+                      return
+                    }
+                    selectAdditionalGame(gameKey)
+                  }}
                   pastDate={pastWordDate}
-                  showDaily={puzzle?.mode !== 'daily'}
+                  selectedGame={activeGame}
+                  showDaily={activeGame !== 'wordle' || puzzle?.mode !== 'daily'}
                 />
               )}
             </>
@@ -1270,17 +1299,17 @@ function App() {
         <h1
           className={[
             'wordbee-title',
-            puzzleHeaderLabel ? 'wordbee-title--visible' : '',
-            isSolvedUntrackedPuzzle ? 'wordbee-title--left-anchor' : '',
+            puzzleHeaderLabel || activeAdditionalGameLabel ? 'wordbee-title--visible' : '',
+            activeGame === 'wordle' && isSolvedUntrackedPuzzle ? 'wordbee-title--left-anchor' : '',
           ]
             .filter(Boolean)
             .join(' ')}
         >
-          {puzzleHeaderLabel || 'Wordle'}
+          {activeAdditionalGameLabel || puzzleHeaderLabel || 'Wordle'}
         </h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
-          {!isFamilyStatsOpen && completedResult && (
+          {activeGame === 'wordle' && !isFamilyStatsOpen && completedResult && (
             <button
               className="wordbee-results-reopen-button"
               type="button"
@@ -1289,7 +1318,7 @@ function App() {
               See results
             </button>
           )}
-          {!isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
+          {activeGame === 'wordle' && !isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
             <button
               className="wordbee-icon-button wordbee-icon-button--stats"
               type="button"
@@ -1316,7 +1345,7 @@ function App() {
         </div>
       </header>
 
-      {isFamilyStatsOpen && accessState?.kind === 'friends-family' ? (
+      {activeGame === 'wordle' && isFamilyStatsOpen && accessState?.kind === 'friends-family' ? (
         <FamilyStatsPage
           currentUserId={accessState.userId}
           dashboard={familyStats}
@@ -1326,7 +1355,7 @@ function App() {
           onBack={closeFamilyStats}
           onReload={() => void loadFamilyStats()}
         />
-      ) : (
+      ) : activeGame === 'wordle' ? (
         <main className="wordbee-game" aria-label="Wordle game">
           <section className="wordbee-board-container" aria-label="Wordle board">
             <div className="wordbee-board">
@@ -1372,6 +1401,27 @@ function App() {
             states={keyboardState}
           />
         </main>
+      ) : activeGame === 'connections' ? (
+        <ConnectionsGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+        />
+      ) : activeGame === 'strands' ? (
+        <StrandsGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+        />
+      ) : (
+        <SudokuGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+        />
       )}
 
       {isSettingsOpen && (
@@ -1436,5 +1486,10 @@ function App() {
   )
 }
 
+const additionalGameLabels: Record<AdditionalGameKey, string> = {
+  connections: 'Connections',
+  strands: 'Strands',
+  sudoku: 'Sudoku',
+}
 
 export default App

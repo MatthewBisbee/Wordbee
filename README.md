@@ -1,16 +1,19 @@
 # Wordbee
 
-Wordbee is a self-hosted private games hub for a friends-and-family group. The project currently ships one playable game, Wordle, with the React game client, Flask API, SQLite persistence, family access, avatar profiles, daily stats, and deployment scaffolding for nginx, Cloudflare Tunnel, and a Raspberry Pi host.
+Wordbee is a self-hosted private games hub for a friends-and-family group. The project ships Wordle, Sudoku, Connections, and Strands with a React game client, Flask API, SQLite persistence, family access, avatar profiles, daily stats/history, and deployment scaffolding for nginx, Cloudflare Tunnel, and a Raspberry Pi host.
 
 ## Current Status
 
-- Platform: Wordbee is the site and app shell. The left menu is structured as a game picker, with Wordle as the active game and room for future games to use the same pattern.
+- Platform: Wordbee is the site and app shell. The left menu is structured as a game picker, with Wordle, Sudoku, Connections, and Strands as separate playable surfaces.
 - Wordle gameplay: daily play, endless random play, and past-date play for official dates starting `2021-06-19`; six guesses; five-letter answer; valid-word checks; tile reveal animations; win/loss states; high-contrast mode; dark theme; mobile and installed iOS web-app layout support.
+- Sudoku gameplay: daily Easy/Medium/Hard boards, number-pad entry, keyboard number entry, peer highlighting, mistake highlighting, server-side solution checks, and family result history.
+- Connections gameplay: daily sixteen-card board, four-card group submission, one-away feedback, mistake limit, post-loss reveal, server-side group validation, and family result history.
+- Strands gameplay: daily letter grid, adjacent-letter path selection, theme-word and spangram validation, bonus-word tracking, reveal, and family result history.
 - Daily persistence: signed-in family users resume an unfinished daily Wordle from the server after refresh, and completed daily results are locked to one result per user per puzzle date.
 - Daily rollover: the backend resolves the active daily date in `America/Chicago` by default, blocks future daily gameplay before Central midnight, and can cache the next official answer without making it playable early.
 - Friends-and-family access: private access codes are validated server-side, family users are created only after avatar save, saved profiles are reclaimed on load, and one active browser session is enforced per user.
 - Avatar profiles: avatars are stored as server profile metadata and rendered from DB-backed state on refresh, so browser storage does not become the source of truth for signed-in users.
-- Stats: the family dashboard includes overview accolade cards with avatars, solve distribution, first-word habits, player detail, daily review, starter-word history, trends, leaderboard sorting, skill/luck analysis, and solve-path analysis.
+- Stats: the Wordle family dashboard includes overview accolade cards with avatars, solve distribution, first-word habits, player detail, daily review, starter-word history, trends, leaderboard sorting, skill/luck analysis, and solve-path analysis. Sudoku, Connections, and Strands include simpler family solve-rate and recent-play history.
 - Current-day privacy: current-day answers, guesses, boards, and analysis remain locked in stats until the requesting signed-in user solves that day's Wordle.
 - Deployment: nginx, cloudflared, and systemd placeholders are included for the Raspberry Pi deployment path.
 
@@ -34,7 +37,7 @@ Wordbee is a self-hosted private games hub for a friends-and-family group. The p
 └── README.md
 ```
 
-Frontend source is organized around the Wordbee platform shell and feature folders. `frontend/src/App.tsx` owns top-level state and API flow orchestration, `features/wordle/` contains the current Wordle implementation, `features/avatar/`, `features/access/`, `features/settings/`, `features/results/`, and `features/stats/` hold reusable product surfaces, and `styles/` splits the previous monolithic CSS by UI area. Backend game-specific code lives under `backend/app/games/`, with the current Wordle scoring and word-list logic in `backend/app/games/wordle.py`.
+Frontend source is organized around the Wordbee platform shell and feature folders. `frontend/src/App.tsx` owns top-level state and API flow orchestration, `features/wordle/`, `features/sudoku/`, `features/connections/`, and `features/strands/` contain game implementations, `features/games/` contains shared non-Wordle history/API helpers, and `features/avatar/`, `features/access/`, `features/settings/`, `features/results/`, and `features/stats/` hold reusable product surfaces. Backend game-specific code lives under `backend/app/games/`, with Wordle scoring in `backend/app/games/wordle.py` and the added daily puzzle/result service in `backend/app/games/multigame.py`.
 
 ## Getting Started
 
@@ -106,15 +109,17 @@ Important environment values include:
 
 ## Backend Behavior
 
-The backend provides daily Wordle answer fetching, SQLite answer caching, server-side Wordle scoring, signed random and past-date Wordle tokens, family sign-in, avatar persistence, daily result lockout, in-progress daily attempt persistence, first-save notifications, and family-only stats/history.
+The backend provides daily Wordle answer fetching, SQLite answer caching, server-side Wordle scoring, signed random and past-date Wordle tokens, family sign-in, avatar persistence, daily result lockout, in-progress daily attempt persistence, first-save notifications, and family-only Wordle stats/history. It also provides separate daily cache tables and result history for Sudoku, Connections, and Strands.
 
 Answer caching uses one `daily_answers` row per date. Future official answers may be fetched and cached early, but daily gameplay/status endpoints reject future dates until Central midnight. Historical play starts on `2021-06-19`; out-of-range past-date requests open the nearest playable puzzle between the first playable day and yesterday. Development fallback answers are not persisted as historical truth.
 
 Random and past-date Wordle results are intentionally untracked in family stats. They can show session solve analysis, but only daily Wordle completions write to the family results tables.
 
+Sudoku, Connections, and Strands use separate `daily_*` cache tables plus `friends_family_game_results`, keyed by game and date. They do not write to Wordle's daily result, attempt, or stats tables.
+
 ## Data Sources
 
-Daily Wordle answers are fetched from the official source and cached by date. Word metadata is enriched with the Free Dictionary API and the Datamuse API. Definition usage sentences are intentionally not shown because third-party examples were unreliable for this game.
+Daily Wordle answers, Connections boards, and Strands boards are fetched from public dated game endpoints and cached by date. Sudoku is fetched from the current daily page payload when available. The added games include deterministic generated fallbacks so local development still has playable puzzles if an upstream request fails. Word metadata is enriched with the Free Dictionary API and the Datamuse API. Definition usage sentences are intentionally not shown because third-party examples were unreliable for this game.
 
 Friends-and-family profile avatars are stored in SQLite and rendered with DiceBear's Notionists SVG HTTP API.
 

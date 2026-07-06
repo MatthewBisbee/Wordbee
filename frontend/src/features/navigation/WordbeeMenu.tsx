@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import connectionsLogoUrl from '../../assets/Connections_Logo.svg'
+import strandsLogoUrl from '../../assets/Strands_Logo.svg'
+import sudokuLogoUrl from '../../assets/Sudoku_Logo.svg'
 import wordleLogoUrl from '../../assets/Wordle_Logo.svg'
+import type { AdditionalGameKey, WordbeeGameKey } from '../../types'
 
 export function WordbeeMenu({
   maxPastDate,
@@ -8,7 +12,9 @@ export function WordbeeMenu({
   onPast,
   onPastDateChange,
   onRandom,
+  onSelectGame,
   pastDate,
+  selectedGame,
   showDaily,
 }: {
   maxPastDate: string
@@ -17,7 +23,9 @@ export function WordbeeMenu({
   onPast: () => void
   onPastDateChange: (dateValue: string) => void
   onRandom: () => void
+  onSelectGame: (gameKey: WordbeeGameKey) => void
   pastDate: string
+  selectedGame: WordbeeGameKey
   showDaily: boolean
 }) {
   const [isWordleOpen, setIsWordleOpen] = useState(true)
@@ -26,8 +34,16 @@ export function WordbeeMenu({
     <div className="wordbee-menu-popover" role="menu">
       <button
         aria-expanded={isWordleOpen}
-        className="wordbee-game-menu-button"
-        onClick={() => setIsWordleOpen((isOpen) => !isOpen)}
+        className={[
+          'wordbee-game-menu-button',
+          selectedGame === 'wordle' ? 'wordbee-game-menu-button--active' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        onClick={() => {
+          onSelectGame('wordle')
+          setIsWordleOpen((isOpen) => !isOpen)
+        }}
         role="menuitem"
         type="button"
       >
@@ -64,6 +80,36 @@ export function WordbeeMenu({
           </div>
         </div>
       )}
+
+      <div className="wordbee-menu-other-games" aria-label="Games">
+        {additionalGames.map((game) => (
+          <button
+            className={[
+              'wordbee-game-menu-button',
+              selectedGame === game.key ? 'wordbee-game-menu-button--active' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            key={game.key}
+            onClick={() => onSelectGame(game.key)}
+            role="menuitem"
+            type="button"
+          >
+            <img alt="" className="wordbee-game-menu-button__logo" src={game.logoUrl} />
+            <span>{game.label}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
+
+const additionalGames: Array<{
+  key: AdditionalGameKey
+  label: string
+  logoUrl: string
+}> = [
+  { key: 'sudoku', label: 'Sudoku', logoUrl: sudokuLogoUrl },
+  { key: 'connections', label: 'Connections', logoUrl: connectionsLogoUrl },
+  { key: 'strands', label: 'Strands', logoUrl: strandsLogoUrl },
+]

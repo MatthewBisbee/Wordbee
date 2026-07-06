@@ -105,3 +105,67 @@ CREATE TABLE IF NOT EXISTS word_definitions (
   fetched_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS daily_connections (
+  puzzle_date TEXT PRIMARY KEY,
+  external_id TEXT,
+  editor TEXT,
+  cards_json TEXT NOT NULL,
+  groups_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS daily_strands (
+  puzzle_date TEXT PRIMARY KEY,
+  external_id TEXT,
+  editor TEXT,
+  constructors TEXT,
+  clue TEXT NOT NULL,
+  board_json TEXT NOT NULL,
+  theme_words_json TEXT NOT NULL,
+  spangram TEXT NOT NULL,
+  theme_paths_json TEXT NOT NULL,
+  spangram_path_json TEXT NOT NULL,
+  allowed_words_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS daily_sudoku (
+  puzzle_date TEXT NOT NULL,
+  difficulty TEXT NOT NULL,
+  external_id TEXT,
+  display_date TEXT NOT NULL,
+  puzzle_json TEXT NOT NULL,
+  solution_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  source_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (puzzle_date, difficulty)
+);
+
+CREATE TABLE IF NOT EXISTS friends_family_game_results (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  game_key TEXT NOT NULL,
+  puzzle_date TEXT NOT NULL,
+  puzzle_variant TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  elapsed_seconds INTEGER,
+  score_json TEXT NOT NULL,
+  completed_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
+  UNIQUE (user_id, game_key, puzzle_date, puzzle_variant)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_game_results_user_game_date
+ON friends_family_game_results (user_id, game_key, puzzle_date);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_game_results_game_date
+ON friends_family_game_results (game_key, puzzle_date);

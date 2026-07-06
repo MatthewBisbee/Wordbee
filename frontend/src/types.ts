@@ -4,6 +4,8 @@ export type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 export type GameStatus = 'playing' | 'won' | 'lost'
 export type PlayMode = 'daily' | 'random' | 'past'
 export type FamilyStatsView = 'overview' | 'players' | 'daily'
+export type WordbeeGameKey = 'wordle' | 'sudoku' | 'connections' | 'strands'
+export type AdditionalGameKey = Exclude<WordbeeGameKey, 'wordle'>
 
 export type PuzzleMetadata = {
   date: string
@@ -165,6 +167,119 @@ export type FamilyStatsDashboard = {
   currentUserId: string
   group?: FamilyGroupStats
   users: FamilyStatsUser[]
+}
+
+export type ConnectionsCard = {
+  id: string
+  content: string
+  position: number
+}
+
+export type ConnectionsGroup = {
+  title: string
+  cards: string[]
+  rank: number
+}
+
+export type ConnectionsPuzzle = {
+  gameKey: 'connections'
+  date: string
+  editor: string
+  status: string
+  cards: ConnectionsCard[]
+  mistakesAllowed: number
+}
+
+export type ConnectionsGuessResponse = {
+  correct: boolean
+  oneAway: boolean
+  group?: ConnectionsGroup
+}
+
+export type StrandsCoord = [number, number]
+
+export type StrandsPuzzle = {
+  gameKey: 'strands'
+  date: string
+  clue: string
+  constructors: string
+  editor: string
+  status: string
+  board: string[]
+  themeWordCount: number
+  spangramLength: number
+}
+
+export type StrandsGuessResponse = {
+  valid: boolean
+  kind: 'theme' | 'spangram' | 'bonus' | 'invalid'
+  word: string
+  path?: StrandsCoord[]
+}
+
+export type SudokuDifficulty = 'easy' | 'medium' | 'hard'
+
+export type SudokuPuzzle = {
+  gameKey: 'sudoku'
+  date: string
+  difficulty: SudokuDifficulty
+  displayDate: string
+  status: string
+  puzzle: number[]
+}
+
+export type SudokuCheckResponse = {
+  complete: boolean
+  mistakes: number[]
+  solved: boolean
+}
+
+export type MultigameStatsSummary = {
+  averageSeconds: number
+  played: number
+  solveRate: number
+  wins: number
+}
+
+export type MultigameResult = {
+  id: string
+  userId: string
+  displayName: string
+  avatar?: AvatarConfig
+  gameKey: AdditionalGameKey
+  date: string
+  variant: string
+  outcome: Exclude<GameStatus, 'playing'>
+  elapsedSeconds: number | null
+  score: Record<string, unknown>
+  completedAt: string
+}
+
+export type MultigameStatsUser = {
+  id: string
+  displayName: string
+  avatar?: AvatarConfig
+  firstName: string
+  lastInitial: string
+  stats: MultigameStatsSummary
+  history: MultigameResult[]
+}
+
+export type MultigameDashboard = {
+  currentUserId: string
+  games: Record<
+    AdditionalGameKey,
+    {
+      groupStats: MultigameStatsSummary
+      users: MultigameStatsUser[]
+    }
+  >
+}
+
+export type MultigameResultResponse = {
+  ok: boolean
+  created: boolean
+  result?: MultigameResult
 }
 
 export type FamilyDailyAttempt = {

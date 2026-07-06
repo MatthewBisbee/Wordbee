@@ -276,6 +276,14 @@
   padding: 0 8px;
 }
 
+.wordbee-menu-popover .wordbee-menu-other-games .wordbee-game-menu-button {
+  grid-template-columns: 32px minmax(0, 1fr);
+}
+
+.wordbee-game-menu-button--active {
+  background: var(--result-link-bg) !important;
+}
+
 .wordbee-game-menu-button__logo {
   width: 32px;
   height: 32px;
@@ -300,6 +308,13 @@
 .wordbee-menu-game-options {
   display: grid;
   gap: 6px;
+}
+
+.wordbee-menu-other-games {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--settings-border);
+  padding-top: 6px;
 }
 
 .wordbee-menu-game-options > button {

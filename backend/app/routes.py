@@ -19,6 +19,22 @@ from .auth import (
 )
 from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE, get_daily_answer, get_puzzle_date
 from .definitions import get_definition
+from .games.multigame import (
+    GAME_KEYS,
+    check_connections_guess,
+    check_strands_guess,
+    get_connections_puzzle,
+    get_multigame_dashboard,
+    get_strands_puzzle,
+    get_sudoku_puzzle,
+    public_connections_puzzle,
+    public_connections_solution,
+    public_strands_puzzle,
+    public_strands_solution,
+    public_sudoku_puzzle,
+    save_multigame_result,
+    validate_sudoku_grid,
+)
 from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification, publish_contact_notification
 from .stats import (
@@ -110,6 +126,135 @@ def today():
 @api.get("/stats")
 def stats():
     return jsonify(get_stats())
+
+
+@api.get("/games/<game_key>/today")
+def multigame_today(game_key: str):
+    try:
+        puzzle_date = get_puzzle_date(request.args.get("date"))
+        force_refresh = request.args.get("refresh") == "1"
+        if game_key == "connections":
+            return jsonify(public_connections_puzzle(get_connections_puzzle(puzzle_date, force_refresh=force_refresh)))
+        if game_key == "strands":
+            return jsonify(public_strands_puzzle(get_strands_puzzle(puzzle_date, force_refresh=force_refresh)))
+        if game_key == "sudoku":
+            difficulty = request.args.get("difficulty", "medium")
+            return jsonify(
+                public_sudoku_puzzle(
+                    get_sudoku_puzzle(
+                        puzzle_date,
+                        difficulty,
+                        force_refresh=force_refresh,
+                    )
+                )
+            )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify({"error": "Invalid game"}), 404
+
+
+@api.post("/games/connections/guess")
+def multigame_connections_guess():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        return jsonify(check_connections_guess(puzzle_date, payload.get("cards")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/connections/reveal")
+def multigame_connections_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle = get_connections_puzzle(puzzle_date)
+        return jsonify({"groups": public_connections_solution(puzzle)})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/strands/guess")
+def multigame_strands_guess():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        return jsonify(check_strands_guess(puzzle_date, payload.get("path")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/strands/reveal")
+def multigame_strands_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle = get_strands_puzzle(puzzle_date)
+        return jsonify(public_strands_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/sudoku/check")
+def multigame_sudoku_check():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = get_puzzle_date(payload.get("date"))
+        return jsonify(
+            validate_sudoku_grid(
+                puzzle_date,
+                str(payload.get("difficulty") or "medium"),
+                payload.get("grid"),
+            )
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/result")
+def multigame_result():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_optional_friends_family_identity(payload)
+    if payload.get("friendsFamilyToken") and identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    try:
+        game_key = str(payload.get("gameKey") or "")
+        puzzle_date = get_puzzle_date(payload.get("date")).isoformat()
+        validate_multigame_result_payload(game_key, payload)
+        result = save_multigame_result(
+            identity=identity,
+            game_key=game_key,
+            puzzle_date=puzzle_date,
+            puzzle_variant=str(payload.get("variant") or "daily"),
+            outcome=str(payload.get("outcome") or ""),
+            elapsed_seconds=normalize_elapsed_seconds(payload.get("elapsedSeconds")),
+            score=payload.get("score") if isinstance(payload.get("score"), dict) else {},
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify({"ok": True, **result})
 
 
 @api.post("/puzzle/random")
@@ -285,6 +430,20 @@ def friends_family_stats():
             requesting_user_id=identity["userId"],
         )
     )
+
+
+@api.post("/friends-family/game-stats")
+def friends_family_game_stats():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_friends_family_token(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+    if identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    return jsonify(get_multigame_dashboard(requesting_user_id=identity["userId"]))
 
 
 @api.post("/guess")
@@ -513,6 +672,91 @@ def get_contact_identity(payload: dict) -> dict[str, str] | None:
         "firstName": identity["firstName"],
         "lastInitial": identity["lastInitial"],
     }
+
+
+def verify_optional_friends_family_identity(payload: dict) -> dict[str, str] | None:
+    token = payload.get("friendsFamilyToken")
+    if not token:
+        return None
+
+    return verify_friends_family_token(
+        token,
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+
+def validate_multigame_result_payload(game_key: str, payload: dict) -> None:
+    if game_key not in GAME_KEYS:
+        raise ValueError("Invalid game")
+
+    outcome = payload.get("outcome")
+    if outcome not in {"won", "lost"}:
+        raise ValueError("Invalid outcome")
+
+    puzzle_date = get_puzzle_date(payload.get("date"))
+    score = payload.get("score")
+    if not isinstance(score, dict):
+        raise ValueError("Invalid score")
+
+    if game_key == "sudoku":
+        sudoku_status = validate_sudoku_grid(
+            puzzle_date,
+            str(payload.get("variant") or "medium"),
+            score.get("grid"),
+        )
+        if outcome == "won" and not sudoku_status["solved"]:
+            raise ValueError("Sudoku is not solved")
+        return
+
+    if game_key == "connections":
+        puzzle = get_connections_puzzle(puzzle_date)
+        solved_groups = score.get("solvedGroups")
+        if not isinstance(solved_groups, list):
+            raise ValueError("Invalid Connections score")
+        solved_titles = {
+            str(group.get("title") or "").strip().upper()
+            for group in solved_groups
+            if isinstance(group, dict)
+        }
+        expected_titles = {
+            group["title"].upper() for group in public_connections_solution(puzzle)
+        }
+        if outcome == "won" and solved_titles != expected_titles:
+            raise ValueError("Connections is not solved")
+        return
+
+    if game_key == "strands":
+        puzzle = get_strands_puzzle(puzzle_date)
+        solution = public_strands_solution(puzzle)
+        found_theme_words = score.get("foundThemeWords")
+        found_spangram = score.get("foundSpangram")
+        if not isinstance(found_theme_words, list):
+            raise ValueError("Invalid Strands score")
+        normalized_found_theme_words = {
+            str(word).strip().upper()
+            for word in found_theme_words
+            if isinstance(word, str)
+        }
+        if outcome == "won" and (
+            normalized_found_theme_words != set(solution["themeWords"])
+            or found_spangram is not True
+        ):
+            raise ValueError("Strands is not solved")
+
+
+def normalize_elapsed_seconds(raw_elapsed_seconds: object) -> int | None:
+    if raw_elapsed_seconds is None:
+        return None
+
+    try:
+        elapsed_seconds = int(raw_elapsed_seconds)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid elapsed time") from exc
+
+    if elapsed_seconds < 0 or elapsed_seconds > 24 * 60 * 60:
+        raise ValueError("Invalid elapsed time")
+
+    return elapsed_seconds
 
 
 def get_answer_record_for_payload(payload):

@@ -782,7 +782,7 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
           <path className="stats-trend-line" d={path} />
           {points.map((point) => (
             <circle
-              aria-label={`${point.day.date}: ${point.day.averageGuesses.toFixed(2)} average guesses`}
+              aria-label={`${formatHistoryDate(point.day.date)}: ${point.day.averageGuesses.toFixed(2)} average guesses`}
               className="stats-trend-point"
               cx={point.x}
               cy={point.y}
@@ -805,7 +805,7 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
                 y={tooltipY}
               />
               <text x={tooltipX + 10} y={tooltipY + 17}>
-                {tooltipPoint.day.date}
+                {formatHistoryDate(tooltipPoint.day.date)}
               </text>
               <text x={tooltipX + 10} y={tooltipY + 33}>
                 {tooltipPoint.day.averageGuesses.toFixed(2)} avg guesses

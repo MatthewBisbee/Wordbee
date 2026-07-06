@@ -1197,6 +1197,7 @@ function App() {
     try {
       const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
         '/api/today',
+        { cache: 'no-store' },
       )
 
       if (
@@ -1475,10 +1476,15 @@ function App() {
           stats: result.stats,
         })
       } catch (error) {
+        if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+          void loadDailyPuzzle()
+          showToast(error.message)
+        }
+
         console.warn('Could not save result', error)
       }
     },
-    [clientSessionId, friendsFamilyToken, puzzle, requestWithSessionRecovery, stats],
+    [clientSessionId, friendsFamilyToken, loadDailyPuzzle, puzzle, requestWithSessionRecovery, showToast, stats],
   )
 
   const showResultAfterPause = useCallback(
@@ -1558,9 +1564,14 @@ function App() {
       if (
         error instanceof ApiError &&
         (error.message === 'Already completed today' ||
-          error.message === 'Puzzle progress changed. Refreshing latest guesses.')
+          error.message === 'Puzzle progress changed. Refreshing latest guesses.' ||
+          error.message === 'Daily puzzle is not available yet')
       ) {
         setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
+      }
+
+      if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+        void loadDailyPuzzle()
       }
 
       shakeRow(row)
@@ -1669,6 +1680,7 @@ function App() {
 	    currentColumn,
 	    currentRow,
 	    friendsFamilyToken,
+	    loadDailyPuzzle,
 	    puzzle,
 	    puzzleError,
     requestWithSessionRecovery,
@@ -1807,6 +1819,10 @@ function App() {
           resetCurrentGame()
         }
       } catch (error) {
+        if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+          void loadDailyPuzzle()
+        }
+
         console.warn('Could not load friends and family daily status', error)
       } finally {
         if (isMounted) {
@@ -1824,6 +1840,7 @@ function App() {
 	    clientSessionId,
 	    completedResult?.saved,
 	    friendsFamilyToken,
+	    loadDailyPuzzle,
 	    puzzle,
     requestWithSessionRecovery,
 	    resetCurrentGame,

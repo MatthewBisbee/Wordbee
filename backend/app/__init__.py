@@ -29,6 +29,9 @@ def create_app() -> Flask:
             response.headers["Access-Control-Allow-Origin"] = "*"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type"
             response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+        if request.path == "/api/today":
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
         return response
 
     return app

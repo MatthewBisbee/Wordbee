@@ -22,6 +22,7 @@ PUBLISHER_BASE_URL = "https://www.nytimes.com/svc/" + "wor" + "dle" + "/v2"
 USER_AGENT = "Wordbee/0.1 (+https://github.com/MatthewBisbee/Wordbee)"
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_PUZZLE_TIMEZONE = "America/Chicago"
+LEGACY_EARLY_ROLLOVER_TIMEZONE = "America/New_York"
 
 
 def get_puzzle_date(raw_date: object = None, *, now: datetime | None = None) -> date:
@@ -34,7 +35,7 @@ def get_puzzle_date(raw_date: object = None, *, now: datetime | None = None) -> 
         except ValueError as exc:
             raise ValueError("Invalid date") from exc
 
-    timezone_name = os.environ.get("WORDBEE_PUZZLE_TIMEZONE", DEFAULT_PUZZLE_TIMEZONE)
+    timezone_name = get_puzzle_timezone_name()
     timezone = ZoneInfo(timezone_name)
     current_time = now or datetime.now(timezone)
 
@@ -42,6 +43,14 @@ def get_puzzle_date(raw_date: object = None, *, now: datetime | None = None) -> 
         current_time = current_time.replace(tzinfo=timezone)
 
     return current_time.astimezone(timezone).date()
+
+
+def get_puzzle_timezone_name() -> str:
+    timezone_name = os.environ.get("WORDBEE_PUZZLE_TIMEZONE", DEFAULT_PUZZLE_TIMEZONE)
+    if timezone_name == LEGACY_EARLY_ROLLOVER_TIMEZONE:
+        return DEFAULT_PUZZLE_TIMEZONE
+
+    return timezone_name
 
 
 def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str, Any]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hmac
 import json
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -219,6 +219,7 @@ def friends_family_today_status():
 
     try:
         puzzle_date = get_puzzle_date(payload.get("date"))
+        validate_available_daily_date(puzzle_date)
         answer_record = get_daily_answer(puzzle_date)
         status = get_family_today_status(
             identity=identity,
@@ -452,10 +453,16 @@ def get_attempt_index(raw_index) -> int | None:
     return attempt_index
 
 
+def validate_available_daily_date(puzzle_date: date) -> None:
+    if puzzle_date > get_puzzle_date():
+        raise ValueError("Daily puzzle is not available yet")
+
+
 def get_answer_record_for_payload(payload):
     mode = get_payload_mode(payload)
     if mode == "daily":
         puzzle_date = get_puzzle_date(payload.get("date"))
+        validate_available_daily_date(puzzle_date)
         answer_record = get_daily_answer(puzzle_date)
         return {
             "answer": answer_record["answer"],

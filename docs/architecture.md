@@ -10,7 +10,7 @@ During local development, `npm run dev` starts Flask on `127.0.0.1:5001` and Vit
 
 Daily answer flow:
 
-- `GET /api/today` resolves the current puzzle date in the configured puzzle timezone.
+- `GET /api/today` resolves the current puzzle date in the configured puzzle timezone, defaulting to `America/Chicago` so the active daily flips at Central midnight even if the next official answer is already fetchable.
 - The backend fetches the official answer, stores one `daily_answers` row per date, and reuses cached rows unless stale and unconfirmed.
 - Direct daily-answer dates before `2021-06-19` are rejected because that is the first official playable date; past-word play clamps submitted out-of-range dates to `2021-06-19` through yesterday.
 - Development fallback answers are returned only for the current local development day and are not persisted to the historical archive.

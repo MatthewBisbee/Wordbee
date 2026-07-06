@@ -8,6 +8,7 @@ Current responsibilities:
 
 - Serve daily puzzle metadata without exposing the answer up front.
 - Fetch and cache one official daily answer per date, with official historical play starting on `2021-06-19`.
+- Resolve the active daily date in the configured puzzle timezone, defaulting to `America/Chicago`.
 - Keep development fallback answers out of the historical cache.
 - Score guesses server-side.
 - Validate friends-and-family access codes without exposing private codes to the client.

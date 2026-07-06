@@ -19,7 +19,7 @@ from .auth import (
 )
 from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE, get_daily_answer, get_puzzle_date
 from .definitions import get_definition
-from .game import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
+from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification
 from .stats import (
     AttemptConflictError,

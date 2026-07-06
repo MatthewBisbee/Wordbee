@@ -9,7 +9,7 @@ from typing import Any
 
 from .db import connect
 from .auth import decode_avatar_json
-from .game import load_valid_guesses, score_guess
+from .games.wordle import load_valid_guesses, score_guess
 
 
 DEFAULT_DISTRIBUTION = {**{str(index): 0 for index in range(1, 7)}, "fail": 0}

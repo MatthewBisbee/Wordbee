@@ -4,6 +4,15 @@ This is the Vite + React + TypeScript client for Wordbee. Wordbee is the site sh
 
 The client includes the Wordle board, keyboard, game picker menu, settings, friends-and-family access, avatar editor, results view, and full-page stats dashboard. Avatar and stats surfaces should be designed mobile-first because they are routinely used from iOS Safari and other small screens.
 
+## Source Layout
+
+- `App.tsx`: top-level Wordbee state, API flow orchestration, and page composition.
+- `features/wordle/`: the current Wordle game UI and board helpers.
+- `features/access/`, `features/avatar/`, `features/navigation/`, `features/results/`, `features/settings/`, `features/stats/`: focused product surfaces shared by the Wordbee shell and current game.
+- `components/`: small shared view primitives.
+- `config/`, `lib/`, `types.ts`: constants, browser/API helpers, and shared TypeScript contracts.
+- `styles/`: CSS split by UI area, imported in stable order through `styles/index.css`.
+
 ## Scripts
 
 ```bash

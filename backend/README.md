@@ -4,6 +4,8 @@ This directory contains the Flask + SQLite backend for Wordbee. Wordle is the cu
 
 The current backend fetches and caches the daily Wordle answer, exposes the game metadata API, scores guesses, validates friends-and-family access, preserves each fetched answer by date in SQLite, and tracks friends-and-family-only daily Wordle stats.
 
+Game-specific backend logic belongs under `app/games/`. The current Wordle scoring and valid-guess loading code lives in `app/games/wordle.py`; platform services such as auth, persistence, notifications, definitions, and stats stay at the app service layer.
+
 Current responsibilities:
 
 - Serve daily Wordle metadata without exposing the answer up front.

@@ -1,0 +1,332 @@
+.results-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.45);
+  animation: results-backdrop-enter 180ms ease-out;
+}
+
+.results-panel {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(820px, calc(100dvh - 36px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  border-radius: 8px;
+  padding: 22px;
+  background: var(--result-panel-bg);
+  color: var(--color-tone-1);
+  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.28);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  animation: results-panel-pull-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.results-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: transparent;
+  color: var(--result-muted);
+  cursor: pointer;
+}
+
+.results-close .wordbee-inline-icon,
+.results-close .game-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.definition-panel {
+  border-bottom: 1px solid var(--settings-border);
+  padding-bottom: 20px;
+  padding-right: 26px;
+}
+
+.definition-panel__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.definition-panel__heading strong {
+  color: var(--color-tone-1);
+  font-size: clamp(32px, 8vw, 44px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.definition-panel__heading em {
+  color: var(--result-muted);
+  font-size: 17px;
+  line-height: 22px;
+}
+
+.definition-panel__part {
+  display: block;
+  margin-top: 6px;
+  color: var(--result-muted);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 16px;
+  text-transform: uppercase;
+}
+
+.definition-panel p {
+  margin: 14px 0 0;
+  color: var(--color-tone-1);
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.definition-panel__synonyms {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  color: var(--result-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.definition-panel__synonyms span:first-child {
+  color: var(--color-tone-1);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.results-section {
+  margin-top: 22px;
+}
+
+.results-section h3 {
+  margin: 0 0 14px;
+  color: var(--color-tone-1);
+  font-size: 20px;
+  line-height: 24px;
+  text-transform: uppercase;
+}
+
+.results-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.results-stat {
+  min-width: 0;
+  text-align: center;
+}
+
+.results-stat strong {
+  display: block;
+  font-size: clamp(42px, 11vw, 64px);
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.results-stat span {
+  display: block;
+  margin-top: 6px;
+  font-size: 17px;
+  line-height: 20px;
+}
+
+.distribution-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.distribution-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.distribution-row__label {
+  color: var(--color-tone-1);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.distribution-row__bar {
+  width: var(--bar-width);
+  min-width: 28px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  padding: 0 10px;
+  background: var(--result-bar-bg);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.distribution-row__bar--current {
+  background: var(--color-correct);
+}
+
+.results-link-card {
+  width: 100%;
+  min-height: 84px;
+  margin-top: 32px;
+  border: 0;
+  padding: 16px;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 24px;
+  gap: 14px;
+  align-items: center;
+  background: var(--result-link-bg);
+  color: var(--color-tone-1);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.results-link-card .wordbee-inline-icon,
+.results-link-card .game-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.results-link-card strong,
+.results-link-card span span {
+  display: block;
+}
+
+.results-link-card strong {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.results-link-card span span {
+  margin-top: 2px;
+  color: var(--result-muted);
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.results-link-card__arrow {
+  color: var(--color-tone-1);
+  font-size: 42px;
+  line-height: 1;
+}
+
+.results-secondary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.results-secondary-actions a,
+.results-secondary-actions button {
+  min-height: 46px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-tone-1);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.results-secondary-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.results-note {
+  margin: 8px 0 0;
+  color: var(--result-muted);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.results-copy-area {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  margin: 24px auto 0;
+}
+
+.results-copy-button {
+  border: 0;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--color-tone-1);
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.results-copy-button:focus-visible {
+  outline: 2px solid var(--color-correct);
+  outline-offset: 3px;
+}
+
+.results-copy-button__emoji {
+  white-space: pre-line;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: 2px;
+}
+
+.results-copy-button:hover {
+  opacity: 0.82;
+  transform: translateY(-1px);
+}
+
+.results-copy-button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.results-copy-feedback {
+  min-height: 18px;
+  color: var(--color-correct);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.results-copy-feedback[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}

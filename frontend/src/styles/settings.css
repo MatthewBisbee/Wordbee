@@ -1,0 +1,247 @@
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.settings-modal {
+  position: relative;
+  width: min(520px, calc(100vw - 32px));
+  padding: 16px 16px 36px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  box-shadow: 0 4px 23px rgba(0, 0, 0, 0.2);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+.settings-modal__header {
+  min-height: 38px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.settings-modal__header h2 {
+  margin: 0;
+  color: var(--color-tone-1);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 20px;
+  letter-spacing: 0.5px;
+}
+
+.settings-close {
+  position: absolute;
+  top: 18px;
+  right: 16px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-tone-1);
+  cursor: pointer;
+}
+
+.settings-close .wordbee-inline-icon,
+.settings-close .game-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.settings-list {
+  margin-top: 4px;
+}
+
+.settings-row {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--settings-border);
+  gap: 18px;
+  padding: 6px 0;
+}
+
+.settings-access-section {
+  border-bottom: 1px solid var(--settings-border);
+  padding: 12px 0 14px;
+}
+
+.settings-row__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-row__label {
+  color: var(--color-tone-1);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.settings-row__description {
+  color: var(--color-tone-1);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.settings-switch {
+  width: 32px;
+  height: 20px;
+  flex: 0 0 32px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  position: relative;
+  background: var(--settings-switch-off);
+  cursor: pointer;
+}
+
+.settings-switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 100ms ease;
+}
+
+.settings-switch[aria-checked="true"] {
+  background: var(--settings-switch-on);
+}
+
+.settings-switch[aria-checked="true"] .settings-switch__thumb {
+  transform: translateX(12px);
+}
+
+.settings-text-input {
+  width: min(170px, 46vw);
+  min-width: 0;
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.settings-text-input:focus {
+  outline: 2px solid var(--color-correct);
+  outline-offset: 2px;
+}
+
+.settings-identity-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-tone-1);
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-profile {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-profile-identity {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-profile-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-avatar-preview {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.settings-avatar-preview .avatar-image {
+  transform: translateY(5%) scale(1.22);
+  transform-origin: center bottom;
+}
+
+.settings-avatar-button {
+  min-height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: transparent;
+  color: var(--color-tone-1);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-avatar-button:hover {
+  background: var(--result-link-bg);
+}
+
+.settings-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 18px;
+  color: var(--color-tone-2);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.settings-links a {
+  color: var(--color-tone-2);
+  text-decoration: none;
+}
+
+.settings-links a:hover {
+  text-decoration: underline;
+}
+
+.settings-links__separator {
+  color: var(--settings-border);
+}

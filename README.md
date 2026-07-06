@@ -24,15 +24,17 @@ Wordbee is a self-hosted private games hub for a friends-and-family group. The p
 
 ```text
 .
-├── backend/        # Flask API, SQLite access, scoring, auth, stats, notifications
+├── backend/        # Flask API, SQLite access, auth, stats, notifications, game modules
 ├── data/           # Local SQLite runtime data, ignored by Git
 ├── docs/           # Architecture, API, auth, and database planning notes
-├── frontend/       # Vite + React Wordbee client and Wordle UI
+├── frontend/       # Vite + React Wordbee client, feature modules, and Wordle UI
 ├── infra/          # Deployment config placeholders
 ├── tests/          # Test notes and smoke-test context
 ├── package.json    # Root convenience scripts
 └── README.md
 ```
+
+Frontend source is organized around the Wordbee platform shell and feature folders. `frontend/src/App.tsx` owns top-level state and API flow orchestration, `features/wordle/` contains the current Wordle implementation, `features/avatar/`, `features/access/`, `features/settings/`, `features/results/`, and `features/stats/` hold reusable product surfaces, and `styles/` splits the previous monolithic CSS by UI area. Backend game-specific code lives under `backend/app/games/`, with the current Wordle scoring and word-list logic in `backend/app/games/wordle.py`.
 
 ## Getting Started
 

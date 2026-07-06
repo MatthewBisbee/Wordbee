@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url'
 const backendUrl = 'http://127.0.0.1:5001/api/health'
 const backendPort = 5001
 const frontendPort = 5173
+const isLocalOnly = process.argv.includes('--local')
+const frontendHost = isLocalOnly ? '127.0.0.1' : '0.0.0.0'
+const devCommand = isLocalOnly ? 'npm run dev:local' : 'npm run dev'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const frontendRoot = path.join(projectRoot, 'frontend')
 const processes = []
@@ -102,9 +105,9 @@ function waitForBackend(childProcess) {
   })
 }
 
-if (!(await checkPortAvailable(frontendPort, 'localhost'))) {
+if (!(await checkPortAvailable(frontendPort, frontendHost))) {
   console.error(
-    `Frontend port ${frontendPort} is already in use. Stop the old dev server and run npm run dev again.`,
+    `Frontend port ${frontendPort} is already in use. Stop the old dev server and run ${devCommand} again.`,
   )
   process.exit(1)
 }
@@ -135,7 +138,12 @@ try {
 }
 
 if (!shuttingDown) {
-  const frontend = spawn('npm', ['run', 'dev:vite'], {
+  const frontendArgs = ['run', 'dev:vite']
+  if (isLocalOnly) {
+    frontendArgs.push('--', '--host', frontendHost)
+  }
+
+  const frontend = spawn('npm', frontendArgs, {
     cwd: frontendRoot,
     stdio: 'inherit',
   })

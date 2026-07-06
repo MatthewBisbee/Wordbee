@@ -58,6 +58,14 @@ npm run dev
 
 This starts Flask on `127.0.0.1:5001` and Vite on `0.0.0.0:5173`. Use `http://localhost:5173` on the host machine, or the Network URL Vite prints to test from another device on the same LAN.
 
+Run the same full app on localhost only:
+
+```bash
+npm run dev:local
+```
+
+This keeps Flask on `127.0.0.1:5001` and starts Vite with `--host 127.0.0.1`, so the frontend does not expose a LAN URL.
+
 Run each side separately:
 
 ```bash

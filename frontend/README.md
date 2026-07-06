@@ -26,3 +26,5 @@ npm run preview
 The root `package.json` also exposes convenience scripts that run these from the repository root.
 
 `npm run dev` through the root script serves Vite on `0.0.0.0:5173`, so the app is available from `localhost` and from other devices on the same LAN through the Network URL Vite prints.
+
+Use `npm run dev:local` for the same full-stack dev runner with Vite bound only to `127.0.0.1`.

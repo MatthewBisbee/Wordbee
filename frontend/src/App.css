@@ -332,7 +332,7 @@
 
 @media (max-width: 640px) {
   .wordbee-app--standalone .wordbee-game {
-    height: calc(100dvh - var(--header-height) - 20px);
+    height: calc(100dvh - var(--header-height) - 45px);
   }
 
   .wordbee-app:not(.wordbee-app--standalone) .wordbee-game {

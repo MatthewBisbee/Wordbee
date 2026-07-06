@@ -953,6 +953,7 @@ function App() {
   const [isResultsOpen, setIsResultsOpen] = useState(false)
   const gameIdRef = useRef('')
   const clientSessionIdRef = useRef('')
+  const menuAreaRef = useRef<HTMLDivElement | null>(null)
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
@@ -1830,6 +1831,24 @@ function App() {
 	  ])
 
   useEffect(() => {
+    if (!isMenuOpen) return
+
+    const onPointerDown = (event: PointerEvent) => {
+      const menuArea = menuAreaRef.current
+      if (!menuArea || !(event.target instanceof Node)) return
+      if (menuArea.contains(event.target)) return
+
+      setIsMenuOpen(false)
+    }
+
+    window.addEventListener('pointerdown', onPointerDown, true)
+
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [isMenuOpen])
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isMenuOpen) {
         setIsMenuOpen(false)
@@ -2031,7 +2050,7 @@ function App() {
 	      </div>
 
       <header className="wordbee-header">
-        <div className="wordbee-header__side wordbee-header__side--left">
+        <div className="wordbee-header__side wordbee-header__side--left" ref={menuAreaRef}>
           {isFamilyStatsOpen ? (
             <button className="wordbee-page-back-button" onClick={closeFamilyStats} type="button">
               Back

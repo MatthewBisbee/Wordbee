@@ -1,7 +1,10 @@
+import { type FormEvent, useState } from 'react'
+
 import closeIconMarkup from '../../assets/icons/icon-close.svg?raw'
 import { InlineIcon } from '../../components/InlineIcon'
 import { AvatarImage } from '../avatar/avatar'
 import { FriendsFamilyAccessForm } from '../access/AccessDialog'
+import { ApiError, requestJson } from '../../lib/api'
 import type { AccessState, AvatarConfig, FriendsFamilyAccess, Settings } from '../../types'
 
 export function SettingsDialog({
@@ -75,6 +78,7 @@ export function SettingsDialog({
               onLogin={onAccessLogin}
             />
           )}
+          <SettingsContactForm accessState={accessState} clientSessionId={clientSessionId} />
           <div className="settings-links" aria-label="Project links">
             <a
               href="https://github.com/MatthewBisbee/Wordbee"
@@ -93,6 +97,102 @@ export function SettingsDialog({
         </div>
       </section>
     </div>
+  )
+}
+
+type ContactFormStatus = 'idle' | 'sending' | 'sent' | 'error'
+
+function SettingsContactForm({
+  accessState,
+  clientSessionId,
+}: {
+  accessState: AccessState | null
+  clientSessionId: string
+}) {
+  const [message, setMessage] = useState('')
+  const [status, setStatus] = useState<ContactFormStatus>('idle')
+  const [errorMessage, setErrorMessage] = useState('')
+
+  const trimmedMessage = message.trim()
+  const isSending = status === 'sending'
+  const statusText =
+    status === 'sent'
+      ? 'Suggestion sent'
+      : status === 'error'
+        ? errorMessage || 'Could not send suggestion'
+        : ''
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (!trimmedMessage || isSending) {
+      return
+    }
+
+    setStatus('sending')
+    setErrorMessage('')
+
+    try {
+      const payload =
+        accessState?.kind === 'friends-family'
+          ? {
+              clientSessionId,
+              friendsFamilyToken: accessState.token,
+              message: trimmedMessage,
+            }
+          : { message: trimmedMessage }
+
+      await requestJson<{ ok: boolean }>('/api/contact', {
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      })
+
+      setMessage('')
+      setStatus('sent')
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : 'Could not send suggestion')
+      setStatus('error')
+    }
+  }
+
+  return (
+    <form className="settings-contact-form" onSubmit={handleSubmit}>
+      <label className="settings-row__label" htmlFor="settings-contact-message">
+        Suggestions
+      </label>
+      <textarea
+        className="settings-contact-input"
+        disabled={isSending}
+        id="settings-contact-message"
+        maxLength={2000}
+        onChange={(event) => {
+          setMessage(event.target.value)
+          if (status !== 'idle') {
+            setStatus('idle')
+            setErrorMessage('')
+          }
+        }}
+        placeholder="Send a suggestion"
+        rows={4}
+        value={message}
+      />
+      <div className="settings-contact-footer">
+        <span
+          className={`settings-contact-status settings-contact-status--${status}`}
+          role={status === 'error' ? 'alert' : undefined}
+        >
+          {statusText}
+        </span>
+        <button
+          className="settings-avatar-button"
+          disabled={!trimmedMessage || isSending}
+          type="submit"
+        >
+          {isSending ? 'Sending...' : 'Send'}
+        </button>
+      </div>
+    </form>
   )
 }
 

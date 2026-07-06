@@ -20,7 +20,7 @@ from .auth import (
 from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE, get_daily_answer, get_puzzle_date
 from .definitions import get_definition
 from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
-from .notifications import publish_completion_notification
+from .notifications import publish_completion_notification, publish_contact_notification
 from .stats import (
     AttemptConflictError,
     EMPTY_STATS,
@@ -48,6 +48,37 @@ UNTRACKED_PLAYER = {
 
 @api.get("/health")
 def health():
+    return jsonify({"ok": True})
+
+
+@api.post("/contact")
+def contact():
+    payload = request.get_json(silent=True) or {}
+    suggestion = normalize_contact_message(payload.get("message"))
+
+    if suggestion is None:
+        return jsonify({"error": "Suggestion is required"}), 400
+
+    contact_identity = get_contact_identity(payload)
+    notification_result = publish_contact_notification(
+        message=suggestion,
+        first_name=contact_identity["firstName"] if contact_identity else "",
+        last_initial=contact_identity["lastInitial"] if contact_identity else "",
+    )
+
+    if notification_result["reason"] == "request_failed":
+        current_app.logger.warning(
+            "Could not publish suggestion notification: %s",
+            notification_result.get("error", "unknown error"),
+        )
+        return jsonify({"error": "Could not send suggestion"}), 502
+
+    if notification_result["reason"] == "missing_topic":
+        return jsonify({"error": "Suggestion notifications are not configured"}), 503
+
+    if notification_result["reason"] == "disabled":
+        return jsonify({"error": "Suggestion notifications are unavailable"}), 503
+
     return jsonify({"ok": True})
 
 
@@ -456,6 +487,32 @@ def get_attempt_index(raw_index) -> int | None:
 def validate_available_daily_date(puzzle_date: date) -> None:
     if puzzle_date > get_puzzle_date():
         raise ValueError("Daily Wordle is not available yet")
+
+
+def normalize_contact_message(raw_message: object) -> str | None:
+    if not isinstance(raw_message, str):
+        return None
+
+    message = raw_message.strip()
+    if not message:
+        return None
+
+    return message[:2000]
+
+
+def get_contact_identity(payload: dict) -> dict[str, str] | None:
+    identity = verify_friends_family_token(
+        payload.get("friendsFamilyToken"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+    if identity is None:
+        return None
+
+    return {
+        "firstName": identity["firstName"],
+        "lastInitial": identity["lastInitial"],
+    }
 
 
 def get_answer_record_for_payload(payload):

@@ -76,6 +76,61 @@
   padding: 12px 0 14px;
 }
 
+.settings-contact-form {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--settings-border);
+  padding: 14px 0;
+}
+
+.settings-contact-input {
+  width: 100%;
+  min-height: 92px;
+  border: 1px solid var(--settings-border);
+  border-radius: 4px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  resize: vertical;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px;
+  line-height: 20px;
+}
+
+.settings-contact-input:focus {
+  outline: 2px solid var(--color-correct);
+  outline-offset: 2px;
+}
+
+.settings-contact-input::placeholder {
+  color: var(--color-tone-3);
+}
+
+.settings-contact-footer {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-contact-status {
+  min-width: 0;
+  color: var(--color-tone-2);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.settings-contact-status--error {
+  color: var(--color-absent);
+}
+
+.settings-contact-status--sent {
+  color: var(--color-correct);
+}
+
 .settings-row__text {
   min-width: 0;
   display: flex;
@@ -215,6 +270,11 @@
   line-height: 14px;
   cursor: pointer;
   white-space: nowrap;
+}
+
+.settings-avatar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .settings-avatar-button:hover {

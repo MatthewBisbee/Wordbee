@@ -101,7 +101,7 @@ Important environment values include:
 - `DATABASE_PATH`: optional override for the SQLite database location.
 - `WORDBEE_FRIENDS_FAMILY_CODES`: server-only family access code groups.
 - `WORDBEE_PUZZLE_TIMEZONE`: active daily rollover timezone; defaults to `America/Chicago`.
-- `WORDBEE_NTFY_*`: optional ntfy completion notifications.
+- `WORDBEE_NTFY_*`: optional ntfy completion and suggestion notifications.
 - `WORDBEE_ENABLE_DEV_FALLBACK`: local-only daily Wordle answer fallback for development.
 
 ## Backend Behavior

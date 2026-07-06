@@ -65,7 +65,7 @@ def create_completion_message(
     board: list[list[str]],
 ) -> str:
     return (
-        f"{display_name} completed todays Wordbee in {format_guess_count(guesses_used)}\n"
+        f"{display_name} completed today's Wordle in {format_guess_count(guesses_used)}\n"
         f"{create_emoji_grid(board)}"
     )
 

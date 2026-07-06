@@ -1,8 +1,8 @@
 # Wordbee Frontend
 
-This is the Vite + React + TypeScript client for Wordbee.
+This is the Vite + React + TypeScript client for Wordbee. Wordbee is the site shell; Wordle is the currently implemented game.
 
-The client includes the game board, keyboard, settings, friends-and-family access, avatar editor, results view, and full-page stats dashboard. Avatar and stats surfaces should be designed mobile-first because they are routinely used from iOS Safari and other small screens.
+The client includes the Wordle board, keyboard, game picker menu, settings, friends-and-family access, avatar editor, results view, and full-page stats dashboard. Avatar and stats surfaces should be designed mobile-first because they are routinely used from iOS Safari and other small screens.
 
 ## Scripts
 

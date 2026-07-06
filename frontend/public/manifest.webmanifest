@@ -1,7 +1,7 @@
 {
   "name": "Wordbee",
   "short_name": "Wordbee",
-  "description": "A private daily word game for family and friends.",
+  "description": "A private games hub for family and friends.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

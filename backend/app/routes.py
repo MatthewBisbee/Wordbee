@@ -455,7 +455,7 @@ def get_attempt_index(raw_index) -> int | None:
 
 def validate_available_daily_date(puzzle_date: date) -> None:
     if puzzle_date > get_puzzle_date():
-        raise ValueError("Daily puzzle is not available yet")
+        raise ValueError("Daily Wordle is not available yet")
 
 
 def get_answer_record_for_payload(payload):

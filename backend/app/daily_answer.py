@@ -82,7 +82,7 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
                 source_results=source_results,
             )
 
-        raise RuntimeError("Unable to load the Wordbee answer for this date")
+        raise RuntimeError("Unable to load the Wordle answer for this date")
 
     return save_answer(
         puzzle_date=puzzle_date,
@@ -191,7 +191,7 @@ def save_answer(
 
     cached_answer = get_cached_answer(puzzle_date)
     if cached_answer is None:
-        raise RuntimeError("Unable to cache today's Wordbee answer")
+        raise RuntimeError("Unable to cache today's Wordle answer")
 
     return cached_answer
 

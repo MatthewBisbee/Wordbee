@@ -12,7 +12,7 @@ Current tables:
 - `friends_family_daily_attempts`: one active in-progress daily attempt per friends-and-family user per puzzle date, including submitted guesses, scored board states, and update timestamp. Rows are cleared when the daily result is completed.
 - `word_definitions`: one row per fetched definition, including pronunciation text, part of speech, definition, an intentionally blank example field, synonyms JSON, source URL, and timestamps.
 
-Random and past-word play are intentionally excluded from friends-and-family stats tables.
+Random and past-date Wordle play are intentionally excluded from friends-and-family stats tables.
 
 Stats derivation notes:
 
@@ -20,7 +20,7 @@ Stats derivation notes:
 - Skill, luck, solve-path labels, starter aggregates, trends, and leaderboard values are derived from raw rows at response time rather than persisted as source-of-truth fields.
 - Dashboard responses cap display history, recent results, and daily timeline windows so the browser does not receive every historical board as the dataset grows.
 
-Daily answer archive notes:
+Daily Wordle answer archive notes:
 
 - Official historical play starts on `2021-06-19`.
 - The `daily_answers` primary key keeps the archive to one row per puzzle date.

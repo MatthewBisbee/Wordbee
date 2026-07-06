@@ -267,6 +267,45 @@
   outline: 0;
 }
 
+.wordbee-menu-popover .wordbee-game-menu-button {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.wordbee-game-menu-button__logo {
+  width: 32px;
+  height: 32px;
+  display: block;
+  border-radius: 6px;
+}
+
+.wordbee-game-menu-button__chevron {
+  width: 8px;
+  height: 8px;
+  justify-self: center;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform 160ms ease;
+}
+
+.wordbee-game-menu-button[aria-expanded="true"] .wordbee-game-menu-button__chevron {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.wordbee-menu-game-options {
+  display: grid;
+  gap: 6px;
+}
+
+.wordbee-menu-game-options > button {
+  margin-left: 42px;
+}
+
 .wordbee-menu-past {
   display: grid;
   gap: 7px;

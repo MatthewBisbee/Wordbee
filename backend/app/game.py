@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 EvaluatedState = str
-VALID_GUESSES_PATH = Path(__file__).resolve().parents[1] / "valid-wordbee-words.txt"
+VALID_GUESSES_PATH = Path(__file__).resolve().parents[1] / "valid-wordle-words.txt"
 
 
 def score_guess(answer: str, guess: str) -> list[EvaluatedState]:

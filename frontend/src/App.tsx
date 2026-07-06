@@ -5,6 +5,7 @@ import closeIconMarkup from './assets/icons/icon-close.svg?raw'
 import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
 import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
 import statsIconMarkup from './assets/icons/icon-stats.svg?raw'
+import wordleLogoUrl from './assets/Wordle_Logo.svg'
 import './App.css'
 
 const WORD_LENGTH = 5
@@ -1206,7 +1207,7 @@ function App() {
         typeof responseBody.confidence !== 'number' ||
         typeof responseBody.status !== 'string'
       ) {
-        throw new Error('Unexpected daily answer response')
+        throw new Error('Unexpected daily Wordle response')
       }
 
       beginPuzzle({
@@ -1217,8 +1218,8 @@ function App() {
         status: responseBody.status,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not load daily answer'
-      console.warn('Could not load daily answer', error)
+      const message = error instanceof Error ? error.message : 'Could not load daily Wordle'
+      console.warn('Could not load daily Wordle', error)
       setPuzzleError(message)
     }
   }, [beginPuzzle])
@@ -1292,7 +1293,7 @@ function App() {
           typeof responseBody.puzzleId !== 'string' ||
           typeof responseBody.status !== 'string'
         ) {
-          throw new Error('Unexpected past puzzle response')
+          throw new Error('Unexpected past Wordle response')
         }
 
         beginPuzzle({
@@ -1317,8 +1318,8 @@ function App() {
           )
         }
       } catch (error) {
-        console.warn('Could not start past puzzle', error)
-        showToast(error instanceof Error ? error.message : 'Could not start past puzzle')
+        console.warn('Could not start past Wordle', error)
+        showToast(error instanceof Error ? error.message : 'Could not start past Wordle')
       }
     },
     [beginPuzzle, showToast],
@@ -1476,7 +1477,7 @@ function App() {
           stats: result.stats,
         })
       } catch (error) {
-        if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+        if (error instanceof ApiError && error.message === 'Daily Wordle is not available yet') {
           void loadDailyPuzzle()
           showToast(error.message)
         }
@@ -1565,12 +1566,12 @@ function App() {
         error instanceof ApiError &&
         (error.message === 'Already completed today' ||
           error.message === 'Puzzle progress changed. Refreshing latest guesses.' ||
-          error.message === 'Daily puzzle is not available yet')
+          error.message === 'Daily Wordle is not available yet')
       ) {
         setTodayStatusReloadKey((reloadKey) => reloadKey + 1)
       }
 
-      if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+      if (error instanceof ApiError && error.message === 'Daily Wordle is not available yet') {
         void loadDailyPuzzle()
       }
 
@@ -1819,7 +1820,7 @@ function App() {
           resetCurrentGame()
         }
       } catch (error) {
-        if (error instanceof ApiError && error.message === 'Daily puzzle is not available yet') {
+        if (error instanceof ApiError && error.message === 'Daily Wordle is not available yet') {
           void loadDailyPuzzle()
         }
 
@@ -2078,7 +2079,7 @@ function App() {
                 className="wordbee-icon-button wordbee-icon-button--menu"
                 type="button"
                 aria-expanded={isMenuOpen}
-                aria-label="Menu"
+                aria-label="Games menu"
                 aria-haspopup="menu"
                 onClick={() => setIsMenuOpen((isOpen) => !isOpen)}
               >
@@ -2119,7 +2120,7 @@ function App() {
             .filter(Boolean)
             .join(' ')}
         >
-          {puzzleHeaderLabel || 'Wordbee'}
+          {puzzleHeaderLabel || 'Wordle'}
         </h1>
 
         <div className="wordbee-header__side wordbee-header__side--right">
@@ -2170,8 +2171,8 @@ function App() {
           onReload={() => void loadFamilyStats()}
         />
       ) : (
-        <main className="wordbee-game" aria-label="Wordbee game">
-          <section className="wordbee-board-container" aria-label="Game board">
+        <main className="wordbee-game" aria-label="Wordle game">
+          <section className="wordbee-board-container" aria-label="Wordle board">
             <div className="wordbee-board">
               {board.map((row, rowIndex) => (
                 <div
@@ -2939,32 +2940,50 @@ function WordbeeMenu({
   pastDate: string
   showDaily: boolean
 }) {
+  const [isWordleOpen, setIsWordleOpen] = useState(true)
+
   return (
     <div className="wordbee-menu-popover" role="menu">
-      {showDaily && (
-        <button onClick={onDaily} role="menuitem" type="button">
-          Daily puzzle
-        </button>
-      )}
-      <button onClick={onRandom} role="menuitem" type="button">
-        Endless random
+      <button
+        aria-expanded={isWordleOpen}
+        className="wordbee-game-menu-button"
+        onClick={() => setIsWordleOpen((isOpen) => !isOpen)}
+        role="menuitem"
+        type="button"
+      >
+        <img alt="" className="wordbee-game-menu-button__logo" src={wordleLogoUrl} />
+        <span>Wordle</span>
+        <span className="wordbee-game-menu-button__chevron" aria-hidden="true" />
       </button>
-      <div className="wordbee-menu-past">
-        <label htmlFor="wordbee-past-date">Play past words</label>
-        <div>
-          <input
-            id="wordbee-past-date"
-            max={maxPastDate}
-            min={minPastDate}
-            onChange={(event) => onPastDateChange(event.target.value)}
-            type="date"
-            value={pastDate}
-          />
-          <button onClick={onPast} type="button">
-            Play
+
+      {isWordleOpen && (
+        <div className="wordbee-menu-game-options">
+          {showDaily && (
+            <button onClick={onDaily} role="menuitem" type="button">
+              Daily Wordle
+            </button>
+          )}
+          <button onClick={onRandom} role="menuitem" type="button">
+            Endless random
           </button>
+          <div className="wordbee-menu-past">
+            <label htmlFor="wordbee-past-date">Past date</label>
+            <div>
+              <input
+                id="wordbee-past-date"
+                max={maxPastDate}
+                min={minPastDate}
+                onChange={(event) => onPastDateChange(event.target.value)}
+                type="date"
+                value={pastDate}
+              />
+              <button onClick={onPast} type="button">
+                Play
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
@@ -2993,7 +3012,7 @@ function ResultsDialog({
   return (
     <div className="results-backdrop" aria-live="polite" onClick={onClose} role="presentation">
       <section
-        aria-label="Completed game summary"
+        aria-label="Completed Wordle summary"
         aria-modal="true"
         className="results-panel"
         onClick={(event) => event.stopPropagation()}
@@ -3080,7 +3099,7 @@ function ResultsDialog({
 
 	        <div className="results-secondary-actions">
 	          <button onClick={onPlayRandom} type="button">Play random</button>
-	          <button onClick={onOpenPastWords} type="button">Play past words</button>
+	          <button onClick={onOpenPastWords} type="button">Pick past date</button>
 	        </div>
         <p className="results-note">Random and past plays are not tracked.</p>
 
@@ -3114,7 +3133,7 @@ function DefinitionPanel({
   definition?: DefinitionSummary
   fallbackWord?: string
 }) {
-  const displayWord = definition?.word || fallbackWord || 'Wordbee'
+  const displayWord = definition?.word || fallbackWord || 'Wordle'
   const synonyms = definition?.synonyms ?? []
 
   return (
@@ -3231,7 +3250,7 @@ function FamilyStatsPage({
           <div>
             <span className="stats-kicker">Friends & family</span>
             <h2 id="stats-page-title">Stats</h2>
-            <p>Daily play only. Random and past-word games stay untracked.</p>
+            <p>Daily play only. Random and past-date Wordle plays stay untracked.</p>
           </div>
           <div className="stats-hero__actions">
             <button className="stats-secondary-button" onClick={onBack} type="button">

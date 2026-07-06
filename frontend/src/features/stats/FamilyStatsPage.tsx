@@ -705,6 +705,7 @@ function StarterBarChart({
 
 function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
   const chartTitleId = useId()
+  const [hoveredDate, setHoveredDate] = useState('')
   const visibleDays = timeline.filter((day) => !day.locked).slice(-18)
   const width = 360
   const height = 176
@@ -731,6 +732,18 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
   const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ')
   const firstDay = visibleDays[0]
   const lastDay = visibleDays[visibleDays.length - 1]
+  const tooltipPoint = points.find((point) => point.day.date === hoveredDate)
+  const tooltipWidth = 116
+  const tooltipHeight = 42
+  const tooltipX = tooltipPoint
+    ? Math.min(
+        Math.max(plotLeft, tooltipPoint.x - tooltipWidth / 2),
+        width - plotRight - tooltipWidth,
+      )
+    : 0
+  const tooltipY = tooltipPoint
+    ? Math.max(plotTop + 2, tooltipPoint.y - tooltipHeight - 12)
+    : 0
 
   return (
     <section className="stats-chart-card stats-chart-card--wide" aria-labelledby="stats-trend-title">
@@ -768,12 +781,37 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
           />
           <path className="stats-trend-line" d={path} />
           {points.map((point) => (
-            <circle className="stats-trend-point" cx={point.x} cy={point.y} key={point.day.date} r="4">
-              <title>
-                {formatHistoryDate(point.day.date)}: {formatAverage(point.day.averageGuesses)} average
-              </title>
-            </circle>
+            <circle
+              aria-label={`${point.day.date}: ${point.day.averageGuesses.toFixed(2)} average guesses`}
+              className="stats-trend-point"
+              cx={point.x}
+              cy={point.y}
+              key={point.day.date}
+              onBlur={() => setHoveredDate('')}
+              onFocus={() => setHoveredDate(point.day.date)}
+              onMouseEnter={() => setHoveredDate(point.day.date)}
+              onMouseLeave={() => setHoveredDate('')}
+              r="4"
+              tabIndex={0}
+            />
           ))}
+          {tooltipPoint && (
+            <g className="stats-trend-tooltip" pointerEvents="none">
+              <rect
+                height={tooltipHeight}
+                rx="6"
+                width={tooltipWidth}
+                x={tooltipX}
+                y={tooltipY}
+              />
+              <text x={tooltipX + 10} y={tooltipY + 17}>
+                {tooltipPoint.day.date}
+              </text>
+              <text x={tooltipX + 10} y={tooltipY + 33}>
+                {tooltipPoint.day.averageGuesses.toFixed(2)} avg guesses
+              </text>
+            </g>
+          )}
           {firstDay && (
             <text className="stats-trend-axis-label" x={plotLeft} y={height - 10}>
               {formatHistoryDate(firstDay.date)}

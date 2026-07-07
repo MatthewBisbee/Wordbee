@@ -1,16 +1,14 @@
 # Wordbee
 
 <p align="center">
-  <img src="./assets/banner.jpg" alt="Wordbee Banner" width="800">
-</p>
-
-<p align="center">
   <strong>Wordbee</strong> is a self-hosted private games hub for a friends-and-family group. It brings Wordle, Sudoku, Connections, and Strands together under a clean, unified React 19 interface.
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Frontend-React%2019-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19">
   <img src="https://img.shields.io/badge/Build-Vite-646CFF?style=flat-square&logo=vite&logoColor=white" alt="Vite">
+  <img src="https://img.shields.io/badge/Language-Python-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Backend-Flask-000000?style=flat-square&logo=flask&logoColor=white" alt="Flask">
   <img src="https://img.shields.io/badge/Database-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/Proxy-Nginx-009639?style=flat-square&logo=nginx&logoColor=white" alt="Nginx">
@@ -22,6 +20,9 @@
 ## 🎮 What it does
 
 Wordbee hosts multiple daily and archive puzzles for a private community of friends and family. It includes built-in daily lockout guards, statistics dashboards, and local persistent state synchronization.
+
+> [!NOTE]
+> **Friends & Family Access**: The majority of Wordbee's features (such as profile registration, custom avatars, persistent statistics, and history) are locked behind a private access code. Because Wordbee is self-hosted, you can set your own access codes to unlock the site for your family. See [Access Code Configuration](#access-code-configuration) for setup steps.
 
 ### Supported Games
 
@@ -123,8 +124,19 @@ cp .env.example .env
 > [!IMPORTANT]
 > Make sure to update the `.env` file before running the application. Important settings:
 > - `SECRET_KEY`: Long, random string for signing user sessions.
-> - `WORDBEE_FRIENDS_FAMILY_CODES`: Server-only private access codes (comma-separated).
 > - `WORDBEE_PUZZLE_TIMEZONE`: Timezone for game rollover (defaults to `America/Chicago`).
+
+### 🔑 Access Code Configuration
+
+To unlock profile creation and history features, define your private custom group and code in your `.env` file:
+
+1. Open your `.env` file.
+2. Edit the `WORDBEE_FRIENDS_FAMILY_CODES` value to match your desired group name and access code:
+   ```env
+   WORDBEE_FRIENDS_FAMILY_CODES=myfamily:my_secret_code
+   ```
+   *(e.g., `myfamily` is the group identifier, and `my_secret_code` is the code users type to gain entry).*
+3. Multiple groups/codes can be defined if needed, separated by commas.
 
 ---
 

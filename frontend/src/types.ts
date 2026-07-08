@@ -3,7 +3,7 @@ export type EvaluatedState = Exclude<TileState, 'empty' | 'tbd'>
 export type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 export type GameStatus = 'playing' | 'won' | 'lost'
 export type PlayMode = 'daily' | 'random' | 'past'
-export type FamilyStatsView = 'overview' | 'players' | 'daily'
+export type FamilyStatsView = 'overview' | 'players'
 export type WordbeeGameKey = 'wordle' | 'sudoku' | 'connections' | 'strands'
 export type AdditionalGameKey = Exclude<WordbeeGameKey, 'wordle'>
 

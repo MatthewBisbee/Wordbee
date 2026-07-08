@@ -19,7 +19,7 @@ const gameLabels: Record<AdditionalGameKey, string> = {
   sudoku: 'Sudoku',
 }
 
-type StatsView = 'overview' | 'players' | 'daily'
+type StatsView = 'overview' | 'players'
 
 export function MultigameStatsPage({
   activeGame,
@@ -41,7 +41,7 @@ export function MultigameStatsPage({
   const [error, setError] = useState('')
   const [view, setView] = useState<StatsView>('overview')
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
-  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
 
   const loadStats = useCallback(async () => {
     setIsLoading(true)
@@ -83,25 +83,8 @@ export function MultigameStatsPage({
     return self ? [self, ...others] : users
   }, [currentUserId, users])
 
-  const allHistory = useMemo(
-    () => users.flatMap((user) => user.history),
-    [users],
-  )
-  const uniqueDates = useMemo(
-    () => Array.from(new Set(allHistory.map((result) => result.date))).sort().reverse(),
-    [allHistory],
-  )
-  const dailyResults = allHistory.filter((result) => result.date === selectedDate)
 
-  useEffect(() => {
-    if (uniqueDates.length === 0) {
-      setSelectedDate('')
-      return
-    }
-    if (!selectedDate || !uniqueDates.includes(selectedDate)) {
-      setSelectedDate(uniqueDates[0])
-    }
-  }, [selectedDate, uniqueDates])
+
 
   return (
     <main className="stats-page" aria-label={`${gameLabels[activeGame]} stats`}>
@@ -145,7 +128,6 @@ export function MultigameStatsPage({
               {([
                 ['overview', 'Overview'],
                 ['players', 'Players'],
-                ['daily', 'Daily review'],
               ] as const).map(([value, label]) => (
                 <button
                   aria-selected={view === value}
@@ -274,42 +256,23 @@ export function MultigameStatsPage({
                       gameKey={activeGame}
                       requestWithSessionRecovery={requestWithSessionRecovery}
                       userId={selectedUser.id}
+                      users={users}
+                      onSelectDate={setSelectedCalendarDate}
                     />
                   </div>
                 )}
               </section>
             )}
 
-            {view === 'daily' && (
-              <section className="stats-section">
-                {uniqueDates.length === 0 ? (
-                  <p className="stats-muted">No plays recorded yet.</p>
-                ) : (
-                  <>
-                    <div className="stats-day-rail" aria-label="Tracked days">
-                      {uniqueDates.map((date) => (
-                        <button
-                          aria-pressed={date === selectedDate}
-                          key={date}
-                          onClick={() => setSelectedDate(date)}
-                          type="button"
-                        >
-                          <strong>{formatShortDate(date)}</strong>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="stats-multigame-results">
-                      {dailyResults.map((result) => (
-                        <ResultCard activeGame={activeGame} key={result.id} result={result} />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </section>
-            )}
-
           </>
+        )}
+        {selectedCalendarDate && (
+          <CalendarDailyDetailDialog
+            activeGame={activeGame}
+            date={selectedCalendarDate}
+            onClose={() => setSelectedCalendarDate('')}
+            users={users}
+          />
         )}
       </div>
     </main>
@@ -473,9 +436,7 @@ function getStringArray(value: unknown) {
     : []
 }
 
-function formatShortDate(rawDate: string) {
-  return formatDate(rawDate, { day: 'numeric', month: 'short' })
-}
+
 
 function formatLongDate(rawDate: string) {
   return formatDate(rawDate, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -487,4 +448,52 @@ function formatDate(rawDate: string, options: Intl.DateTimeFormatOptions) {
     return rawDate
   }
   return new Intl.DateTimeFormat(undefined, options).format(new Date(year, month - 1, day))
+}
+
+function CalendarDailyDetailDialog({
+  date,
+  activeGame,
+  users,
+  onClose,
+}: {
+  date: string
+  activeGame: AdditionalGameKey
+  users: any[]
+  onClose: () => void
+}) {
+  const dailyResults = useMemo(() => {
+    return users
+      .flatMap((user) => user.history || [])
+      .filter((result) => result.date === date)
+  }, [users, date])
+
+  return (
+    <div className="results-backdrop" onClick={onClose} role="presentation">
+      <section
+        aria-label="Solve detail"
+        aria-modal="true"
+        className="results-panel calendar-daily-detail-modal"
+        onClick={(clickEvent) => clickEvent.stopPropagation()}
+        role="dialog"
+      >
+        <button className="results-close" type="button" aria-label="Close" onClick={onClose}>
+          ✕
+        </button>
+        <div className="calendar-detail__header">
+          <span className="results-kicker">{formatLongDate(date)}</span>
+          <h2>{gameLabels[activeGame]} Stats</h2>
+        </div>
+
+        <div className="stats-multigame-results">
+          {dailyResults.length > 0 ? (
+            dailyResults.map((result) => (
+              <ResultCard activeGame={activeGame} key={result.id} result={result} />
+            ))
+          ) : (
+            <p className="stats-muted">No plays recorded for this day.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  )
 }

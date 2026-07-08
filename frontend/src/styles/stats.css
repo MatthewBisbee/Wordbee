@@ -444,7 +444,13 @@
   cursor: default;
 }
 
-.stats-tabs,
+.stats-tabs {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  padding: 14px 0;
+}
+
 .stats-player-tabs {
   display: flex;
   gap: 8px;
@@ -459,13 +465,12 @@
   display: none;
 }
 
-.stats-tabs button,
-.stats-player-tabs button {
+.stats-tabs button {
   min-height: 36px;
-  flex: 0 0 auto;
+  flex: 1 1 50%;
+  width: 50%;
+  text-align: center;
   border: 1px solid var(--settings-border);
-  border-radius: 6px;
-  padding: 0 12px;
   background: transparent;
   color: var(--color-tone-1);
   font: inherit;
@@ -474,14 +479,46 @@
   cursor: pointer;
 }
 
+.stats-tabs button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.stats-tabs button:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+  border-left: 0;
+}
+
 .stats-player-tabs button {
+  min-height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 4px 10px 4px 5px;
+  background: transparent;
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
   align-items: center;
   display: flex;
   gap: 8px;
-  padding: 4px 10px 4px 5px;
 }
 
-.stats-tabs button[aria-selected="true"],
+.stats-tabs button[aria-selected="true"] {
+  border-color: var(--color-correct);
+  background: var(--result-link-bg);
+  border-left: 1px solid var(--color-correct);
+  position: relative;
+  z-index: 1;
+}
+
 .stats-player-tabs button[aria-pressed="true"] {
   border-color: var(--color-correct);
   background: var(--result-link-bg);

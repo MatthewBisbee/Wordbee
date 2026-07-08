@@ -22,12 +22,16 @@ export function CompletionCalendar({
   accessState,
   clientSessionId,
   requestWithSessionRecovery,
+  users = [],
+  onSelectDate,
 }: {
   gameKey: WordbeeGameKey
   userId: string
   accessState: FriendsFamilyAccess
   clientSessionId: string
   requestWithSessionRecovery: SessionRequest
+  users?: any[]
+  onSelectDate?: (date: string) => void
 }) {
   const [calendar, setCalendar] = useState<GameCalendar | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -37,6 +41,18 @@ export function CompletionCalendar({
   const holdRef = useRef<{ timeout?: number; interval?: number; repeated: boolean }>({
     repeated: false,
   })
+
+  const hasResults = useMemo(() => {
+    const dates = new Set<string>()
+    users.forEach((user) => {
+      user.history?.forEach((result: any) => {
+        dates.add(result.date)
+      })
+    })
+    return dates
+  }, [users])
+
+
 
   const load = useCallback(async () => {
     setIsLoading(true)
@@ -69,6 +85,15 @@ export function CompletionCalendar({
     calendar?.entries.forEach((entry) => map.set(entry.date, entry))
     return map
   }, [calendar])
+
+  const isLocked = useCallback((date: string) => {
+    if (!calendar) return true
+    if (date === calendar.currentDate) {
+      const entry = entriesByDate.get(date)
+      return !entry || entry.outcome === 'locked'
+    }
+    return false
+  }, [calendar, entriesByDate])
 
   const bounds = useMemo(() => {
     if (!calendar) return null
@@ -208,12 +233,22 @@ export function CompletionCalendar({
                 )
               }
 
+              const locked = isLocked(date)
+              const hasData = users.length > 0 ? hasResults.has(date) : Boolean(entry)
+              const clickable = hasData && !locked
+
               return (
                 <button
                   className={['calendar-day', cellClass(entry)].filter(Boolean).join(' ')}
-                  disabled={!entry || entry.outcome === 'locked'}
+                  disabled={!clickable}
                   key={date}
-                  onClick={() => entry && setSelectedEntry(entry)}
+                  onClick={() => {
+                    if (onSelectDate) {
+                      onSelectDate(date)
+                    } else if (entry) {
+                      setSelectedEntry(entry)
+                    }
+                  }}
                   type="button"
                 >
                   {day}
@@ -386,6 +421,9 @@ function buildMonthCells(year: number, month: number): (number | null)[] {
   const cells: (number | null)[] = Array.from({ length: startWeekday }, () => null)
   for (let day = 1; day <= daysInMonth; day += 1) {
     cells.push(day)
+  }
+  while (cells.length < 42) {
+    cells.push(null)
   }
   return cells
 }

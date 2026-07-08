@@ -1654,7 +1654,7 @@ function App() {
           }}
           onOpenStats={() => {
             setIsResultsOpen(false)
-            openFamilyStats('daily')
+            openFamilyStats('overview')
           }}
           onPlayRandom={() => void startRandomPuzzle()}
           result={completedResult}
@@ -1668,7 +1668,7 @@ function App() {
           onClose={() => setIsOtherGameResultsOpen(false)}
           onOpenStats={() => {
             setIsOtherGameResultsOpen(false)
-            openFamilyStats('daily')
+            openFamilyStats('overview')
           }}
           result={otherGameCompletedResult}
           stats={otherGameStats}

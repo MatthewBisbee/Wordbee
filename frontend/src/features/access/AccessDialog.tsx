@@ -63,10 +63,22 @@ export function FriendsFamilyAccessForm({
   onAvatarDialogClose?: () => void
   useAvatarDialog?: boolean
 }) {
-  const [code, setCode] = useState('')
+  const [code, setCode] = useState(() => {
+    try {
+      return window.localStorage.getItem('wordbee.authorized_family_code') || ''
+    } catch {
+      return ''
+    }
+  })
   const [firstName, setFirstName] = useState('')
   const [lastInitial, setLastInitial] = useState('')
-  const [step, setStep] = useState<'code' | 'profile' | 'avatar'>('code')
+  const [step, setStep] = useState<'code' | 'profile' | 'avatar'>(() => {
+    try {
+      return window.localStorage.getItem('wordbee.authorized_family_code') ? 'profile' : 'code'
+    } catch {
+      return 'code'
+    }
+  })
   const [pendingAccess, setPendingAccess] = useState<PendingFriendsFamilyAccess | null>(null)
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -89,6 +101,12 @@ export function FriendsFamilyAccessForm({
 
       if (!responseBody.ok) {
         throw new Error('Code not recognized')
+      }
+
+      try {
+        window.localStorage.setItem('wordbee.authorized_family_code', code)
+      } catch (storageError) {
+        console.warn('Could not save authorized code to localStorage', storageError)
       }
 
       setStep('profile')
@@ -118,6 +136,12 @@ export function FriendsFamilyAccessForm({
   const completeSignedInLogin = (responseBody: AccessLoginResponse, avatar?: AvatarConfig) => {
     if (!isCompleteAccessLoginResponse(responseBody)) {
       throw new Error('Could not sign in')
+    }
+
+    try {
+      window.localStorage.setItem('wordbee.authorized_family_code', code)
+    } catch (storageError) {
+      console.warn('Could not save authorized code to localStorage', storageError)
     }
 
     const serverAvatar = responseBody.identity.avatar
@@ -156,7 +180,14 @@ export function FriendsFamilyAccessForm({
 
       throw new Error('Could not sign in')
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'Could not sign in')
+      const errorMsg = submitError instanceof Error ? submitError.message : 'Could not sign in'
+      setError(errorMsg)
+      if (errorMsg.toLowerCase().includes('code')) {
+        try {
+          window.localStorage.removeItem('wordbee.authorized_family_code')
+        } catch {}
+        setStep('code')
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -222,7 +253,22 @@ export function FriendsFamilyAccessForm({
         </>
       ) : step === 'profile' ? (
         <>
-          <p className="access-confirmed">Code accepted.</p>
+          <p className="access-confirmed">
+            Code accepted.
+            <button
+              className="access-change-code-button"
+              type="button"
+              onClick={() => {
+                try {
+                  window.localStorage.removeItem('wordbee.authorized_family_code')
+                } catch {}
+                setCode('')
+                setStep('code')
+              }}
+            >
+              Change code
+            </button>
+          </p>
           <p className="access-profile-note">Use this same name to sign in on another device.</p>
           <label className="access-field">
             <span>First name</span>

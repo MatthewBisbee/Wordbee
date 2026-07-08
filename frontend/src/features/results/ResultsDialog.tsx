@@ -11,17 +11,13 @@ export function ResultsDialog({
   canOpenStats = false,
   onClose,
   onCopy,
-  onOpenPastWords,
   onOpenStats,
-  onPlayRandom,
   result,
 }: {
   canOpenStats?: boolean
   onClose: () => void
   onCopy: () => void
-  onOpenPastWords: () => void
   onOpenStats: () => void
-  onPlayRandom: () => void
   result: GameResult
 }) {
   const distributionMax = getDistributionMax(result.stats)
@@ -116,11 +112,7 @@ export function ResultsDialog({
           </section>
         )}
 
-	        <div className="results-secondary-actions">
-	          <button onClick={onPlayRandom} type="button">Play random</button>
-	          <button onClick={onOpenPastWords} type="button">Pick past date</button>
-	        </div>
-        <p className="results-note">Random and past plays are not tracked.</p>
+
 
         <div className="results-copy-area">
           <button

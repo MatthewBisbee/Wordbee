@@ -1667,15 +1667,10 @@ function App() {
           canOpenStats={accessState?.kind === 'friends-family'}
           onClose={() => setIsResultsOpen(false)}
           onCopy={copyResult}
-          onOpenPastWords={() => {
-            setIsMenuOpen(true)
-            setIsResultsOpen(false)
-          }}
           onOpenStats={() => {
             setIsResultsOpen(false)
             openFamilyStats('overview')
           }}
-          onPlayRandom={() => void startRandomPuzzle()}
           result={completedResult}
         />
       )}

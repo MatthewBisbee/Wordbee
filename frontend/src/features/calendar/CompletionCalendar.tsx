@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { formatDateInput } from '../../lib/date'
 import { formatElapsedTime, loadGameCalendar, type SessionRequest } from '../games/game-utils'
 import type {
@@ -22,16 +23,12 @@ export function CompletionCalendar({
   accessState,
   clientSessionId,
   requestWithSessionRecovery,
-  users = [],
-  onSelectDate,
 }: {
   gameKey: WordbeeGameKey
   userId: string
   accessState: FriendsFamilyAccess
   clientSessionId: string
   requestWithSessionRecovery: SessionRequest
-  users?: any[]
-  onSelectDate?: (date: string) => void
 }) {
   const [calendar, setCalendar] = useState<GameCalendar | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -42,15 +39,7 @@ export function CompletionCalendar({
     repeated: false,
   })
 
-  const hasResults = useMemo(() => {
-    const dates = new Set<string>()
-    users.forEach((user) => {
-      user.history?.forEach((result: any) => {
-        dates.add(result.date)
-      })
-    })
-    return dates
-  }, [users])
+
 
 
 
@@ -86,24 +75,14 @@ export function CompletionCalendar({
     return map
   }, [calendar])
 
-  const isLocked = useCallback((date: string) => {
-    if (!calendar) return true
-    if (date === calendar.currentDate) {
-      const entry = entriesByDate.get(date)
-      return !entry || entry.outcome === 'locked'
-    }
-    return false
-  }, [calendar, entriesByDate])
+
 
   const bounds = useMemo(() => {
     if (!calendar) return null
     return { first: parseDate(calendar.firstDate), last: parseDate(calendar.currentDate) }
   }, [calendar])
 
-  const solvedCount = useMemo(
-    () => calendar?.entries.filter((entry) => entry.outcome === 'won').length ?? 0,
-    [calendar],
-  )
+
 
   const canGoPrev = Boolean(viewMonth && bounds && !isBeforeOrSameMonth(viewMonth, bounds.first))
   const canGoNext = Boolean(viewMonth && bounds && !isAfterOrSameMonth(viewMonth, bounds.last))
@@ -174,9 +153,7 @@ export function CompletionCalendar({
 
       {calendar && viewMonth && (
         <>
-          <div className="calendar-summary">
-            <strong>{solvedCount}</strong> solved since {formatMonthYear(parseDate(calendar.firstDate))}
-          </div>
+
 
           <div className="calendar-nav">
             <button
@@ -233,22 +210,12 @@ export function CompletionCalendar({
                 )
               }
 
-              const locked = isLocked(date)
-              const hasData = users.length > 0 ? hasResults.has(date) : Boolean(entry)
-              const clickable = hasData && !locked
-
               return (
                 <button
                   className={['calendar-day', cellClass(entry)].filter(Boolean).join(' ')}
-                  disabled={!clickable}
+                  disabled={!entry || entry.outcome === 'locked'}
                   key={date}
-                  onClick={() => {
-                    if (onSelectDate) {
-                      onSelectDate(date)
-                    } else if (entry) {
-                      setSelectedEntry(entry)
-                    }
-                  }}
+                  onClick={() => entry && setSelectedEntry(entry)}
                   type="button"
                 >
                   {day}
@@ -266,12 +233,13 @@ export function CompletionCalendar({
         </>
       )}
 
-      {selectedEntry && (
+      {selectedEntry && createPortal(
         <CalendarDetailDialog
           entry={selectedEntry}
           gameKey={gameKey}
           onClose={() => setSelectedEntry(null)}
-        />
+        />,
+        document.body
       )}
     </section>
   )
@@ -450,9 +418,7 @@ function startOfDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
 
-function formatMonthYear(date: Date) {
-  return `${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`
-}
+
 
 function formatLongDate(rawDate: string) {
   const date = parseDate(rawDate)

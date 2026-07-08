@@ -13,7 +13,6 @@ import { CompletionCalendar } from '../calendar/CompletionCalendar'
 import type { SessionRequest } from '../games/game-utils'
 import type {
   AvatarConfig,
-  FamilyDailyResult,
   FamilyGroupStats,
   FamilyStatsDashboard,
   FamilyStatsUser,
@@ -50,7 +49,6 @@ export function FamilyStatsPage({
   requestWithSessionRecovery: SessionRequest
 }) {
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
   const [view, setView] = useState<FamilyStatsView>(initialView)
   const users = dashboard?.users ?? []
   const group = dashboard?.group ?? createFallbackGroupStats(users)
@@ -128,22 +126,12 @@ export function FamilyStatsPage({
                       gameKey="wordle"
                       requestWithSessionRecovery={requestWithSessionRecovery}
                       userId={selectedUser.id}
-                      users={users}
-                      onSelectDate={setSelectedCalendarDate}
                     />
                   </div>
                 </section>
               </>
             )}
           </>
-        )}
-        {selectedCalendarDate && (
-          <CalendarDailyDetailDialog
-            date={selectedCalendarDate}
-            onClose={() => setSelectedCalendarDate('')}
-            timeline={group.timeline}
-            users={users}
-          />
         )}
       </div>
     </main>
@@ -444,37 +432,7 @@ function StatsHelpTooltip({ text }: { text: string }) {
   )
 }
 
-function InsightCard({
-  avatar,
-  detail,
-  label,
-  locked = false,
-  value,
-}: {
-  avatar?: { avatar?: AvatarConfig; displayName: string; userId: string }
-  detail: string
-  label: string
-  locked?: boolean
-  value: string
-}) {
-  return (
-    <article className="stats-insight-card" data-locked={locked}>
-      <span>{label}</span>
-      <div className="stats-insight-card__value">
-        {avatar && (
-          <PlayerAvatar
-            avatar={avatar.avatar}
-            displayName={avatar.displayName}
-            size={36}
-            userId={avatar.userId}
-          />
-        )}
-        <strong>{value}</strong>
-      </div>
-      <p>{detail}</p>
-    </article>
-  )
-}
+
 
 function GuessDistributionChart({
   distribution,
@@ -822,44 +780,7 @@ function PlayerLeaderboard({
   )
 }
 
-function FamilyResultBoard({ result }: { result: FamilyDailyResult }) {
-  return (
-    <section className="family-result-board" aria-label={`${result.displayName} ${result.date}`}>
-      <div className="family-result-board__heading">
-        <div className="family-result-board__player">
-          <PlayerAvatar
-            avatar={result.avatar}
-            displayName={result.displayName}
-            size={42}
-            userId={result.userId}
-          />
-          <div>
-            <span>{formatHistoryDate(result.date)}</span>
-            <strong>{result.displayName}</strong>
-          </div>
-        </div>
-        <em>{formatOutcomeWithGuesses(result)}</em>
-      </div>
-      <div className="family-result-board__body">
-        <div className="family-mini-board">
-          {result.guesses.map((guess, rowIndex) => (
-            <div className="family-mini-board__row" key={`${result.id}-${rowIndex}`}>
-              {guess.split('').map((letter, tileIndex) => (
-                <span
-                  data-state={result.board[rowIndex]?.[tileIndex] ?? 'absent'}
-                  key={`${result.id}-${rowIndex}-${tileIndex}`}
-                >
-                  {letter}
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-        {result.analysis && <SolveAnalysisPanel analysis={result.analysis} />}
-      </div>
-    </section>
-  )
-}
+
 
 export function SolveAnalysisPanel({ analysis }: { analysis: SolveAnalysis }) {
   return (
@@ -1011,27 +932,7 @@ function createFallbackGroupStats(users: FamilyStatsUser[]): FamilyGroupStats {
   }
 }
 
-function getResultsForDate(users: FamilyStatsUser[], dateValue: string) {
-  return users
-    .flatMap((user) => user.history)
-    .filter((result) => result.date === dateValue)
-    .sort((first, second) => {
-      if (isLockedResult(first) !== isLockedResult(second)) {
-        return isLockedResult(first) ? 1 : -1
-      }
-      if (first.outcome !== second.outcome) return first.outcome === 'won' ? -1 : 1
-      if (first.guessesUsed !== second.guessesUsed) return first.guessesUsed - second.guessesUsed
-      return first.completedAt.localeCompare(second.completedAt)
-    })
-}
 
-function isLockedResult(result?: FamilyDailyResult) {
-  return Boolean(result?.locked)
-}
-
-function getFirstUnlockedResult(results: FamilyDailyResult[]) {
-  return results.find((result) => !isLockedResult(result))
-}
 
 function getAverageLeader(users: FamilyStatsUser[]) {
   return users
@@ -1165,123 +1066,6 @@ function formatHistoryDate(dateValue: string) {
   }).format(new Date(year, month - 1, day))
 }
 
-function formatOutcome(result: FamilyDailyResult) {
-  if (isLockedResult(result)) return 'Locked'
 
-  return result.outcome === 'won' ? `${result.guessesUsed}/6` : 'X/6'
-}
 
-function formatOutcomeWithGuesses(result: FamilyDailyResult) {
-  if (isLockedResult(result)) return 'Locked'
 
-  return `${formatOutcome(result)} guesses`
-}
-
-function formatLongDate(rawDate: string) {
-  const [year, month, day] = rawDate.split('-').map(Number)
-  const date = new Date(year, (month || 1) - 1, day || 1)
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
-}
-
-function CalendarDailyDetailDialog({
-  date,
-  users,
-  timeline,
-  onClose,
-}: {
-  date: string
-  users: FamilyStatsUser[]
-  timeline: FamilyTimelineDay[]
-  onClose: () => void
-}) {
-  const day = timeline.find((t) => t.date === date)
-  const isLockedDay = Boolean(day?.locked)
-  const results = getResultsForDate(users, date)
-  const [selectedResultId, setSelectedResultId] = useState(() => {
-    const firstUnlocked = getFirstUnlockedResult(results)
-    return firstUnlocked ? firstUnlocked.id : (results[0]?.id || '')
-  })
-  const activeResult = results.find((r) => r.id === selectedResultId)
-
-  return (
-    <div className="results-backdrop" onClick={onClose} role="presentation">
-      <section
-        aria-label="Solve detail"
-        aria-modal="true"
-        className="results-panel calendar-daily-detail-modal"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-        role="dialog"
-      >
-        <button className="results-close" type="button" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
-        <div className="calendar-detail__header">
-          <span className="results-kicker">{formatLongDate(date)}</span>
-          <h2>Wordle Stats</h2>
-        </div>
-
-        {day ? (
-          <>
-            <div className="stats-day-summary">
-              <InsightCard
-                detail={
-                  isLockedDay
-                    ? `${day.players} player${day.players === 1 ? '' : 's'} finished`
-                    : `${day.players} players, ${day.winPercentage}% wins`
-                }
-                label="Answer"
-                locked={isLockedDay}
-                value={isLockedDay ? 'Locked' : day.answer}
-              />
-              <InsightCard
-                detail={isLockedDay ? 'Solve today to reveal' : `${day.bestScore} by ${day.bestPlayer}`}
-                label="Best solve"
-                locked={isLockedDay}
-                value={isLockedDay ? 'Locked' : day.bestPlayer}
-              />
-            </div>
-
-            <div className="stats-daily-results" aria-label={`${formatLongDate(date)} results`}>
-              {results.map((dailyResult) => {
-                const locked = isLockedResult(dailyResult)
-
-                return (
-                  <button
-                    data-locked={locked}
-                    data-selected={!locked && dailyResult.id === selectedResultId}
-                    disabled={locked}
-                    key={dailyResult.id}
-                    onClick={() => setSelectedResultId(dailyResult.id)}
-                    type="button"
-                  >
-                    <PlayerAvatar
-                      avatar={dailyResult.avatar}
-                      displayName={dailyResult.displayName}
-                      size={48}
-                      userId={dailyResult.userId}
-                    />
-                    <strong className="stats-daily-result-name">{dailyResult.displayName}</strong>
-                    <span className="stats-daily-result-outcome">
-                      {locked ? 'Solve today to reveal' : formatOutcomeWithGuesses(dailyResult)}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {activeResult && !isLockedResult(activeResult) && <FamilyResultBoard result={activeResult} />}
-          </>
-        ) : (
-          <section className="stats-empty">
-            <h3>No results for this day</h3>
-          </section>
-        )}
-      </section>
-    </div>
-  )
-}

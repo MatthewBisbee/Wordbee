@@ -10,7 +10,6 @@ import type {
   AccessState,
   AdditionalGameKey,
   MultigameDashboard,
-  MultigameResult,
 } from '../../types'
 
 const gameLabels: Record<AdditionalGameKey, string> = {
@@ -41,7 +40,6 @@ export function MultigameStatsPage({
   const [error, setError] = useState('')
   const [view, setView] = useState<StatsView>('overview')
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
-  const [selectedCalendarDate, setSelectedCalendarDate] = useState('')
 
   const loadStats = useCallback(async () => {
     setIsLoading(true)
@@ -256,8 +254,6 @@ export function MultigameStatsPage({
                       gameKey={activeGame}
                       requestWithSessionRecovery={requestWithSessionRecovery}
                       userId={selectedUser.id}
-                      users={users}
-                      onSelectDate={setSelectedCalendarDate}
                     />
                   </div>
                 )}
@@ -265,14 +261,6 @@ export function MultigameStatsPage({
             )}
 
           </>
-        )}
-        {selectedCalendarDate && (
-          <CalendarDailyDetailDialog
-            activeGame={activeGame}
-            date={selectedCalendarDate}
-            onClose={() => setSelectedCalendarDate('')}
-            users={users}
-          />
         )}
       </div>
     </main>
@@ -288,212 +276,6 @@ function Metric({ label, value }: { label: string; value: number | string }) {
   )
 }
 
-function ResultCard({
-  activeGame,
-  result,
-}: {
-  activeGame: AdditionalGameKey
-  result: MultigameResult
-}) {
-  if (result.locked) {
-    return (
-      <article className="stats-multigame-result" data-locked="true">
-        <ResultIdentity result={result} />
-        <p className="stats-muted">Solve today&apos;s {gameLabels[activeGame]} to reveal this result.</p>
-      </article>
-    )
-  }
-
-  return (
-    <article className="stats-multigame-result">
-      <div className="stats-multigame-result__topline">
-        <ResultIdentity result={result} />
-        <span className={`game-history-pill game-history-pill--${result.outcome}`}>
-          {result.outcome.toUpperCase()}
-        </span>
-      </div>
-      <div className="stats-multigame-result__meta">
-        <span>{formatLongDate(result.date)}</span>
-        {result.variant !== 'daily' && <span>{result.variant}</span>}
-        {activeGame !== 'strands' && activeGame !== 'connections' && result.elapsedSeconds ? (
-          <span>{formatElapsedTime(result.elapsedSeconds)}</span>
-        ) : null}
-      </div>
-      <ResultPlayback activeGame={activeGame} result={result} />
-    </article>
-  )
-}
-
-function ResultIdentity({ result }: { result: MultigameResult }) {
-  return (
-    <div className="stats-player-cell">
-      {result.avatar && <AvatarImage avatar={result.avatar} displayName={result.displayName} size={28} />}
-      <strong>{result.displayName}</strong>
-    </div>
-  )
-}
-
-function ResultPlayback({
-  activeGame,
-  result,
-}: {
-  activeGame: AdditionalGameKey
-  result: MultigameResult
-}) {
-  if (activeGame === 'connections') {
-    return <ConnectionsPlayback result={result} />
-  }
-  if (activeGame === 'strands') {
-    return <StrandsPlayback result={result} />
-  }
-  return <SudokuPlayback result={result} />
-}
-
-function ConnectionsPlayback({ result }: { result: MultigameResult }) {
-  const score = result.score as Record<string, any>
-  const groups = Array.isArray(score.solvedGroups) ? score.solvedGroups : []
-  const guesses: string[][] = Array.isArray(score.guesses) ? score.guesses : []
-  // The solved board is identical for everyone; what's unique is this player's
-  // guess path, so show each guess and whether it landed a group.
-  const groupCardSets = groups.map(
-    (group: any) => new Set<string>(Array.isArray(group.cards) ? group.cards : []),
-  )
-
-  return (
-    <div className="stats-playback">
-      <div className="stats-playback__summary">
-        <span>{guesses.length} guesses</span>
-        <span>{Number(score.mistakes ?? 0)} mistakes</span>
-      </div>
-      {guesses.length > 0 && (
-        <ol className="stats-guess-list">
-          {guesses.map((guess, index) => {
-            const isCorrect = groupCardSets.some(
-              (cards) => cards.size === guess.length && guess.every((card) => cards.has(card)),
-            )
-            return (
-              <li
-                className={`stats-guess stats-guess--${isCorrect ? 'correct' : 'wrong'}`}
-                key={`${index}-${guess.join('-')}`}
-              >
-                {guess.join(', ')}
-              </li>
-            )
-          })}
-        </ol>
-      )}
-    </div>
-  )
-}
-
-function StrandsPlayback({ result }: { result: MultigameResult }) {
-  const score = result.score as Record<string, any>
-  const themeWords = getStringArray(score.foundThemeWords)
-  const bonusWords = getStringArray(score.bonusWords)
-  const submittedWords = getStringArray(score.submittedWords)
-
-  return (
-    <div className="stats-playback">
-      <div className="stats-playback__summary">
-        <span>{themeWords.length} theme words</span>
-        <span>{score.foundSpangram ? 'Spangram found' : 'No spangram'}</span>
-        <span>{bonusWords.length} bonus</span>
-      </div>
-      {score.revealed && <p className="stats-muted">Solution was revealed from the board.</p>}
-      <div className="stats-word-cloud">
-        {[...themeWords, ...bonusWords].map((word) => (
-          <span key={word}>{word}</span>
-        ))}
-      </div>
-      {submittedWords.length > 0 && (
-        <ol className="stats-submission-list">
-          {submittedWords.map((word, index) => (
-            <li key={`${index}-${word}`}>{word}</li>
-          ))}
-        </ol>
-      )}
-    </div>
-  )
-}
-
-function SudokuPlayback({ result }: { result: MultigameResult }) {
-  const score = result.score as Record<string, any>
-
-  return (
-    <div className="stats-playback">
-      <div className="stats-playback__summary">
-        <span>{formatElapsedTime(result.elapsedSeconds)}</span>
-        <span>{Number(score.mistakes ?? 0)} mistakes</span>
-        <span>{Number(score.hints ?? 0)} hints</span>
-      </div>
-    </div>
-  )
-}
-
-function getStringArray(value: unknown) {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : []
-}
 
 
 
-function formatLongDate(rawDate: string) {
-  return formatDate(rawDate, { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function formatDate(rawDate: string, options: Intl.DateTimeFormatOptions) {
-  const [year, month, day] = rawDate.split('-').map(Number)
-  if (!year || !month || !day) {
-    return rawDate
-  }
-  return new Intl.DateTimeFormat(undefined, options).format(new Date(year, month - 1, day))
-}
-
-function CalendarDailyDetailDialog({
-  date,
-  activeGame,
-  users,
-  onClose,
-}: {
-  date: string
-  activeGame: AdditionalGameKey
-  users: any[]
-  onClose: () => void
-}) {
-  const dailyResults = useMemo(() => {
-    return users
-      .flatMap((user) => user.history || [])
-      .filter((result) => result.date === date)
-  }, [users, date])
-
-  return (
-    <div className="results-backdrop" onClick={onClose} role="presentation">
-      <section
-        aria-label="Solve detail"
-        aria-modal="true"
-        className="results-panel calendar-daily-detail-modal"
-        onClick={(clickEvent) => clickEvent.stopPropagation()}
-        role="dialog"
-      >
-        <button className="results-close" type="button" aria-label="Close" onClick={onClose}>
-          ✕
-        </button>
-        <div className="calendar-detail__header">
-          <span className="results-kicker">{formatLongDate(date)}</span>
-          <h2>{gameLabels[activeGame]} Stats</h2>
-        </div>
-
-        <div className="stats-multigame-results">
-          {dailyResults.length > 0 ? (
-            dailyResults.map((result) => (
-              <ResultCard activeGame={activeGame} key={result.id} result={result} />
-            ))
-          ) : (
-            <p className="stats-muted">No plays recorded for this day.</p>
-          )}
-        </div>
-      </section>
-    </div>
-  )
-}

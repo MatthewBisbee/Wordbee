@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS friends_family_daily_results (
   starter_word TEXT NOT NULL,
   guesses_json TEXT NOT NULL,
   board_json TEXT NOT NULL,
+  play_type TEXT NOT NULL DEFAULT 'daily',
   completed_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
   UNIQUE (user_id, puzzle_date)
@@ -159,6 +160,7 @@ CREATE TABLE IF NOT EXISTS friends_family_game_results (
   outcome TEXT NOT NULL,
   elapsed_seconds INTEGER,
   score_json TEXT NOT NULL,
+  play_type TEXT NOT NULL DEFAULT 'daily',
   completed_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
   UNIQUE (user_id, game_key, puzzle_date, puzzle_variant)
@@ -169,3 +171,18 @@ ON friends_family_game_results (user_id, game_key, puzzle_date);
 
 CREATE INDEX IF NOT EXISTS idx_friends_family_game_results_game_date
 ON friends_family_game_results (game_key, puzzle_date);
+
+CREATE TABLE IF NOT EXISTS friends_family_game_attempts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  game_key TEXT NOT NULL,
+  puzzle_date TEXT NOT NULL,
+  puzzle_variant TEXT NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
+  UNIQUE (user_id, game_key, puzzle_date, puzzle_variant)
+);
+
+CREATE INDEX IF NOT EXISTS idx_friends_family_game_attempts_user_game_date
+ON friends_family_game_attempts (user_id, game_key, puzzle_date, puzzle_variant);

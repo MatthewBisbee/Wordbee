@@ -18,6 +18,10 @@ export function getDefaultPastDate() {
   return formatDateInput(dateValue)
 }
 
+export function getTodayDate() {
+  return formatDateInput(new Date())
+}
+
 export function formatDateInput(dateValue: Date) {
   const year = dateValue.getFullYear()
   const month = String(dateValue.getMonth() + 1).padStart(2, '0')
@@ -27,7 +31,7 @@ export function formatDateInput(dateValue: Date) {
 
 export function getPuzzleHeaderLabel(puzzle: PuzzleMetadata | null) {
   if (!puzzle) return ''
-  if (puzzle.mode === 'random') return 'Random puzzle'
+  if (puzzle.mode === 'random') return 'Random'
   if (puzzle.mode === 'past') return formatPuzzleHeaderDate(puzzle.date)
   return ''
 }

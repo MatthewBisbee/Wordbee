@@ -121,8 +121,9 @@
 
 .results-stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
+  /* Wrap (e.g. to 2x2) when values like times get wide, instead of crowding. */
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 12px 10px;
 }
 
 .results-stat {

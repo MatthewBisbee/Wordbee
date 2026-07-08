@@ -169,6 +169,14 @@ export type FamilyStatsDashboard = {
   users: FamilyStatsUser[]
 }
 
+export type DateClampInfo = {
+  firstDate?: string
+  clampedToOldest?: boolean
+  oldestDate?: string
+  clampedToNewest?: boolean
+  newestDate?: string
+}
+
 export type ConnectionsCard = {
   id: string
   content: string
@@ -181,7 +189,7 @@ export type ConnectionsGroup = {
   rank: number
 }
 
-export type ConnectionsPuzzle = {
+export type ConnectionsPuzzle = DateClampInfo & {
   gameKey: 'connections'
   date: string
   editor: string
@@ -198,7 +206,7 @@ export type ConnectionsGuessResponse = {
 
 export type StrandsCoord = [number, number]
 
-export type StrandsPuzzle = {
+export type StrandsPuzzle = DateClampInfo & {
   gameKey: 'strands'
   date: string
   clue: string
@@ -219,7 +227,7 @@ export type StrandsGuessResponse = {
 
 export type SudokuDifficulty = 'easy' | 'medium' | 'hard'
 
-export type SudokuPuzzle = {
+export type SudokuPuzzle = DateClampInfo & {
   gameKey: 'sudoku'
   date: string
   difficulty: SudokuDifficulty
@@ -253,6 +261,7 @@ export type MultigameResult = {
   elapsedSeconds: number | null
   score: Record<string, unknown>
   completedAt: string
+  locked?: boolean
 }
 
 export type MultigameStatsUser = {
@@ -280,6 +289,47 @@ export type MultigameResultResponse = {
   ok: boolean
   created: boolean
   result?: MultigameResult
+}
+
+// The minimal shape the results dialog needs. Both a freshly finished play and a
+// server-loaded MultigameResult satisfy it.
+export type MultigameCompletionResult = {
+  outcome: Exclude<GameStatus, 'playing'>
+  elapsedSeconds: number | null
+  date: string
+  variant: string
+  score: Record<string, unknown>
+}
+
+export type MultigameCompleteHandler = (
+  result: MultigameCompletionResult,
+  stats: MultigameStatsSummary | null,
+) => void
+
+export type MultigameStatusResponse = {
+  completed: boolean
+  result: MultigameResult | null
+  attempt: { state: Record<string, unknown>; updatedAt: string } | null
+}
+
+export type CalendarOutcome = 'won' | 'lost' | 'locked'
+export type CalendarPlayType = 'daily' | 'retro'
+
+export type CalendarEntry = {
+  date: string
+  outcome: CalendarOutcome
+  playType: CalendarPlayType
+  detail?: Record<string, unknown>
+}
+
+export type GameCalendar = {
+  gameKey: WordbeeGameKey
+  userId: string
+  displayName: string
+  firstDate: string
+  currentDate: string
+  canRevealCurrentDay: boolean
+  entries: CalendarEntry[]
 }
 
 export type FamilyDailyAttempt = {

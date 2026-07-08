@@ -9,6 +9,7 @@ from typing import Any
 
 from .db import connect
 from .auth import decode_avatar_json
+from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE
 from .games.wordle import load_valid_guesses, score_guess
 
 
@@ -105,9 +106,9 @@ def save_completed_game(
             """
             INSERT OR IGNORE INTO friends_family_daily_results (
               id, user_id, puzzle_date, answer, outcome, guesses_used,
-              starter_word, guesses_json, board_json, completed_at
+              starter_word, guesses_json, board_json, play_type, completed_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'daily', ?)
             """,
             (
                 result_id,
@@ -139,6 +140,59 @@ def save_completed_game(
         "result": result,
         "stats": calculate_user_stats_for_id(user_id),
     }
+
+
+def record_retro_family_result(
+    *,
+    user_id: str,
+    puzzle_date: str,
+    answer: str,
+    outcome: str,
+    guesses_used: int,
+    board: list[list[str]],
+    guesses: list[str],
+) -> bool:
+    """Record a retroactive (archive) daily completion for the calendar only.
+
+    These rows carry play_type='retro' and are excluded from every stat; they
+    exist so a user who replays an old date sees it already completed.
+    """
+    if not user_id:
+        return False
+    if outcome not in {"won", "lost"}:
+        raise ValueError("Invalid outcome")
+    if guesses_used < 1 or guesses_used > 6:
+        raise ValueError("Invalid guess count")
+
+    normalized_board = normalize_board(board)
+    normalized_guesses = normalize_guesses(guesses)
+    if len(normalized_board) != guesses_used or len(normalized_guesses) != guesses_used:
+        raise ValueError("Completed result does not match guess count")
+
+    now = datetime.now().astimezone().isoformat()
+    with connect() as connection:
+        cursor = connection.execute(
+            """
+            INSERT OR IGNORE INTO friends_family_daily_results (
+              id, user_id, puzzle_date, answer, outcome, guesses_used,
+              starter_word, guesses_json, board_json, play_type, completed_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'retro', ?)
+            """,
+            (
+                f"{user_id}:{puzzle_date}",
+                user_id,
+                puzzle_date,
+                answer.upper(),
+                outcome,
+                guesses_used,
+                normalized_guesses[0],
+                json.dumps(normalized_guesses, separators=(",", ":")),
+                json.dumps(normalized_board, separators=(",", ":")),
+                now,
+            ),
+        )
+        return cursor.rowcount == 1
 
 
 def save_family_daily_attempt(
@@ -390,6 +444,90 @@ def get_family_dashboard(
     }
 
 
+def empty_calendar(*, game_key: str, target_user_id: str, first_date: str, current_puzzle_date: str) -> dict[str, Any]:
+    return {
+        "gameKey": game_key,
+        "userId": target_user_id,
+        "displayName": "",
+        "firstDate": first_date,
+        "currentDate": current_puzzle_date,
+        "canRevealCurrentDay": True,
+        "entries": [],
+    }
+
+
+def get_family_calendar(
+    *,
+    requesting_user_id: str,
+    target_user_id: str,
+    current_puzzle_date: str,
+) -> dict[str, Any]:
+    """Every recorded Wordle play (daily and retro) for one user, for the calendar."""
+    first_date = FIRST_OFFICIAL_PUZZLE_DATE.isoformat()
+    with connect() as connection:
+        requester = connection.execute(
+            "SELECT code_id FROM friends_family_users WHERE id = ?",
+            (requesting_user_id,),
+        ).fetchone()
+        target = connection.execute(
+            "SELECT id, code_id, display_name FROM friends_family_users WHERE id = ?",
+            (target_user_id,),
+        ).fetchone()
+        if requester is None or target is None or requester["code_id"] != target["code_id"]:
+            return empty_calendar(
+                game_key="wordle",
+                target_user_id=target_user_id,
+                first_date=first_date,
+                current_puzzle_date=current_puzzle_date,
+            )
+
+        result_rows = connection.execute(
+            """
+            SELECT * FROM friends_family_daily_results
+            WHERE user_id = ?
+            ORDER BY puzzle_date ASC
+            """,
+            (target_user_id,),
+        ).fetchall()
+        requester_today = connection.execute(
+            """
+            SELECT id FROM friends_family_daily_results
+            WHERE user_id = ? AND puzzle_date = ?
+            """,
+            (requesting_user_id, current_puzzle_date),
+        ).fetchone()
+
+    can_reveal_today = requesting_user_id == target_user_id or requester_today is not None
+    entries = []
+    for row in result_rows:
+        date = row["puzzle_date"]
+        locked = date == current_puzzle_date and not can_reveal_today
+        entry: dict[str, Any] = {
+            "date": date,
+            "playType": row["play_type"] if "play_type" in row.keys() else "daily",
+            "outcome": "locked" if locked else row["outcome"],
+        }
+        if not locked:
+            entry["detail"] = {
+                "guessesUsed": row["guesses_used"],
+                "starterWord": row["starter_word"],
+                "answer": row["answer"],
+                "guesses": json.loads(row["guesses_json"]),
+                "board": json.loads(row["board_json"]),
+            }
+        entries.append(entry)
+
+    return {
+        "gameKey": "wordle",
+        "userId": target_user_id,
+        "displayName": target["display_name"],
+        "firstDate": first_date,
+        "currentDate": current_puzzle_date,
+        "canRevealCurrentDay": can_reveal_today,
+        "entries": entries,
+    }
+
+
 def calculate_user_stats_for_id(user_id: str) -> dict[str, Any]:
     with connect() as connection:
         rows = connection.execute(
@@ -407,10 +545,11 @@ def calculate_user_stats_for_id(user_id: str) -> dict[str, Any]:
 
 
 def calculate_user_stats(results: list[dict[str, Any]]) -> dict[str, Any]:
-    if not results:
+    daily_results = [result for result in results if is_daily_play(result)]
+    if not daily_results:
         return dict(EMPTY_STATS)
 
-    sorted_results = sorted(results, key=lambda result: result["date"])
+    sorted_results = sorted(daily_results, key=lambda result: result["date"])
     played = len(sorted_results)
     wins = [result for result in sorted_results if result["outcome"] == "won"]
     distribution = dict(DEFAULT_DISTRIBUTION)
@@ -527,6 +666,7 @@ def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, A
         "starterWord": row["starter_word"],
         "guesses": guesses,
         "board": board,
+        "playType": row["play_type"] if "play_type" in row.keys() else "daily",
         "completedAt": row["completed_at"],
     }
     if "avatar_json" in row.keys():
@@ -587,11 +727,16 @@ def add_locked_timeline_day(
     return sorted([*unlocked_days, locked_day], key=lambda day: day["date"])[-42:]
 
 
+def is_daily_play(result: dict[str, Any]) -> bool:
+    return result.get("playType", "daily") == "daily"
+
+
 def calculate_group_stats(
     results: list[dict[str, Any]],
     users: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    sorted_results = sorted(results, key=lambda result: (result["date"], result["completedAt"]))
+    daily_results = [result for result in results if is_daily_play(result)]
+    sorted_results = sorted(daily_results, key=lambda result: (result["date"], result["completedAt"]))
     played = len(sorted_results)
     wins = [result for result in sorted_results if result["outcome"] == "won"]
     distribution = dict(DEFAULT_DISTRIBUTION)

@@ -19,34 +19,46 @@ from .auth import (
 )
 from .daily_answer import FIRST_OFFICIAL_PUZZLE_DATE, get_daily_answer, get_puzzle_date
 from .definitions import get_definition
-from .games.multigame import (
-    GAME_KEYS,
+from .games.connections import (
     check_connections_guess,
-    check_strands_guess,
     get_connections_puzzle,
-    get_multigame_dashboard,
-    get_strands_puzzle,
-    get_sudoku_puzzle,
-    public_connections_puzzle,
     public_connections_solution,
-    public_strands_puzzle,
-    public_strands_solution,
-    public_sudoku_puzzle,
-    save_multigame_result,
-    validate_sudoku_grid,
 )
+from .games.registry import (
+    GAME_KEYS,
+    get_game_first_date,
+    get_public_puzzle,
+    resolve_multigame_date,
+)
+from .games.results import (
+    get_multigame_attempt,
+    get_multigame_calendar,
+    get_multigame_dashboard,
+    get_multigame_result_for_user,
+    save_multigame_attempt,
+    save_multigame_result,
+)
+from .games.strands import (
+    check_strands_guess,
+    get_strands_hint,
+    get_strands_puzzle,
+    public_strands_solution,
+)
+from .games.sudoku import get_sudoku_hint, validate_sudoku_grid
 from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification, publish_contact_notification
 from .stats import (
     AttemptConflictError,
     EMPTY_STATS,
     analyze_solve_path,
+    get_family_calendar,
     get_family_dashboard,
     get_family_result_for_user,
     get_family_today_status,
     get_stats,
     normalize_board,
     normalize_guesses,
+    record_retro_family_result,
     save_completed_game,
     save_family_daily_attempt,
 )
@@ -130,30 +142,27 @@ def stats():
 
 @api.get("/games/<game_key>/today")
 def multigame_today(game_key: str):
+    if game_key not in GAME_KEYS:
+        return jsonify({"error": "Invalid game"}), 404
+
     try:
-        puzzle_date = get_puzzle_date(request.args.get("date"))
+        requested_date = get_puzzle_date(request.args.get("date"))
+        puzzle_date, clamp_info = resolve_multigame_date(game_key, requested_date)
         force_refresh = request.args.get("refresh") == "1"
-        if game_key == "connections":
-            return jsonify(public_connections_puzzle(get_connections_puzzle(puzzle_date, force_refresh=force_refresh)))
-        if game_key == "strands":
-            return jsonify(public_strands_puzzle(get_strands_puzzle(puzzle_date, force_refresh=force_refresh)))
-        if game_key == "sudoku":
-            difficulty = request.args.get("difficulty", "medium")
-            return jsonify(
-                public_sudoku_puzzle(
-                    get_sudoku_puzzle(
-                        puzzle_date,
-                        difficulty,
-                        force_refresh=force_refresh,
-                    )
-                )
-            )
+        payload = get_public_puzzle(
+            game_key,
+            puzzle_date,
+            {"difficulty": request.args.get("difficulty", "medium")},
+            force_refresh=force_refresh,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({"error": str(exc)}), 503
 
-    return jsonify({"error": "Invalid game"}), 404
+    payload["firstDate"] = get_game_first_date(game_key).isoformat()
+    payload.update(clamp_info)
+    return jsonify(payload)
 
 
 @api.post("/games/connections/guess")
@@ -161,7 +170,7 @@ def multigame_connections_guess():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = resolve_playable_multigame_date("connections", payload.get("date"))
         return jsonify(check_connections_guess(puzzle_date, payload.get("cards")))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -174,7 +183,7 @@ def multigame_connections_reveal():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = resolve_playable_multigame_date("connections", payload.get("date"))
         puzzle = get_connections_puzzle(puzzle_date)
         return jsonify({"groups": public_connections_solution(puzzle)})
     except ValueError as exc:
@@ -188,7 +197,7 @@ def multigame_strands_guess():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = resolve_playable_multigame_date("strands", payload.get("date"))
         return jsonify(check_strands_guess(puzzle_date, payload.get("path")))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -201,9 +210,22 @@ def multigame_strands_reveal():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = resolve_playable_multigame_date("strands", payload.get("date"))
         puzzle = get_strands_puzzle(puzzle_date)
         return jsonify(public_strands_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/strands/hint")
+def multigame_strands_hint():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("strands", payload.get("date"))
+        return jsonify(get_strands_hint(puzzle_date, payload.get("foundThemeWords")))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -215,7 +237,7 @@ def multigame_sudoku_check():
     payload = request.get_json(silent=True) or {}
 
     try:
-        puzzle_date = get_puzzle_date(payload.get("date"))
+        puzzle_date = resolve_playable_multigame_date("sudoku", payload.get("date"))
         return jsonify(
             validate_sudoku_grid(
                 puzzle_date,
@@ -223,6 +245,118 @@ def multigame_sudoku_check():
                 payload.get("grid"),
             )
         )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/sudoku/hint")
+def multigame_sudoku_hint():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("sudoku", payload.get("date"))
+        return jsonify(
+            get_sudoku_hint(
+                puzzle_date,
+                str(payload.get("difficulty") or "medium"),
+                payload.get("cell"),
+            )
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/status")
+def multigame_status():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_optional_friends_family_identity(payload)
+    if payload.get("friendsFamilyToken") and identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    try:
+        game_key = str(payload.get("gameKey") or "")
+        if not game_key or game_key not in GAME_KEYS:
+            return jsonify({"error": "Invalid game"}), 400
+
+        puzzle_date = resolve_playable_multigame_date(game_key, payload.get("date")).isoformat()
+        puzzle_variant = str(payload.get("variant") or "daily")
+
+        result = None
+        attempt = None
+        completed = False
+
+        if identity is not None:
+            user_id = identity["userId"]
+            result = get_multigame_result_for_user(
+                user_id=user_id,
+                game_key=game_key,
+                puzzle_date=puzzle_date,
+                puzzle_variant=puzzle_variant,
+            )
+            completed = result is not None
+            if not completed:
+                attempt = get_multigame_attempt(
+                    user_id=user_id,
+                    game_key=game_key,
+                    puzzle_date=puzzle_date,
+                    puzzle_variant=puzzle_variant,
+                )
+
+        return jsonify({
+            "completed": completed,
+            "result": result,
+            "attempt": attempt,
+        })
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/attempt")
+def multigame_attempt():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_optional_friends_family_identity(payload)
+    if payload.get("friendsFamilyToken") and identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    if identity is None:
+        return jsonify({"error": "Friends and family sign-in required"}), 401
+
+    try:
+        game_key = str(payload.get("gameKey") or "")
+        if not game_key or game_key not in GAME_KEYS:
+            return jsonify({"error": "Invalid game"}), 400
+
+        puzzle_date = resolve_playable_multigame_date(game_key, payload.get("date")).isoformat()
+        puzzle_variant = str(payload.get("variant") or "daily")
+        state = payload.get("state")
+
+        if not isinstance(state, dict):
+            return jsonify({"error": "State must be an object"}), 400
+
+        user_id = identity["userId"]
+        existing_result = get_multigame_result_for_user(
+            user_id=user_id,
+            game_key=game_key,
+            puzzle_date=puzzle_date,
+            puzzle_variant=puzzle_variant,
+        )
+        if existing_result is not None:
+            return jsonify({"error": "Already completed today"}), 409
+
+        save_multigame_attempt(
+            user_id=user_id,
+            game_key=game_key,
+            puzzle_date=puzzle_date,
+            puzzle_variant=puzzle_variant,
+            state=state,
+        )
+        return jsonify({"ok": True})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -238,16 +372,19 @@ def multigame_result():
 
     try:
         game_key = str(payload.get("gameKey") or "")
-        puzzle_date = get_puzzle_date(payload.get("date")).isoformat()
-        validate_multigame_result_payload(game_key, payload)
+        if game_key not in GAME_KEYS:
+            return jsonify({"error": "Invalid game"}), 400
+
+        puzzle_date = resolve_playable_multigame_date(game_key, payload.get("date"))
+        validate_multigame_result_payload(game_key, puzzle_date, payload)
         result = save_multigame_result(
             identity=identity,
             game_key=game_key,
-            puzzle_date=puzzle_date,
+            puzzle_date=puzzle_date.isoformat(),
             puzzle_variant=str(payload.get("variant") or "daily"),
             outcome=str(payload.get("outcome") or ""),
             elapsed_seconds=normalize_elapsed_seconds(payload.get("elapsedSeconds")),
-            score=payload.get("score") if isinstance(payload.get("score"), dict) else {},
+            score=storable_multigame_score(game_key, payload.get("score")),
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -432,6 +569,43 @@ def friends_family_stats():
     )
 
 
+@api.post("/friends-family/calendar")
+def friends_family_calendar():
+    payload = request.get_json(silent=True) or {}
+    identity = verify_friends_family_token(
+        payload.get("token"),
+        client_session_id=payload.get("clientSessionId"),
+    )
+
+    if identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    game_key = str(payload.get("gameKey") or "wordle")
+    target_user_id = str(payload.get("userId") or identity["userId"]) or identity["userId"]
+    current_puzzle_date = get_puzzle_date().isoformat()
+
+    try:
+        if game_key == "wordle":
+            calendar = get_family_calendar(
+                requesting_user_id=identity["userId"],
+                target_user_id=target_user_id,
+                current_puzzle_date=current_puzzle_date,
+            )
+        elif game_key in GAME_KEYS:
+            calendar = get_multigame_calendar(
+                requesting_user_id=identity["userId"],
+                target_user_id=target_user_id,
+                game_key=game_key,
+                current_puzzle_date=current_puzzle_date,
+            )
+        else:
+            return jsonify({"error": "Invalid game"}), 400
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(calendar)
+
+
 @api.post("/friends-family/game-stats")
 def friends_family_game_stats():
     payload = request.get_json(silent=True) or {}
@@ -524,7 +698,7 @@ def results():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
-    if puzzle_mode == "daily" and friends_family_token:
+    if puzzle_mode in {"daily", "past"} and friends_family_token:
         friends_family_identity = verify_friends_family_token(
             friends_family_token,
             client_session_id=payload.get("clientSessionId"),
@@ -547,6 +721,18 @@ def results():
                 friends_family_identity=friends_family_identity,
             )
         else:
+            # Past (archive) plays are recorded for the calendar but never tracked
+            # in stats; random plays are not dated puzzles, so they stay untracked.
+            if puzzle_mode == "past" and friends_family_identity is not None:
+                record_retro_family_result(
+                    user_id=friends_family_identity["userId"],
+                    puzzle_date=answer_record["puzzle_date"],
+                    answer=answer_record["answer"],
+                    outcome=str(payload.get("outcome") or ""),
+                    guesses_used=int(payload.get("guessesUsed") or 0),
+                    board=payload.get("board"),
+                    guesses=payload.get("guesses"),
+                )
             saved_result = get_untracked_result(
                 answer=answer_record["answer"],
                 mode=puzzle_mode,
@@ -685,7 +871,27 @@ def verify_optional_friends_family_identity(payload: dict) -> dict[str, str] | N
     )
 
 
-def validate_multigame_result_payload(game_key: str, payload: dict) -> None:
+def resolve_playable_multigame_date(game_key: str, raw_date: object) -> date:
+    resolved_date, _clamp_info = resolve_multigame_date(game_key, get_puzzle_date(raw_date))
+    return resolved_date
+
+
+def storable_multigame_score(game_key: str, raw_score: object) -> dict:
+    """Strip fields that are identical for everyone who plays a given day.
+
+    A solved daily grid/path is the same for every solver, so we don't store it;
+    we keep only what differs between players (guess order, found words, mistakes,
+    hints). The stripped fields are still used for server-side win validation.
+    """
+    score = raw_score if isinstance(raw_score, dict) else {}
+    fields_to_drop = {
+        "sudoku": {"grid"},
+        "strands": {"foundPaths"},
+    }.get(game_key, set())
+    return {key: value for key, value in score.items() if key not in fields_to_drop}
+
+
+def validate_multigame_result_payload(game_key: str, puzzle_date: date, payload: dict) -> None:
     if game_key not in GAME_KEYS:
         raise ValueError("Invalid game")
 
@@ -693,7 +899,6 @@ def validate_multigame_result_payload(game_key: str, payload: dict) -> None:
     if outcome not in {"won", "lost"}:
         raise ValueError("Invalid outcome")
 
-    puzzle_date = get_puzzle_date(payload.get("date"))
     score = payload.get("score")
     if not isinstance(score, dict):
         raise ValueError("Invalid score")

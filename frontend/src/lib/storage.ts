@@ -1,6 +1,7 @@
 import {
   ACCESS_STORAGE_KEY,
   CLIENT_SESSION_STORAGE_KEY,
+  LAST_GAME_STORAGE_KEY,
   LEGACY_AVATAR_STORAGE_KEY,
   SETTINGS_STORAGE_KEY,
   defaultSettings,
@@ -8,7 +9,45 @@ import {
 import { createDefaultAvatarConfig } from '../features/avatar/avatar-config'
 import { decodeTokenPayload } from './access'
 import { createRandomId } from './ids'
-import type { AccessState, FriendsFamilyAccess, GuestAccess, Settings } from '../types'
+import type {
+  AccessState,
+  FriendsFamilyAccess,
+  GuestAccess,
+  Settings,
+  WordbeeGameKey,
+} from '../types'
+
+const GAME_KEYS: WordbeeGameKey[] = ['wordle', 'sudoku', 'connections', 'strands']
+
+export type LastGameState = { activeGame: WordbeeGameKey; additionalGameDate: string }
+
+export function loadLastGameState(): LastGameState | null {
+  try {
+    const raw = window.sessionStorage.getItem(LAST_GAME_STORAGE_KEY)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as Partial<LastGameState>
+    if (!GAME_KEYS.includes(parsed.activeGame as WordbeeGameKey)) return null
+
+    return {
+      activeGame: parsed.activeGame as WordbeeGameKey,
+      additionalGameDate:
+        typeof parsed.additionalGameDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.additionalGameDate)
+          ? parsed.additionalGameDate
+          : '',
+    }
+  } catch {
+    return null
+  }
+}
+
+export function saveLastGameState(state: LastGameState) {
+  try {
+    window.sessionStorage.setItem(LAST_GAME_STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Session persistence is best-effort.
+  }
+}
 
 export function loadSettings(): Settings {
   try {

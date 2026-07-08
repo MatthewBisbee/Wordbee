@@ -173,7 +173,7 @@ function SettingsContactForm({
             setErrorMessage('')
           }
         }}
-        placeholder="Send a suggestion"
+        placeholder="Recommend bug fixes or new features"
         rows={4}
         value={message}
       />

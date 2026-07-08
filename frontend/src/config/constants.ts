@@ -1,4 +1,4 @@
-import type { EvaluatedState, Settings, StatsSummary } from '../types'
+import type { AdditionalGameKey, EvaluatedState, Settings, StatsSummary } from '../types'
 
 export const WORD_LENGTH = 5
 export const MAX_GUESSES = 6
@@ -24,7 +24,24 @@ export const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 export const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 export const LEGACY_AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
 export const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
+// Session-scoped so a cold app launch defaults to the daily Wordle, while an
+// in-session reload (e.g. an iOS PWA refocus) restores the active game/date.
+export const LAST_GAME_STORAGE_KEY = 'wordbee.last-game.v1'
 export const FIRST_OFFICIAL_PUZZLE_DATE = '2021-06-19'
+
+// Mirrors backend GAME_FIRST_DATES so the past-date picker can gray out
+// unavailable days without waiting on a network round-trip.
+export const ADDITIONAL_GAME_FIRST_DATES: Record<AdditionalGameKey, string> = {
+  connections: '2023-06-12',
+  strands: '2024-03-04',
+  sudoku: '2021-06-19',
+}
+
+export const ADDITIONAL_GAME_LABELS: Record<AdditionalGameKey, string> = {
+  connections: 'Connections',
+  strands: 'Strands',
+  sudoku: 'Sudoku',
+}
 
 export const SKILL_HELP_TEXT =
   'Skill scores how efficiently your guesses split the remaining possible answers. If only one answer is left, only playing that answer scores well.'

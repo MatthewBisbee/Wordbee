@@ -11,9 +11,20 @@
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
+/* Center the board so it does not crowd against the header, but fall back to
+   top alignment when the content is taller than the viewport. */
+.game-page--connections,
+.game-page--strands {
+  align-content: safe center;
+}
+
 .game-panel {
   width: min(560px, 100%);
   justify-self: center;
+}
+
+.connections-panel {
+  max-width: 460px;
 }
 
 .game-kicker {
@@ -114,13 +125,18 @@
   gap: 3px;
   border-radius: 6px;
   padding: 10px;
-  color: #121213;
+  color: var(--connections-group-text);
   text-align: center;
+}
+
+.connections-solved-group--recent {
+  animation: connections-pop 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .connections-solved-group strong {
   font-size: 16px;
   line-height: 19px;
+  text-transform: uppercase;
 }
 
 .connections-solved-group span {
@@ -130,19 +146,19 @@
 }
 
 .connections-group--yellow {
-  background: #f9df6d;
+  background: var(--connections-yellow);
 }
 
 .connections-group--green {
-  background: #a0c35a;
+  background: var(--connections-green);
 }
 
 .connections-group--blue {
-  background: #b0c4ef;
+  background: var(--connections-blue);
 }
 
 .connections-group--purple {
-  background: #ba81c5;
+  background: var(--connections-purple);
 }
 
 .connections-grid {
@@ -151,47 +167,150 @@
   gap: 8px;
 }
 
+.connections-instruction {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 8px 0 20px;
+  text-align: center;
+  color: var(--color-tone-1);
+}
+
 .connections-card {
-  aspect-ratio: 1.48;
+  aspect-ratio: 1;
   border: 0;
   border-radius: 6px;
   padding: 6px;
-  background: var(--color-tone-4);
-  color: var(--color-tone-1);
+  background: var(--connections-card-bg);
+  color: var(--connections-card-text);
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(11px, 2.8vw, 16px);
+  font-size: clamp(9px, 2.6vw, 15px);
   font-weight: 800;
-  line-height: 1.08;
+  line-height: 1.15;
   cursor: pointer;
   overflow-wrap: anywhere;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-wrap: balance;
+  transition: transform 90ms ease, background-color 120ms ease, color 120ms ease;
 }
 
 .connections-card[aria-pressed="true"] {
-  background: var(--color-tone-2);
-  color: var(--color-background);
+  background: var(--connections-card-selected);
+  color: var(--connections-card-selected-text);
+}
+
+.connections-card:not(:disabled):active {
+  transform: scale(0.9);
+}
+
+.connections-card--bounce {
+  animation: connections-bounce 300ms ease-in-out var(--connections-bounce-delay, 0ms);
+}
+
+.connections-card--shake {
+  animation: connections-shake 250ms ease-in-out 1.4;
+}
+
+.connections-grid-preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.connections-solved-preview-row {
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--connections-group-text);
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .connections-status {
   min-height: 24px;
   display: flex;
   justify-content: center;
-  margin-top: 14px;
+  margin-top: 16px;
   color: var(--color-tone-1);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
-.connections-status span {
+.connections-mistakes {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
-.connections-status i {
-  width: 10px;
-  height: 10px;
+.connections-mistakes__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connections-dot {
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
+  background: transparent;
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+.connections-dot--filled {
   background: var(--color-tone-1);
+  transform: scale(1);
+}
+
+.connections-dot--popping {
+  animation: connections-mistake-pop 300ms ease forwards;
+}
+
+.strands-clue-card {
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  text-align: center;
+  background: var(--color-tone-4);
+}
+
+.strands-clue-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--color-tone-2);
+  letter-spacing: 0.8px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.strands-clue-text {
+  margin: 0;
+  font-family: "nyt-karnakcondensed", "Georgia", serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-tone-1);
+  line-height: 1.2;
+}
+
+.strands-summary-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.strands-summary-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  font-size: 14px;
 }
 
 .strands-progress {
@@ -211,12 +330,49 @@
   padding: 5px 9px;
 }
 
-.strands-board {
+.strands-board-wrapper {
+  position: relative;
   width: min(360px, 100%);
+  margin: 0 auto;
+}
+
+.strands-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.strands-line {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.strands-line--theme {
+  stroke: var(--strands-theme);
+}
+
+.strands-line--spangram {
+  stroke: var(--strands-spangram);
+}
+
+.strands-line--active {
+  stroke: var(--strands-line);
+  stroke-width: 10;
+  opacity: 0.6;
+}
+
+.strands-board {
+  position: relative;
+  z-index: 2;
+  width: 100%;
   display: grid;
   grid-template-columns: repeat(6, 1fr);
   gap: 8px;
-  margin: 0 auto;
 }
 
 .strands-cell {
@@ -224,12 +380,15 @@
   border: 2px solid transparent;
   border-radius: 50%;
   background: transparent;
-  color: var(--color-tone-1);
+  color: var(--strands-cell-text);
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(17px, 5vw, 28px);
   font-weight: 900;
   line-height: 1;
   cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .strands-cell--selected {
@@ -238,13 +397,36 @@
 }
 
 .strands-cell--theme {
-  background: #a7d8ff;
+  background: var(--strands-theme);
   color: #121213;
 }
 
 .strands-cell--spangram {
-  background: #f8cd4f;
+  background: var(--strands-spangram);
   color: #121213;
+}
+
+.strands-cell--hint {
+  border-color: var(--strands-theme);
+  border-style: dashed;
+}
+
+.strands-cell--celebrate {
+  animation: strands-jump 560ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--strands-jump-delay, 0ms);
+}
+
+.strands-cell--celebrate-theme {
+  animation: strands-jump-sm 440ms cubic-bezier(0.2, 0.8, 0.2, 1) var(--strands-jump-delay, 0ms);
+}
+
+@keyframes strands-jump-sm {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
 }
 
 .strands-current-word {
@@ -259,22 +441,33 @@
   letter-spacing: 0;
 }
 
+.sudoku-panel {
+  width: min(430px, 100%);
+}
+
+.sudoku-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 auto 12px;
+  width: min(430px, calc(100vw - 32px));
+}
+
 .sudoku-difficulty {
   display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin: 0 0 14px;
+  gap: 6px;
 }
 
 .sudoku-difficulty button {
-  min-height: 34px;
+  min-height: 32px;
   border: 1px solid var(--settings-border);
   border-radius: 999px;
-  padding: 0 14px;
+  padding: 0 12px;
   background: transparent;
   color: var(--color-tone-1);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -285,32 +478,40 @@
   color: var(--color-background);
 }
 
+.sudoku-timer {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-tone-2);
+  font-size: 15px;
+  font-weight: 800;
+}
+
 .sudoku-board {
-  width: min(450px, calc(100vw - 32px));
+  width: min(430px, calc(100vw - 32px));
   aspect-ratio: 1;
   display: grid;
   grid-template-columns: repeat(9, 1fr);
   grid-template-rows: repeat(9, 1fr);
-  border: 3px solid var(--color-tone-1);
+  border: 2px solid var(--sudoku-grid-line);
   margin: 0 auto;
-  background: var(--color-tone-1);
+  background: var(--sudoku-cell-border);
   gap: 1px;
 }
 
 .sudoku-cell {
+  position: relative;
   border: 0;
   padding: 0;
   background: var(--color-background);
-  color: var(--color-tone-1);
+  color: var(--sudoku-entered-text);
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(18px, 5vw, 32px);
+  font-size: clamp(18px, 5vw, 30px);
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
 }
 
 .sudoku-cell:nth-child(3n) {
-  border-right: 2px solid var(--color-tone-1);
+  border-right: 2px solid var(--sudoku-grid-line);
 }
 
 .sudoku-cell:nth-child(9n) {
@@ -319,35 +520,98 @@
 
 .sudoku-cell:nth-child(n + 19):nth-child(-n + 27),
 .sudoku-cell:nth-child(n + 46):nth-child(-n + 54) {
-  border-bottom: 2px solid var(--color-tone-1);
+  border-bottom: 2px solid var(--sudoku-grid-line);
 }
 
 .sudoku-cell--given {
-  font-weight: 900;
+  color: var(--sudoku-given-text);
+  font-weight: 800;
 }
 
 .sudoku-cell--peer {
-  background: var(--result-link-bg);
+  background: var(--sudoku-peer);
 }
 
 .sudoku-cell--same {
-  background: #d8ecff;
-  color: #121213;
+  background: var(--sudoku-same);
 }
 
 .sudoku-cell--selected {
-  background: #f8cd4f;
-  color: #121213;
+  background: var(--sudoku-selected);
+  color: var(--sudoku-given-text);
 }
 
-.sudoku-cell--mistake {
-  color: #d33;
+.sudoku-cell--error {
+  background: var(--sudoku-conflict-bg);
+  color: var(--sudoku-conflict-text);
+}
+
+.sudoku-notes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  width: 100%;
+  height: 100%;
+  padding: 2px;
+  color: var(--color-tone-2);
+  font-size: clamp(7px, 1.8vw, 10px);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.sudoku-notes span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sudoku-tools {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  width: min(430px, calc(100vw - 32px));
+  margin: 14px auto 0;
+}
+
+.sudoku-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 0;
+  background: transparent;
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sudoku-tool:not(:disabled):hover {
+  background: var(--result-link-bg);
+}
+
+.sudoku-tool:disabled {
+  color: var(--color-tone-3);
+  cursor: not-allowed;
+}
+
+.sudoku-tool__icon {
+  width: 26px;
+  height: 26px;
+}
+
+.sudoku-tool--toggle[aria-pressed="true"] {
+  color: var(--color-background);
+  background: var(--color-tone-1);
 }
 
 .sudoku-keypad {
-  width: min(450px, calc(100vw - 32px));
+  width: min(252px, calc(100vw - 90px));
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   margin: 14px auto 0;
 }
@@ -355,13 +619,80 @@
 .sudoku-keypad button {
   aspect-ratio: 1;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--key-bg);
-  color: var(--key-text-color);
+  color: var(--sudoku-entered-text);
   font: inherit;
-  font-size: clamp(18px, 5vw, 28px);
-  font-weight: 900;
+  font-size: clamp(20px, 6vw, 28px);
+  font-weight: 800;
   cursor: pointer;
+}
+
+.sudoku-keypad-button--done {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+@keyframes connections-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes connections-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes connections-mistake-pop {
+  25% {
+    transform: scale(1.2);
+  }
+  75% {
+    transform: scale(0.4);
+  }
+  100% {
+    transform: scale(0);
+  }
+}
+
+@keyframes connections-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.018);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes strands-jump {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-10px);
+  }
+  70% {
+    transform: translateY(2px);
+  }
 }
 
 .game-history {

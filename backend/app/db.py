@@ -44,3 +44,24 @@ def migrate_db(connection: sqlite3.Connection) -> None:
     }
     if "avatar_json" not in user_columns:
         connection.execute("ALTER TABLE friends_family_users ADD COLUMN avatar_json TEXT")
+
+    # Distinguish live daily completions from retroactive (archive) plays so stats
+    # can count only daily plays while the calendar still records everything.
+    for table in ("friends_family_daily_results", "friends_family_game_results"):
+        columns = {
+            row["name"]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if columns and "play_type" not in columns:
+            connection.execute(
+                f"ALTER TABLE {table} ADD COLUMN play_type TEXT NOT NULL DEFAULT 'daily'"
+            )
+            # Best-effort backfill: a play finished on a different calendar day than
+            # the puzzle date was almost certainly retroactive.
+            connection.execute(
+                f"""
+                UPDATE {table}
+                SET play_type = 'retro'
+                WHERE substr(completed_at, 1, 10) <> puzzle_date
+                """
+            )

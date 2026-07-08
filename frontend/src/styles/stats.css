@@ -879,11 +879,15 @@
   outline: 0;
 }
 
-.stats-trend-point:hover,
-.stats-trend-point:focus-visible {
+.stats-trend-point--active {
   fill: var(--color-correct);
   stroke: #fff;
   stroke-width: 2.5;
+}
+
+.stats-trend-hit {
+  cursor: pointer;
+  outline: 0;
 }
 
 .stats-trend-tooltip rect {
@@ -1093,6 +1097,248 @@
   line-height: 16px;
   text-align: right;
   white-space: nowrap;
+}
+
+.stats-table-wrap {
+  overflow-x: auto;
+}
+
+/* Keep wide children (leaderboard table) from forcing page-level horizontal
+   overflow inside grid/flex parents on mobile. */
+.stats-section,
+.stats-history-panel,
+.stats-multigame-results {
+  min-width: 0;
+}
+
+.stats-table {
+  width: 100%;
+  min-width: 580px;
+  border-collapse: collapse;
+  color: var(--color-tone-1);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.stats-table th,
+.stats-table td {
+  border-bottom: 1px solid var(--settings-border);
+  padding: 11px 9px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+.stats-table th {
+  color: var(--result-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stats-table td {
+  font-weight: 800;
+}
+
+.stats-player-cell {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.stats-player-cell strong,
+.stats-player-cell span {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.stats-game-switcher {
+  display: inline-flex;
+  margin: 2px 0;
+}
+
+.stats-game-switcher select {
+  font-family: "nyt-karnakcondensed", "Georgia", serif;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-tone-1);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid var(--color-tone-1);
+  padding: 2px 4px 2px 0;
+  cursor: pointer;
+}
+
+.stats-game-switcher select:focus-visible {
+  outline: 2px solid var(--outline-focus);
+  outline-offset: 2px;
+}
+
+.stats-guess-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+
+.stats-guess {
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stats-guess--correct {
+  background: color-mix(in srgb, var(--color-correct) 24%, transparent);
+  color: var(--color-tone-1);
+}
+
+.stats-guess--wrong {
+  background: var(--result-link-bg);
+  color: var(--color-tone-2);
+  text-decoration: line-through;
+}
+
+.stats-multigame-trend,
+.stats-playback__summary,
+.stats-word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.stats-date-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-date-selector label {
+  color: var(--result-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.stats-date-selector select {
+  min-height: 36px;
+  border: 1px solid var(--settings-border);
+  border-radius: 6px;
+  padding: 0 32px 0 10px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stats-multigame-results {
+  display: grid;
+  gap: 10px;
+}
+
+.stats-multigame-result {
+  border: 1px solid var(--settings-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--result-panel-bg);
+}
+
+.stats-multigame-result[data-locked="true"] {
+  opacity: 0.66;
+}
+
+.stats-multigame-result__topline,
+.stats-multigame-result__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stats-multigame-result__meta {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  color: var(--result-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 15px;
+}
+
+.stats-playback {
+  display: grid;
+  gap: 9px;
+}
+
+.stats-playback__summary span,
+.stats-word-cloud span {
+  border: 1px solid var(--settings-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--color-tone-1);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 15px;
+}
+
+.stats-connections-groups {
+  display: grid;
+  gap: 6px;
+}
+
+.stats-connections-groups .connections-solved-preview-row {
+  display: grid;
+  gap: 2px;
+}
+
+.stats-connections-groups .connections-solved-preview-row span {
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.stats-submission-list {
+  max-height: 150px;
+  overflow-y: auto;
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0 0 0 20px;
+  color: var(--result-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.stats-sudoku-mini-board {
+  width: min(270px, 100%);
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  border: 2px solid var(--color-tone-1);
+  background: var(--color-tone-1);
+  gap: 1px;
+}
+
+.stats-sudoku-mini-board span {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .family-result-board {
@@ -1402,9 +1648,34 @@
   .stats-daily-results {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .stats-multigame-results {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
+  .stats-table {
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  .stats-table th,
+  .stats-table td {
+    padding: 9px 5px;
+  }
+
+  /* Drop the Avg-time column on phones so the leaderboard fits without scrolling. */
+  .stats-table th:nth-child(5),
+  .stats-table td:nth-child(5) {
+    display: none;
+  }
+
+  .stats-multigame-trend {
+    max-height: 128px;
+    overflow-y: auto;
+  }
+
   .family-stats-backdrop {
     align-items: stretch;
     padding: 10px;

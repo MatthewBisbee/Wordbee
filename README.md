@@ -29,18 +29,20 @@ Wordbee hosts multiple daily and archive puzzles for a private community of frie
 | Game | Gameplay Modes | Key Features |
 |---|---|---|
 | **Wordle** | Daily / Endless / Past-Date | Tile reveal animations, high-contrast & dark mode, starter-word habits, trends, and detailed solve-path analysis |
-| **Sudoku** | Daily (Easy/Medium/Hard) | Number-pad, cell/peer highlighting, mistake highlighting, server-side checks, and solve history |
-| **Connections** | Daily | 16-card board, 4-card group validation, one-away feedback, mistake limits, and post-loss reveal |
-| **Strands** | Daily | Letter path selection, spangram validation, bonus-word tracking, and reveal hints |
+| **Sudoku** | Daily / Past-Date (Easy/Medium/Hard) | Single-row keypad, Notes/pencil marks, Undo, Erase, Hint, a running timer, live conflict highlighting, and auto-checked completion |
+| **Connections** | Daily / Past-Date | 16-card board, 4-card group validation, faithful NYT select/solve-bounce/mistake-shake animations, one-away feedback, and post-loss reveal |
+| **Strands** | Daily / Past-Date | Drag or tap path selection, connect-the-dots lines, spangram validation, bonus-word tracking, and an NYT-style theme-word hint |
 
 <details>
 <summary>🔍 Detailed Game & Platform Features</summary>
 
-- **Daily Persistence & Rollover**: Signed-in family users resume unfinished puzzles from the server. Rollovers resolve to `America/Chicago` by default, blocking future gameplay before Central midnight.
+- **Per-Game Archive History**: Every game has its own daily / past-date picker that grays out days before that game's first puzzle and clamps out-of-range dates back into the playable window, mirroring Wordle. Connections and Strands pull real dated NYT puzzles; past Sudoku is recovered from the Internet Archive when a same-day snapshot exists, otherwise a deterministic generated board.
+- **Completion Calendar**: Each signed-in user has a per-game calendar back to that game's first puzzle, colored solid green (solved live), washed green (solved from the archive), light red (missed live), and pink (missed from the archive). Tapping a day shows that solve, with current-day privacy preserved.
+- **Daily Persistence & Rollover**: Signed-in family users resume unfinished puzzles (any game) from the server. Rollovers resolve to `America/Chicago` by default, blocking future gameplay before Central midnight. The active game and archive date persist for the browser session, so an in-app reload returns where you were while a fresh launch opens the daily Wordle.
 - **Friends-and-Family Access**: Private access codes are validated server-side, profiles are reclaimed on load, and one active session is enforced per browser/user.
 - **Avatar Profiles**: Profile avatars are rendered from DB-backed state using DiceBear's Notionists SVG API.
-- **Stats Dashboard**: Wordle family dashboard contains accolade cards, solve distribution, starter-word history, player trends, skill/luck analysis, and play reviews. Other games track basic family play-rate and history.
-- **Privacy Controls**: Current-day answers, guesses, and results remain locked in statistics until the requesting user solves that day's puzzle.
+- **Stats Dashboard**: Only live daily completions count toward stats; retroactive archive plays are recorded for the calendar but excluded from every stat. The Wordle dashboard contains accolade cards, solve distribution, starter-word history, player trends, skill/luck analysis, and play reviews. Sudoku, Connections, and Strands add family solve-rate, leaderboard, daily review, and calendar views.
+- **Privacy Controls**: Current-day answers, guesses, and results remain locked in statistics and the calendar until the requesting user solves that day's puzzle for that game.
 </details>
 
 ---

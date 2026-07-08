@@ -35,6 +35,31 @@
   --result-muted: #565758;
   --result-bar-bg: #787c7e;
   --result-link-bg: #efefef;
+
+  --connections-yellow: #f9df6d;
+  --connections-green: #a0c35a;
+  --connections-blue: #b0c4ef;
+  --connections-purple: #ba81c5;
+  --connections-group-text: #121213;
+  --connections-card-bg: #efefe6;
+  --connections-card-text: #121213;
+  --connections-card-selected: #5a594e;
+  --connections-card-selected-text: #f7f7f7;
+
+  --strands-theme: #aedfee;
+  --strands-spangram: #f8cd05;
+  --strands-line: #6a6a6a;
+  --strands-cell-text: #121213;
+
+  --sudoku-selected: #f6cd4c;
+  --sudoku-peer: #e4ebf3;
+  --sudoku-same: #cfe0f6;
+  --sudoku-given-text: #121213;
+  --sudoku-entered-text: #2c64d5;
+  --sudoku-conflict-bg: #f6cdd0;
+  --sudoku-conflict-text: #c8102e;
+  --sudoku-grid-line: #344861;
+  --sudoku-cell-border: #bec6d4;
 }
 
 .wordbee-app--dark {
@@ -64,6 +89,31 @@
   --result-muted: #d7dadc;
   --result-bar-bg: #3a3a3c;
   --result-link-bg: #262626;
+
+  --connections-yellow: #f9df6d;
+  --connections-green: #a0c35a;
+  --connections-blue: #b0c4ef;
+  --connections-purple: #ba81c5;
+  --connections-group-text: #121213;
+  --connections-card-bg: #333336;
+  --connections-card-text: #e6e6e4;
+  --connections-card-selected: #5a594e;
+  --connections-card-selected-text: #f7f7f7;
+
+  --strands-theme: #aedfee;
+  --strands-spangram: #f8cd05;
+  --strands-line: #8a8a8a;
+  --strands-cell-text: #e6e6e4;
+
+  --sudoku-selected: #c79a34;
+  --sudoku-peer: #2a2d31;
+  --sudoku-same: #34415a;
+  --sudoku-given-text: #e6e6e4;
+  --sudoku-entered-text: #86b0ff;
+  --sudoku-conflict-bg: #5a2a2f;
+  --sudoku-conflict-text: #ff99a0;
+  --sudoku-grid-line: #8a94a6;
+  --sudoku-cell-border: #3a3f47;
 }
 
 .wordbee-app--high-contrast {
@@ -73,6 +123,15 @@
   --key-bg-correct: var(--color-correct);
   --key-evaluated-text-color: #000;
   --tile-text-color: #fff;
+
+  /* Carry the colorblind-friendly orange/blue pair into the other games so the
+     setting is meaningful wherever color conveys state. */
+  --strands-theme: #85c0f9;
+  --strands-spangram: #f5793a;
+  --sudoku-selected: #f5793a;
+  --sudoku-entered-text: #0043ce;
+  --cal-daily-won: #f5793a;
+  --cal-daily-won-text: #fff;
 }
 
 .wordbee-header {
@@ -276,8 +335,9 @@
   padding: 0 8px;
 }
 
-.wordbee-menu-popover .wordbee-menu-other-games .wordbee-game-menu-button {
-  grid-template-columns: 32px minmax(0, 1fr);
+.wordbee-menu-game-group {
+  display: grid;
+  gap: 6px;
 }
 
 .wordbee-game-menu-button--active {
@@ -308,13 +368,23 @@
 .wordbee-menu-game-options {
   display: grid;
   gap: 6px;
+  animation: wordbee-menu-expand 150ms ease;
+}
+
+@keyframes wordbee-menu-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .wordbee-menu-other-games {
   display: grid;
   gap: 6px;
-  border-top: 1px solid var(--settings-border);
-  padding-top: 6px;
 }
 
 .wordbee-menu-game-options > button {
@@ -581,4 +651,38 @@
   font-weight: 700;
   line-height: 1;
   pointer-events: none;
+}
+
+.wordbee-header-stats-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.wordbee-header-stats-switcher .stats-game-switcher select {
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-tone-1);
+  background: transparent;
+  border: 1px solid var(--color-tone-4);
+  border-radius: 4px;
+  padding: 4px 28px 4px 10px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23787c7e' d='M0 0l5 5 5-5z'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.wordbee-header-stats-switcher .stats-game-switcher select:hover {
+  border-color: var(--color-tone-2);
+}
+
+.wordbee-header-stats-switcher .stats-game-switcher select:focus-visible {
+  outline: 2px solid var(--outline-focus);
+  outline-offset: 2px;
 }

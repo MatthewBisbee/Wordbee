@@ -9,6 +9,8 @@ import {
 } from '../../config/constants'
 import { AvatarImage } from '../avatar/avatar'
 import { createDefaultAvatarConfig, sanitizeAvatarConfig } from '../avatar/avatar-config'
+import { CompletionCalendar } from '../calendar/CompletionCalendar'
+import type { SessionRequest } from '../games/game-utils'
 import type {
   AvatarConfig,
   FamilyDailyResult,
@@ -17,6 +19,7 @@ import type {
   FamilyStatsUser,
   FamilyStatsView,
   FamilyTimelineDay,
+  FriendsFamilyAccess,
   GuessAnalysisStep,
   SolveAnalysis,
   StarterInsight,
@@ -24,6 +27,8 @@ import type {
 } from '../../types'
 
 export function FamilyStatsPage({
+  accessState,
+  clientSessionId,
   currentUserId,
   dashboard,
   error,
@@ -31,7 +36,10 @@ export function FamilyStatsPage({
   isLoading,
   onBack,
   onReload,
+  requestWithSessionRecovery,
 }: {
+  accessState: FriendsFamilyAccess
+  clientSessionId: string
   currentUserId: string
   dashboard: FamilyStatsDashboard | null
   error: string
@@ -39,6 +47,7 @@ export function FamilyStatsPage({
   isLoading: boolean
   onBack: () => void
   onReload: () => void
+  requestWithSessionRecovery: SessionRequest
 }) {
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
   const [selectedResultId, setSelectedResultId] = useState('')
@@ -102,13 +111,12 @@ export function FamilyStatsPage({
   }
 
   return (
-    <main className="stats-page" aria-labelledby="stats-page-title">
+    <main className="stats-page" aria-label="Wordle stats">
       <div className="stats-page__inner">
         <section className="stats-hero">
           <div>
-            <span className="stats-kicker">Friends & family</span>
-            <h2 id="stats-page-title">Stats</h2>
-            <p>Daily play only. Random and past-date Wordle plays stay untracked.</p>
+            <span className="stats-kicker">Daily play only</span>
+            <h2>Wordle Stats</h2>
           </div>
           <div className="stats-hero__actions">
             <button className="stats-secondary-button" onClick={onBack} type="button">
@@ -146,13 +154,27 @@ export function FamilyStatsPage({
               <StatsOverview group={group} onSelectUser={openPlayer} users={users} />
             )}
             {view === 'players' && selectedUser && (
-              <StatsPlayerView
-                onSelectResult={setSelectedResultId}
-                onSelectUser={setSelectedUserId}
-                result={playerResult}
-                selectedUser={selectedUser}
-                users={users}
-              />
+              <>
+                <StatsPlayerView
+                  onSelectResult={setSelectedResultId}
+                  onSelectUser={setSelectedUserId}
+                  result={playerResult}
+                  selectedUser={selectedUser}
+                  users={users}
+                />
+                <section className="stats-section">
+                  <div className="stats-history-panel">
+                    <h4>Calendar</h4>
+                    <CompletionCalendar
+                      accessState={accessState}
+                      clientSessionId={clientSessionId}
+                      gameKey="wordle"
+                      requestWithSessionRecovery={requestWithSessionRecovery}
+                      userId={selectedUser.id}
+                    />
+                  </div>
+                </section>
+              </>
             )}
             {view === 'daily' && (
               <StatsDailyView
@@ -781,19 +803,34 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
           />
           <path className="stats-trend-line" d={path} />
           {points.map((point) => (
-            <circle
-              aria-label={`${formatHistoryDate(point.day.date)}: ${point.day.averageGuesses.toFixed(2)} average guesses`}
-              className="stats-trend-point"
-              cx={point.x}
-              cy={point.y}
-              key={point.day.date}
-              onBlur={() => setHoveredDate('')}
-              onFocus={() => setHoveredDate(point.day.date)}
-              onMouseEnter={() => setHoveredDate(point.day.date)}
-              onMouseLeave={() => setHoveredDate('')}
-              r="4"
-              tabIndex={0}
-            />
+            <g key={point.day.date}>
+              {/* Larger transparent hit target for easier tapping; the dot below is purely visual. */}
+              <circle
+                aria-label={`${formatHistoryDate(point.day.date)}: ${point.day.averageGuesses.toFixed(2)} average guesses`}
+                className="stats-trend-hit"
+                cx={point.x}
+                cy={point.y}
+                fill="transparent"
+                onBlur={() => setHoveredDate('')}
+                onFocus={() => setHoveredDate(point.day.date)}
+                onMouseEnter={() => setHoveredDate(point.day.date)}
+                onMouseLeave={() => setHoveredDate('')}
+                r="13"
+                tabIndex={0}
+              />
+              <circle
+                className={[
+                  'stats-trend-point',
+                  hoveredDate === point.day.date ? 'stats-trend-point--active' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                cx={point.x}
+                cy={point.y}
+                pointerEvents="none"
+                r="4"
+              />
+            </g>
           ))}
           {tooltipPoint && (
             <g className="stats-trend-tooltip" pointerEvents="none">

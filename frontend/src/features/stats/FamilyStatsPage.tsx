@@ -126,6 +126,7 @@ export function FamilyStatsPage({
                       gameKey="wordle"
                       requestWithSessionRecovery={requestWithSessionRecovery}
                       userId={selectedUser.id}
+                      history={selectedUser.history}
                     />
                   </div>
                 </section>

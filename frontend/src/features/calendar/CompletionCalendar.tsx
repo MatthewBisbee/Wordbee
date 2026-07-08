@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { formatDateInput } from '../../lib/date'
 import { formatElapsedTime, loadGameCalendar, type SessionRequest } from '../games/game-utils'
+import { SolveAnalysisPanel } from '../stats/FamilyStatsPage'
 import type {
   CalendarEntry,
   FriendsFamilyAccess,
@@ -23,12 +24,14 @@ export function CompletionCalendar({
   accessState,
   clientSessionId,
   requestWithSessionRecovery,
+  history = [],
 }: {
   gameKey: WordbeeGameKey
   userId: string
   accessState: FriendsFamilyAccess
   clientSessionId: string
   requestWithSessionRecovery: SessionRequest
+  history?: any[]
 }) {
   const [calendar, setCalendar] = useState<GameCalendar | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -38,6 +41,11 @@ export function CompletionCalendar({
   const holdRef = useRef<{ timeout?: number; interval?: number; repeated: boolean }>({
     repeated: false,
   })
+
+  const historyItem = useMemo(() => {
+    if (!selectedEntry) return null
+    return history.find((h: any) => h.date === selectedEntry.date)
+  }, [selectedEntry, history])
 
 
 
@@ -237,9 +245,10 @@ export function CompletionCalendar({
         <CalendarDetailDialog
           entry={selectedEntry}
           gameKey={gameKey}
+          historyItem={historyItem}
           onClose={() => setSelectedEntry(null)}
         />,
-        document.body
+        document.querySelector('.wordbee-app') || document.body
       )}
     </section>
   )
@@ -248,10 +257,12 @@ export function CompletionCalendar({
 function CalendarDetailDialog({
   entry,
   gameKey,
+  historyItem,
   onClose,
 }: {
   entry: CalendarEntry
   gameKey: WordbeeGameKey
+  historyItem: any
   onClose: () => void
 }) {
   const playedLabel = entry.playType === 'daily' ? 'Played live' : 'Played from archive'
@@ -274,46 +285,84 @@ function CalendarDetailDialog({
           <h2>{outcomeLabel}</h2>
           <p className="game-subtitle">{playedLabel}</p>
         </div>
-        <CalendarDetailBody entry={entry} gameKey={gameKey} />
+        <CalendarDetailBody entry={entry} gameKey={gameKey} historyItem={historyItem} />
       </section>
     </div>
   )
 }
 
-function CalendarDetailBody({ entry, gameKey }: { entry: CalendarEntry; gameKey: WordbeeGameKey }) {
+function CalendarDetailBody({
+  entry,
+  gameKey,
+  historyItem,
+}: {
+  entry: CalendarEntry
+  gameKey: WordbeeGameKey
+  historyItem: any
+}) {
   const detail = (entry.detail ?? {}) as Record<string, any>
 
   if (gameKey === 'wordle') {
     const board: string[][] = Array.isArray(detail.board) ? detail.board : []
     const guesses: string[] = Array.isArray(detail.guesses) ? detail.guesses : []
+    const analysis = historyItem?.analysis
+
     return (
-      <div className="calendar-detail__body">
-        <div className="calendar-detail__meta">
-          <span>{entry.outcome === 'won' ? `${detail.guessesUsed}/6` : 'X/6'}</span>
-          {detail.answer && <span>Answer: {String(detail.answer)}</span>}
+      <div className="calendar-detail__body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="calendar-detail__meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: '18px', fontWeight: 800 }}>
+            {entry.outcome === 'won' ? `${detail.guessesUsed}/6` : 'X/6'}
+          </span>
+          {detail.answer && (
+            <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-tone-2)' }}>
+              Answer: <strong style={{ color: 'var(--color-tone-1)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>{String(detail.answer)}</strong>
+            </span>
+          )}
         </div>
-        <div className="calendar-board" aria-label="Solve board">
+        <div className="calendar-board" aria-label="Solve board" style={{ margin: '0 auto', maxWidth: '280px', width: '100%' }}>
           {board.map((row, rowIndex) => (
-            <div className="calendar-board__row" key={rowIndex}>
+            <div className="calendar-board__row" key={rowIndex} style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '6px' }}>
               {row.map((state, colIndex) => (
-                <span className="calendar-board__tile" data-state={state} key={colIndex}>
+                <span
+                  className="calendar-board__tile"
+                  data-state={state}
+                  key={colIndex}
+                  style={{
+                    aspectRatio: '1',
+                    height: 'auto',
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: '4px',
+                    fontSize: '18px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    color: '#fff',
+                  }}
+                >
                   {guesses[rowIndex]?.[colIndex] ?? ''}
                 </span>
               ))}
             </div>
           ))}
         </div>
+        {analysis && (
+          <div style={{ borderTop: '1px solid var(--settings-border)', paddingTop: '20px' }}>
+            <SolveAnalysisPanel analysis={analysis} />
+          </div>
+        )}
       </div>
     )
   }
 
-  const score = (detail.score ?? {}) as Record<string, any>
-  const elapsed = typeof detail.elapsedSeconds === 'number' ? detail.elapsedSeconds : null
+  const score = (detail.score ?? historyItem?.score ?? {}) as Record<string, any>
+  const elapsed = typeof detail.elapsedSeconds === 'number' ? detail.elapsedSeconds : (typeof historyItem?.elapsedSeconds === 'number' ? historyItem.elapsedSeconds : null)
 
   return (
-    <div className="calendar-detail__body">
-      <div className="calendar-detail__meta">
-        {detail.variant && detail.variant !== 'daily' && <span>{String(detail.variant)}</span>}
+    <div className="calendar-detail__body" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div className="calendar-detail__meta" style={{ display: 'flex', gap: '12px', fontSize: '13px', color: 'var(--color-tone-2)', fontWeight: 700 }}>
+        {detail.variant && detail.variant !== 'daily' && <span style={{ textTransform: 'capitalize' }}>{String(detail.variant)}</span>}
         {elapsed !== null && elapsed > 0 && <span>{formatElapsedTime(elapsed)}</span>}
       </div>
       {gameKey === 'connections' && <ConnectionsDetail score={score} />}
@@ -325,18 +374,41 @@ function CalendarDetailBody({ entry, gameKey }: { entry: CalendarEntry; gameKey:
 
 function ConnectionsDetail({ score }: { score: Record<string, any> }) {
   const groups: any[] = Array.isArray(score.solvedGroups) ? score.solvedGroups : []
-  const colors = ['yellow', 'green', 'blue', 'purple']
+  const mistakes = Number(score.mistakes ?? 0)
+  const colorClasses = [
+    'connections-group--yellow',
+    'connections-group--green',
+    'connections-group--blue',
+    'connections-group--purple',
+  ]
+
   return (
-    <div className="calendar-connections">
+    <div className="connections-grid-preview" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {groups.map((group) => (
         <div
-          className={`connections-solved-preview-row connections-group--${colors[group.rank] ?? 'yellow'}`}
+          className={`connections-solved-preview-row ${colorClasses[group.rank] ?? colorClasses[0]}`}
           key={group.title}
+          style={{
+            padding: '10px 14px',
+            borderRadius: '6px',
+            fontWeight: 800,
+            fontSize: '14px',
+            textAlign: 'center',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px'
+          }}
         >
           <strong>{group.title}</strong>
+          {Array.isArray(group.cards) && (
+            <span style={{ display: 'block', fontSize: '11px', fontWeight: 500, marginTop: '2px', opacity: 0.9 }}>
+              {group.cards.join(', ')}
+            </span>
+          )}
         </div>
       ))}
-      <p className="stats-muted">{Number(score.mistakes ?? 0)} mistakes</p>
+      <p className="results-note" style={{ textAlign: 'center', fontWeight: 600, margin: '12px 0 0' }}>
+        {mistakes} mistakes
+      </p>
     </div>
   )
 }
@@ -344,27 +416,65 @@ function ConnectionsDetail({ score }: { score: Record<string, any> }) {
 function StrandsDetail({ score }: { score: Record<string, any> }) {
   const themeWords: string[] = Array.isArray(score.foundThemeWords) ? score.foundThemeWords : []
   const bonusWords: string[] = Array.isArray(score.bonusWords) ? score.bonusWords : []
+
   return (
-    <div className="stats-playback">
-      <div className="stats-playback__summary">
-        <span>{themeWords.length} theme words</span>
-        <span>{score.foundSpangram ? 'Spangram found' : 'No spangram'}</span>
-        <span>{bonusWords.length} bonus</span>
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Theme words found</span>
+          <strong>{themeWords.length}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Spangram</span>
+          <strong>{score.foundSpangram ? 'Found' : 'Missed'}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Bonus words</span>
+          <strong>{bonusWords.length}</strong>
+        </div>
       </div>
-      <div className="stats-word-cloud">
-        {[...themeWords, ...bonusWords].map((word) => (
-          <span key={word}>{word}</span>
-        ))}
-      </div>
+      {themeWords.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--color-tone-2)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>WORDS FOUND</span>
+          <div className="stats-word-cloud" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {themeWords.map((word: string) => (
+              <span
+                key={word}
+                style={{
+                  background: 'var(--result-link-bg)',
+                  border: '1px solid var(--settings-border)',
+                  borderRadius: '16px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: 700
+                }}
+              >
+                {word}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function SudokuDetail({ score }: { score: Record<string, any> }) {
+  const mistakes = Number(score.mistakes ?? 0)
+  const hints = Number(score.hints ?? 0)
+
   return (
-    <div className="stats-playback__summary">
-      <span>{Number(score.mistakes ?? 0)} mistakes</span>
-      <span>{Number(score.hints ?? 0)} hints</span>
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Mistakes</span>
+          <strong>{mistakes}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Hints used</span>
+          <strong>{hints}</strong>
+        </div>
+      </div>
     </div>
   )
 }

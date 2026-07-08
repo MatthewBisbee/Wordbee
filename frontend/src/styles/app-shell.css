@@ -686,3 +686,50 @@
   outline: 2px solid var(--outline-focus);
   outline-offset: 2px;
 }
+
+.portrait-lock-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  font-family: inherit;
+}
+
+.portrait-lock-overlay svg {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  color: var(--color-correct);
+  animation: rotate-phone 2.5s infinite ease-in-out;
+}
+
+.portrait-lock-overlay h3 {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+}
+
+.portrait-lock-overlay p {
+  font-size: 14px;
+  color: var(--color-tone-2);
+  margin: 0;
+  line-height: 1.4;
+}
+
+@keyframes rotate-phone {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
+
+@media screen and (orientation: landscape) and (max-width: 950px) and (pointer: coarse) {
+  .portrait-lock-overlay {
+    display: flex !important;
+  }
+}

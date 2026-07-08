@@ -254,6 +254,7 @@ export function MultigameStatsPage({
                       gameKey={activeGame}
                       requestWithSessionRecovery={requestWithSessionRecovery}
                       userId={selectedUser.id}
+                      history={selectedUser.history}
                     />
                   </div>
                 )}

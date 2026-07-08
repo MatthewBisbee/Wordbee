@@ -1292,6 +1292,16 @@ function App() {
 	  }, [clientSessionId, friendsFamilyToken, showToast])
 
   useEffect(() => {
+    const handleTouchMove = (event: TouchEvent) => {
+      if (event.touches.length > 1) {
+        event.preventDefault()
+      }
+    }
+    document.addEventListener('touchmove', handleTouchMove, { passive: false })
+    return () => document.removeEventListener('touchmove', handleTouchMove)
+  }, [])
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)')
     if (!mediaQuery) return
 
@@ -1358,9 +1368,18 @@ function App() {
         .filter(Boolean)
         .join(' ')}
     >
-	      <div className="wordbee-toast-layer" aria-live="polite" aria-atomic="true">
-	        {toast && <div className="wordbee-toast">{toast}</div>}
-	      </div>
+      <div className="portrait-lock-overlay">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="5" y="2" width="14" height="20" rx="2" />
+          <path d="M12 18h.01" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+        <h3>Rotate Your Device</h3>
+        <p>This app is designed to be played in portrait mode.</p>
+      </div>
+
+      <div className="wordbee-toast-layer" aria-live="polite" aria-atomic="true">
+        {toast && <div className="wordbee-toast">{toast}</div>}
+      </div>
 
       <header className="wordbee-header">
         <div className="wordbee-header__side wordbee-header__side--left" ref={menuAreaRef}>

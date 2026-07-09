@@ -9,8 +9,8 @@ const GAMES: { key: WordbeeGameKey; label: string }[] = [
   { key: 'spellingbee', label: 'Spelling Bee' },
   { key: 'tiles', label: 'Tiles' },
   { key: 'crossword', label: 'The Crossword' },
-  { key: 'mini', label: 'The Mini' },
   { key: 'midi', label: 'The Midi' },
+  { key: 'mini', label: 'The Mini' },
 ]
 
 export function StatsGameSwitcher({

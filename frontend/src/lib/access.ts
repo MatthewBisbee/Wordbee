@@ -38,3 +38,29 @@ export function isPendingAccessLoginResponse(
 } {
   return Boolean(responseBody.requiresAvatar && responseBody.pendingIdentity)
 }
+
+export function formatFirstName(firstName: string): string {
+  const trimmed = firstName.trim()
+  if (!trimmed) return ''
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
+}
+
+export function formatLastInitial(lastInitial: string): string {
+  return lastInitial.trim().toUpperCase()
+}
+
+export function formatDisplayName(displayName: string): string {
+  const trimmed = displayName.trim()
+  if (!trimmed) return ''
+  const lastSpaceIndex = trimmed.lastIndexOf(' ')
+  if (lastSpaceIndex === -1) {
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase()
+  }
+  const firstPart = trimmed.slice(0, lastSpaceIndex).trim()
+  const lastPart = trimmed.slice(lastSpaceIndex + 1).trim()
+
+  const formattedFirst = firstPart.charAt(0).toUpperCase() + firstPart.slice(1).toLowerCase()
+  const formattedLast = lastPart.charAt(0).toUpperCase() + lastPart.slice(1).toLowerCase()
+  return `${formattedFirst} ${formattedLast}`
+}
+

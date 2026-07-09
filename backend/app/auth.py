@@ -339,7 +339,9 @@ def normalize_first_name(raw_first_name: object) -> str:
     if not FIRST_NAME_PATTERN.fullmatch(first_name):
         raise ValueError("Enter a first name")
 
-    return " ".join(capitalize_name_part(name_part) for name_part in first_name.split(" "))
+    if len(first_name) > 0:
+        return first_name[0].upper() + first_name[1:].lower()
+    return ""
 
 
 def normalize_last_initial(raw_last_initial: object) -> str:

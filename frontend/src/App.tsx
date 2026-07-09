@@ -56,7 +56,7 @@ import {
   hydrateBoardFromResult,
   tileAriaLabel,
 } from './features/wordle/wordle-utils'
-import { isSessionConflict } from './lib/access'
+import { isSessionConflict, formatFirstName, formatLastInitial, formatDisplayName } from './lib/access'
 import { ApiError, requestJson } from './lib/api'
 import { copyTextToClipboard } from './lib/clipboard'
 import {
@@ -384,6 +384,23 @@ function App() {
           }),
         }),
       )
+
+      if (responseBody) {
+        if (Array.isArray(responseBody.users)) {
+          responseBody.users = responseBody.users.map((u) => ({
+            ...u,
+            displayName: formatDisplayName(u.displayName),
+            firstName: formatFirstName(u.firstName),
+            lastInitial: formatLastInitial(u.lastInitial),
+          }))
+        }
+        if (responseBody.group && Array.isArray(responseBody.group.recentResults)) {
+          responseBody.group.recentResults = responseBody.group.recentResults.map((r) => ({
+            ...r,
+            displayName: formatDisplayName(r.displayName),
+          }))
+        }
+      }
 
       setFamilyStats(responseBody)
     } catch (error) {

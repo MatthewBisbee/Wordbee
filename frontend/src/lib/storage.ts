@@ -7,7 +7,7 @@ import {
   defaultSettings,
 } from '../config/constants'
 import { createDefaultAvatarConfig } from '../features/avatar/avatar-config'
-import { decodeTokenPayload } from './access'
+import { decodeTokenPayload, formatFirstName, formatLastInitial, formatDisplayName } from './access'
 import { createRandomId } from './ids'
 import type {
   AccessState,
@@ -86,7 +86,8 @@ export function loadAccessState(): AccessState | null {
       typeof storedAccess.lastInitial === 'string' &&
       typeof storedAccess.token === 'string'
     ) {
-      const displayName = storedAccess.displayName.slice(0, 64)
+      const rawDisplayName = storedAccess.displayName.slice(0, 64)
+      const displayName = formatDisplayName(rawDisplayName)
       const tokenPayload = decodeTokenPayload(storedAccess.token)
       const userId =
         typeof storedAccess.userId === 'string'
@@ -100,8 +101,8 @@ export function loadAccessState(): AccessState | null {
         kind: 'friends-family',
         userId,
         displayName,
-        firstName: storedAccess.firstName.slice(0, 40),
-        lastInitial: storedAccess.lastInitial.slice(0, 1),
+        firstName: formatFirstName(storedAccess.firstName.slice(0, 40)),
+        lastInitial: formatLastInitial(storedAccess.lastInitial.slice(0, 1)),
         token: storedAccess.token,
       }
     }

@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { requestJson } from '../../lib/api'
-import { isCompleteAccessLoginResponse, isPendingAccessLoginResponse } from '../../lib/access'
+import {
+  isCompleteAccessLoginResponse,
+  isPendingAccessLoginResponse,
+  formatFirstName,
+  formatLastInitial,
+  formatDisplayName,
+} from '../../lib/access'
 import { AvatarBuilder, AvatarDialog } from '../avatar/avatar'
 import { createDefaultAvatarConfig, sanitizeAvatarConfig } from '../avatar/avatar-config'
 import type {
@@ -128,8 +134,8 @@ export function FriendsFamilyAccessForm({
         code,
         createUser,
         ...(avatar ? { avatar } : {}),
-        firstName,
-        lastInitial,
+        firstName: formatFirstName(firstName),
+        lastInitial: formatLastInitial(lastInitial),
       }),
     })
 
@@ -144,15 +150,19 @@ export function FriendsFamilyAccessForm({
       console.warn('Could not save authorized code to localStorage', storageError)
     }
 
+    const formattedDisplayName = formatDisplayName(responseBody.identity.displayName)
     const serverAvatar = responseBody.identity.avatar
-      ? sanitizeAvatarConfig(responseBody.identity.avatar, responseBody.identity.displayName)
+      ? sanitizeAvatarConfig(responseBody.identity.avatar, formattedDisplayName)
       : null
     onLogin({
       ...responseBody.identity,
+      displayName: formattedDisplayName,
+      firstName: formatFirstName(responseBody.identity.firstName),
+      lastInitial: formatLastInitial(responseBody.identity.lastInitial),
       avatar:
         serverAvatar ??
         avatar ??
-        createDefaultAvatarConfig(responseBody.identity.displayName),
+        createDefaultAvatarConfig(formattedDisplayName),
       token: responseBody.token,
     })
   }

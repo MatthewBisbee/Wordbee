@@ -52,8 +52,8 @@ Wordbee hosts multiple daily and archive puzzles for a private community of frie
 | **Spelling Bee** | Daily / Past-Date | Faithful honeycomb hive, tap or keyboard entry, letter shuffle, live NYT scoring, the Beginner→Genius rank ladder (+ Queen Bee), pangram detection, and an ever-growing found-words list that merges across devices |
 | **Tiles** | Daily / Past-Date / Endless Zen | Seeded deterministic solvable board, custom designer art reskinning palettes (including Brighton, Soho, Utrecht, etc.), custom selection/BG/font styling, and live combo tracking |
 | **The Crossword** | Daily / Past-Date | Full 15×15 (Sunday 21×21) grid, tap/keyboard entry with across↔down toggle and clue-bar navigation, Check & Reveal (square/word/puzzle), an autocheck toggle, a running timer, and server-side answer validation. History reaches the first NYT crossword (1942); requested gap dates snap to the nearest published puzzle |
-| **The Mini** | Daily / Past-Date | NYT's free 5×5 mini — the same grid UI as The Crossword (across↔down toggle, clue bar, Check & Reveal, autocheck, timer, server-side validation). History reaches the first Mini (2014) |
 | **The Midi** | Daily / Past-Date | NYT's 9×9–11×11 midi — the same grid UI as The Crossword. History reaches the first Midi (2026) |
+| **The Mini** | Daily / Past-Date | NYT's free 5×5 mini — the same grid UI as The Crossword (across↔down toggle, clue bar, Check & Reveal, autocheck, timer, server-side validation). History reaches the first Mini (2014) |
 
 <details>
 <summary>🔍 Detailed Game & Platform Features</summary>

@@ -88,8 +88,8 @@ All databases are stored in the `data/` directory:
 | `spellingbee.sqlite` | Spelling Bee Cache | Honeycomb letter sets, pangrams, and acceptable words |
 | `tiles.sqlite` | Tiles Cache | Captured reskinnable SVG symbols, theme colors, and attribution |
 | `crossword.sqlite` | Crossword Cache | Grids, clue coordinates, title, author, editor, and solutions |
-| `mini.sqlite` | Mini Cache | 5x5 Mini grids, clue coordinates, author, editor, and solutions |
 | `midi.sqlite` | Midi Cache | 9x9–11x11 Midi grids, clue coordinates, author, editor, and solutions |
+| `mini.sqlite` | Mini Cache | 5x5 Mini grids, clue coordinates, author, editor, and solutions |
 
 ---
 

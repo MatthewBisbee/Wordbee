@@ -6,17 +6,17 @@
 
 <div align="center">
 
-- 🟩 **Wordle**
-- 🟨 **Connections**
-- 🔵 **Strands**
-- 🔢 **Sudoku**
-- 📦 **Letter Boxed**
-- 🐝 **Spelling Bee**
-- 🎨 **Tiles**
-- 📰 **The Crossword**
-- ⚡ **The Mini**
-- 🎼 **The Midi**
-- 🎲 **Pips** *(Soon)*
+- **Wordle**
+- **Connections**
+- **Strands**
+- **Sudoku**
+- **Letter Boxed**
+- **Spelling Bee**
+- **Tiles**
+- **The Crossword**
+- **The Midi**
+- **The Mini**
+- **Pips** *(Soon)*
 
 </div>
 

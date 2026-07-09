@@ -24,6 +24,30 @@ from .games.connections import (
     get_connections_puzzle,
     public_connections_solution,
 )
+from .games.letterboxed import (
+    check_letterboxed_word,
+    get_letterboxed_puzzle,
+    public_letterboxed_solution,
+    validate_letterboxed_solution,
+)
+from .games.crossword import (
+    check_crossword,
+    get_crossword_puzzle,
+    public_crossword_solution,
+    validate_crossword_solution,
+)
+from .games.midi import (
+    check_midi,
+    get_midi_puzzle,
+    public_midi_solution,
+    validate_midi_solution,
+)
+from .games.mini import (
+    check_mini,
+    get_mini_puzzle,
+    public_mini_solution,
+    validate_mini_solution,
+)
 from .games.registry import (
     GAME_KEYS,
     get_game_first_date,
@@ -37,6 +61,12 @@ from .games.results import (
     get_multigame_result_for_user,
     save_multigame_attempt,
     save_multigame_result,
+    upsert_spellingbee_result,
+)
+from .games.spellingbee import (
+    check_spellingbee_word,
+    get_spellingbee_puzzle,
+    summarize_progress,
 )
 from .games.strands import (
     check_strands_guess,
@@ -45,6 +75,7 @@ from .games.strands import (
     public_strands_solution,
 )
 from .games.sudoku import get_sudoku_hint, validate_sudoku_grid
+from .games.tiles import generate_board, get_tiles_palette, resolve_default_palette, simulate_moves
 from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
 from .notifications import publish_completion_notification, publish_contact_notification
 from .stats import (
@@ -186,6 +217,241 @@ def multigame_connections_reveal():
         puzzle_date = resolve_playable_multigame_date("connections", payload.get("date"))
         puzzle = get_connections_puzzle(puzzle_date)
         return jsonify({"groups": public_connections_solution(puzzle)})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/letterboxed/guess")
+def multigame_letterboxed_guess():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("letterboxed", payload.get("date"))
+        return jsonify(
+            check_letterboxed_word(
+                puzzle_date,
+                payload.get("word"),
+                payload.get("previousWord"),
+            )
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/letterboxed/reveal")
+def multigame_letterboxed_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("letterboxed", payload.get("date"))
+        puzzle = get_letterboxed_puzzle(puzzle_date)
+        return jsonify(public_letterboxed_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/spellingbee/guess")
+def multigame_spellingbee_guess():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("spellingbee", payload.get("date"))
+        return jsonify(check_spellingbee_word(puzzle_date, payload.get("word")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/spellingbee/progress")
+def multigame_spellingbee_progress():
+    """Persist and merge a Spelling Bee day's found words.
+
+    The client sends the words it knows about; for a signed-in user they are
+    unioned with whatever is already stored for that day (its own device or
+    another), re-scored, and written back. The authoritative merged aggregate is
+    returned so every device converges on the same found set and rank. Guests get
+    the computed aggregate for their own words without persistence.
+    """
+    payload = request.get_json(silent=True) or {}
+    identity = verify_optional_friends_family_identity(payload)
+    if payload.get("friendsFamilyToken") and identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("spellingbee", payload.get("date"))
+        puzzle = get_spellingbee_puzzle(puzzle_date)
+        incoming_words = payload.get("words")
+        if not isinstance(incoming_words, list):
+            incoming_words = []
+
+        if identity is None:
+            return jsonify(summarize_progress(puzzle, incoming_words))
+
+        user_id = identity["userId"]
+        variant = "daily"
+        existing = get_multigame_result_for_user(
+            user_id=user_id,
+            game_key="spellingbee",
+            puzzle_date=puzzle_date.isoformat(),
+            puzzle_variant=variant,
+        )
+        prior_words = (existing["score"].get("words") if existing else None) or []
+        summary = summarize_progress(puzzle, [*prior_words, *incoming_words])
+
+        result = upsert_spellingbee_result(
+            user_id=user_id,
+            puzzle_date=puzzle_date.isoformat(),
+            puzzle_variant=variant,
+            score=summary,
+        )
+        return jsonify({**summary, "saved": result is not None})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/tiles/palette")
+def multigame_tiles_palette():
+    """Lazily serve one palette's art for the client's palette switcher."""
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify(get_tiles_palette(payload.get("filename")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/tiles/result")
+def multigame_tiles_result():
+    """Record a cleared Tiles board with a server-authoritative longest combo.
+
+    The client sends the sequence of two-tile selections; the server regenerates
+    the day's deterministic board and replays them, so the stored longest-combo
+    score can't be inflated. Only a fully cleared board is accepted.
+    """
+    payload = request.get_json(silent=True) or {}
+    identity = verify_optional_friends_family_identity(payload)
+    if payload.get("friendsFamilyToken") and identity is None:
+        return jsonify({"error": "Session is active elsewhere"}), 409
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("tiles", payload.get("date"))
+        palette = resolve_default_palette(puzzle_date)
+        board = generate_board(puzzle_date, palette)
+        summary = simulate_moves(board, payload.get("moves"))
+        if not summary["solved"]:
+            raise ValueError("Tiles board is not solved")
+
+        summary["paletteName"] = palette["displayName"]
+
+        result = save_multigame_result(
+            identity=identity,
+            game_key="tiles",
+            puzzle_date=puzzle_date.isoformat(),
+            puzzle_variant=str(payload.get("variant") or "daily"),
+            outcome="won",
+            elapsed_seconds=None,
+            score=summary,
+        )
+        return jsonify({"ok": True, "score": summary, **result})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/crossword/check")
+def multigame_crossword_check():
+    """Per-cell correctness for a submitted crossword grid.
+
+    Backs Check Square/Word/Puzzle and autocheck without ever revealing the
+    answers — the client sends its current letters and gets back which filled
+    cells are right or wrong.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("crossword", payload.get("date"))
+        return jsonify(check_crossword(puzzle_date, payload.get("entries")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/crossword/reveal")
+def multigame_crossword_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("crossword", payload.get("date"))
+        puzzle = get_crossword_puzzle(puzzle_date)
+        return jsonify(public_crossword_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/mini/check")
+def multigame_mini_check():
+    """Per-cell correctness for a submitted Mini grid (answers never leak)."""
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("mini", payload.get("date"))
+        return jsonify(check_mini(puzzle_date, payload.get("entries")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/mini/reveal")
+def multigame_mini_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("mini", payload.get("date"))
+        puzzle = get_mini_puzzle(puzzle_date)
+        return jsonify(public_mini_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/midi/check")
+def multigame_midi_check():
+    """Per-cell correctness for a submitted Midi grid (answers never leak)."""
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("midi", payload.get("date"))
+        return jsonify(check_midi(puzzle_date, payload.get("entries")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/midi/reveal")
+def multigame_midi_reveal():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("midi", payload.get("date"))
+        puzzle = get_midi_puzzle(puzzle_date)
+        return jsonify(public_midi_solution(puzzle))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -887,6 +1153,9 @@ def storable_multigame_score(game_key: str, raw_score: object) -> dict:
     fields_to_drop = {
         "sudoku": {"grid"},
         "strands": {"foundPaths"},
+        "crossword": {"entries"},
+        "mini": {"entries"},
+        "midi": {"entries"},
     }.get(game_key, set())
     return {key: value for key, value in score.items() if key not in fields_to_drop}
 
@@ -911,6 +1180,26 @@ def validate_multigame_result_payload(game_key: str, puzzle_date: date, payload:
         )
         if outcome == "won" and not sudoku_status["solved"]:
             raise ValueError("Sudoku is not solved")
+        return
+
+    if game_key == "letterboxed":
+        if outcome == "won" and not validate_letterboxed_solution(puzzle_date, score.get("words")):
+            raise ValueError("Letter Boxed is not solved")
+        return
+
+    if game_key == "crossword":
+        if outcome == "won" and not validate_crossword_solution(puzzle_date, score.get("entries")):
+            raise ValueError("Crossword is not solved")
+        return
+
+    if game_key == "mini":
+        if outcome == "won" and not validate_mini_solution(puzzle_date, score.get("entries")):
+            raise ValueError("Mini is not solved")
+        return
+
+    if game_key == "midi":
+        if outcome == "won" and not validate_midi_solution(puzzle_date, score.get("entries")):
+            raise ValueError("Midi is not solved")
         return
 
     if game_key == "connections":

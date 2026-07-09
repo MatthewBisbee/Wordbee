@@ -4,7 +4,21 @@ export type TileAnimation = 'idle' | 'pop' | 'flip-in' | 'flip-out'
 export type GameStatus = 'playing' | 'won' | 'lost'
 export type PlayMode = 'daily' | 'random' | 'past'
 export type FamilyStatsView = 'overview' | 'players'
-export type WordbeeGameKey = 'wordle' | 'sudoku' | 'connections' | 'strands'
+export type WordbeeGameKey =
+  | 'wordle'
+  | 'sudoku'
+  | 'connections'
+  | 'strands'
+  | 'letterboxed'
+  | 'spellingbee'
+  | 'tiles'
+  | 'crossword'
+  | 'mini'
+  | 'midi'
+
+// The Mini and Midi are small NYT crosswords that reuse the Crossword's grid
+// component, puzzle shape and check/reveal endpoints — only the game key differs.
+export type GridGameKey = 'crossword' | 'mini' | 'midi'
 export type AdditionalGameKey = Exclude<WordbeeGameKey, 'wordle'>
 
 export type PuzzleMetadata = {
@@ -242,11 +256,203 @@ export type SudokuCheckResponse = {
   solved: boolean
 }
 
+export type CrosswordClue = {
+  label: string
+  direction: 'across' | 'down'
+  cells: number[]
+  text: string
+}
+
+// An open cell carries its number label (or null); a block is null.
+export type CrosswordCell = { label: string | null } | null
+
+export type CrosswordPuzzle = DateClampInfo & {
+  gameKey: GridGameKey
+  date: string
+  status: string
+  title: string
+  author: string
+  editor: string
+  width: number
+  height: number
+  cells: CrosswordCell[]
+  clues: CrosswordClue[]
+}
+
+export type CrosswordCheckResponse = {
+  correct: number[]
+  incorrect: number[]
+  complete: boolean
+  solved: boolean
+  openCount: number
+}
+
+export type CrosswordSolution = {
+  date: string
+  width: number
+  height: number
+  answers: (string | null)[]
+}
+
+export type LetterboxedPuzzle = DateClampInfo & {
+  gameKey: 'letterboxed'
+  date: string
+  sides: string[]
+  par: number
+  nytSolutionWordCount: number
+  editor: string
+  displayDate: string
+  status: string
+}
+
+export type LetterboxedGuessResponse = {
+  valid: boolean
+  word: string
+  reason?: 'too-short' | 'not-on-board' | 'chain' | 'not-a-word'
+  letters?: string[]
+}
+
+export type LetterboxedSolution = {
+  sides: string[]
+  ourSolution: string[]
+  par: number
+}
+
+export type LetterboxedTimelineDay = {
+  date: string
+  averageWords: number
+  plays: number
+}
+
+export type SpellingBeeRank = {
+  title: string
+  minScore: number
+}
+
+export type SpellingBeePuzzle = DateClampInfo & {
+  gameKey: 'spellingbee'
+  date: string
+  centerLetter: string
+  outerLetters: string[]
+  validLetters: string[]
+  editor: string
+  displayDate: string
+  status: string
+  totalWords: number
+  totalPangrams: number
+  maxScore: number
+  ranks: SpellingBeeRank[]
+}
+
+export type SpellingBeeGuessResponse = {
+  valid: boolean
+  word: string
+  score?: number
+  isPangram?: boolean
+  reason?: 'empty' | 'too-short' | 'missing-center' | 'bad-letters' | 'not-a-word'
+}
+
+// The server-authoritative aggregate for a day's found words (merged across a
+// user's devices). Returned by the progress endpoint and stored as the result.
+export type SpellingBeeProgress = {
+  words: string[]
+  wordCount: number
+  score: number
+  maxScore: number
+  rank: string
+  rankIndex: number
+  totalWords: number
+  pangramsFound: number
+  totalPangrams: number
+  isQueenBee: boolean
+  percent: number
+  reachedGenius: boolean
+}
+
+export type SpellingBeeTimelineDay = {
+  date: string
+  averagePercent: number
+  plays: number
+}
+
+export type TilesTile = {
+  id: number
+  z: string
+  layers: string[]
+}
+
+export type TilesPaletteMeta = {
+  filename: string
+  displayName: string
+  createdBy: string
+}
+
+export type TilesPalette = TilesPaletteMeta & {
+  bgColor: string
+  fontColor: string
+  selectionColor: string
+  zLayer: string[]
+  layers: string[][]
+  svg: string
+}
+
+export type TilesPuzzle = DateClampInfo & {
+  gameKey: 'tiles'
+  date: string
+  displayDate: string
+  status: string
+  board: TilesTile[]
+  rows: number
+  cols: number
+  zLayer: string[]
+  layers: string[][]
+  palette: TilesPalette
+  palettes: TilesPaletteMeta[]
+}
+
+// Server-authoritative result of replaying a board's moves.
+export type TilesScore = {
+  longestCombo: number
+  moves: number
+  wrongMoves: number
+  perfect: boolean
+  solved: boolean
+}
+
+export type TilesResultResponse = MultigameResultResponse & {
+  score: TilesScore
+}
+
+export type TilesTimelineDay = {
+  date: string
+  averageLongestCombo: number
+  plays: number
+}
+
 export type MultigameStatsSummary = {
   averageSeconds: number
   played: number
-  solveRate: number
-  wins: number
+  solveRate?: number
+  wins?: number
+  // Letter Boxed only (no solve rate — there is no way to fail a day).
+  solved?: number
+  averageWords?: number
+  bestWords?: number
+  wordsTimeline?: LetterboxedTimelineDay[]
+  // Spelling Bee only (rank/score based — no win/lose).
+  geniusRate?: number
+  geniusCount?: number
+  averagePercent?: number
+  bestPercent?: number
+  pangramsFound?: number
+  queenBeeCount?: number
+  percentTimeline?: SpellingBeeTimelineDay[]
+  // Tiles only (longest-combo based — no win/lose).
+  averageLongestCombo?: number
+  bestLongestCombo?: number
+  perfectCount?: number
+  perfectRate?: number
+  comboTimeline?: TilesTimelineDay[]
 }
 
 export type MultigameResult = {

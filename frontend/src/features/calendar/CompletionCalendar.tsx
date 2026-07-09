@@ -368,6 +368,119 @@ function CalendarDetailBody({
       {gameKey === 'connections' && <ConnectionsDetail score={score} />}
       {gameKey === 'strands' && <StrandsDetail score={score} />}
       {gameKey === 'sudoku' && <SudokuDetail score={score} />}
+      {gameKey === 'letterboxed' && <LetterboxedDetail score={score} />}
+      {gameKey === 'spellingbee' && <SpellingBeeDetail score={score} />}
+      {gameKey === 'tiles' && <TilesDetail score={score} />}
+      {(gameKey === 'crossword' || gameKey === 'mini' || gameKey === 'midi') && (
+        <CrosswordDetail score={score} />
+      )}
+    </div>
+  )
+}
+
+function CrosswordDetail({ score }: { score: Record<string, any> }) {
+  const checks = Number(score.checksUsed ?? 0)
+  const reveals = Number(score.revealsUsed ?? 0)
+  return (
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        {(score.width && score.height) ? (
+          <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+            <span>Grid</span>
+            <strong>{Number(score.width)}×{Number(score.height)}</strong>
+          </div>
+        ) : null}
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Checks used</span>
+          <strong>{checks}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Reveals used</span>
+          <strong>{reveals}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Solve</span>
+          <strong>{reveals > 0 ? 'Assisted' : checks > 0 ? 'Checked' : 'Clean'}</strong>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TilesDetail({ score }: { score: Record<string, any> }) {
+  return (
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        {score.paletteName && (
+          <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+            <span>Theme played</span>
+            <strong>{String(score.paletteName)}</strong>
+          </div>
+        )}
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Longest combo</span>
+          <strong>×{Number(score.longestCombo ?? 0)}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Matches made</span>
+          <strong>{Number(score.moves ?? 0)}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Perfect solve</span>
+          <strong>{score.perfect ? 'Yes' : 'No'}</strong>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SpellingBeeDetail({ score }: { score: Record<string, any> }) {
+  const words: string[] = Array.isArray(score.words) ? score.words : []
+  const isPangram = (word: string) => new Set(word).size === 7
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Rank</span>
+          <strong>{String(score.rank ?? '—')}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Score</span>
+          <strong>{score.maxScore ? `${score.score ?? 0} / ${score.maxScore}` : Number(score.score ?? 0)}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Words</span>
+          <strong>{words.length} / {Number(score.totalWords ?? 0)}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Pangrams</span>
+          <strong>{Number(score.pangramsFound ?? 0)} / {Number(score.totalPangrams ?? 0)}</strong>
+        </div>
+      </div>
+      {words.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--color-tone-2)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>WORDS FOUND</span>
+          <div className="stats-word-cloud" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {[...words].sort().map((word: string) => (
+              <span
+                key={word}
+                style={{
+                  background: 'var(--result-link-bg)',
+                  border: '1px solid var(--settings-border)',
+                  borderRadius: '16px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: isPangram(word) ? 800 : 700,
+                  color: isPangram(word) ? 'var(--spellingbee-accent, #b59f00)' : undefined,
+                }}
+              >
+                {word}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -447,6 +560,49 @@ function StrandsDetail({ score }: { score: Record<string, any> }) {
                   padding: '4px 10px',
                   fontSize: '12px',
                   fontWeight: 700
+                }}
+              >
+                {word}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LetterboxedDetail({ score }: { score: Record<string, any> }) {
+  const words: string[] = Array.isArray(score.words) ? score.words : []
+  const nytWordCount = Number(score.nytWordCount ?? 0)
+  const revealed = Boolean(score.revealed)
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div className="strands-summary-preview" style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'var(--result-link-bg)', padding: '12px', borderRadius: '6px' }}>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Words used</span>
+          <strong>{revealed ? '—' : words.length}</strong>
+        </div>
+        <div className="strands-summary-row" style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+          <span>Fewest possible</span>
+          <strong>{nytWordCount} word{nytWordCount === 1 ? '' : 's'}</strong>
+        </div>
+      </div>
+      {words.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <span style={{ fontSize: '12px', color: 'var(--color-tone-2)', fontWeight: 600, display: 'block', marginBottom: '8px' }}>YOUR WORDS</span>
+          <div className="stats-word-cloud" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {words.map((word: string, index: number) => (
+              <span
+                key={`${word}-${index}`}
+                style={{
+                  background: 'var(--result-link-bg)',
+                  border: '1px solid var(--settings-border)',
+                  borderRadius: '16px',
+                  padding: '4px 10px',
+                  fontSize: '12px',
+                  fontWeight: 700,
                 }}
               >
                 {word}

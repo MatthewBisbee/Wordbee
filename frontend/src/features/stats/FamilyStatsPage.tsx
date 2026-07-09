@@ -649,9 +649,7 @@ function TrendChart({ timeline }: { timeline: FamilyTimelineDay[] }) {
               {formatHistoryDate(lastDay.date)}
             </text>
           )}
-          <text className="stats-trend-axis-title" x={plotLeft} y={10}>
-            Avg guesses
-          </text>
+
         </svg>
       ) : (
         <p className="stats-muted">Trend data will appear after daily completions.</p>
@@ -762,9 +760,8 @@ function PlayerLeaderboard({
         </label>
       </div>
       <div className="stats-leaderboard-list">
-        {rankedUsers.map((user, index) => (
+        {rankedUsers.map((user) => (
           <button key={user.id} onClick={() => onSelectUser(user.id)} type="button">
-            <span>#{index + 1}</span>
             <PlayerAvatar
               avatar={user.avatar}
               displayName={user.displayName}

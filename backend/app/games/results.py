@@ -30,7 +30,7 @@ def save_multigame_result(
     if not puzzle_date:
         raise ValueError("Missing puzzle date")
 
-    if game_key == "connections":
+    if game_key in {"connections", "letterboxed", "tiles"}:
         elapsed_seconds = None
 
     if identity is None:
@@ -87,6 +87,59 @@ def save_multigame_result(
             puzzle_variant=puzzle_variant or "daily",
         ),
     }
+
+
+def upsert_spellingbee_result(
+    *,
+    user_id: str,
+    puzzle_date: str,
+    puzzle_variant: str,
+    score: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Create or merge a Spelling Bee day's result.
+
+    Spelling Bee has no discrete "completion" — the found-word set grows across a
+    session and across a user's devices. So unlike every other game (whose result
+    is written once and frozen), this row is updated in place with the merged
+    aggregate. The union itself is done by the caller (which has the puzzle); here
+    we only persist it, preserving the original ``play_type``/``completed_at`` so a
+    day first opened live stays counted as a daily play. ``outcome`` is always
+    ``won`` — it means "played" (there is no fail state), and Spelling Bee stats
+    read the rank/score rather than a win flag.
+    """
+    result_id = f"{user_id}:spellingbee:{puzzle_date}:{puzzle_variant or 'daily'}"
+    now = datetime.now().astimezone().isoformat()
+    normalized_score = json.dumps(score, separators=(",", ":"), sort_keys=True)
+    play_type = "daily" if puzzle_date == get_puzzle_date().isoformat() else "retro"
+
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO friends_family_game_results (
+              id, user_id, game_key, puzzle_date, puzzle_variant, outcome,
+              elapsed_seconds, score_json, play_type, completed_at
+            )
+            VALUES (?, ?, 'spellingbee', ?, ?, 'won', NULL, ?, ?, ?)
+            ON CONFLICT(user_id, game_key, puzzle_date, puzzle_variant) DO UPDATE SET
+              score_json = excluded.score_json
+            """,
+            (
+                result_id,
+                user_id,
+                puzzle_date,
+                puzzle_variant or "daily",
+                normalized_score,
+                play_type,
+                now,
+            ),
+        )
+
+    return get_multigame_result_for_user(
+        user_id=user_id,
+        game_key="spellingbee",
+        puzzle_date=puzzle_date,
+        puzzle_variant=puzzle_variant or "daily",
+    )
 
 
 def get_multigame_result_for_user(
@@ -313,7 +366,7 @@ def serialize_multigame_user(row) -> dict[str, Any]:
 def serialize_multigame_result(row) -> dict[str, Any]:
     game_key = row["game_key"]
     elapsed_seconds = row["elapsed_seconds"]
-    if game_key in {"connections", "strands"}:
+    if game_key in {"connections", "strands", "letterboxed", "spellingbee", "tiles"}:
         elapsed_seconds = None
 
     result = {
@@ -350,6 +403,75 @@ def calculate_multigame_stats(results: list[dict[str, Any]], game_key: str = Non
             "played": played,
         }
 
+    if game_key in {"sudoku", "crossword", "mini", "midi"}:
+        elapsed_values = [
+            int(result["elapsedSeconds"])
+            for result in unlocked_results
+            if result.get("elapsedSeconds") is not None
+        ]
+        return {
+            "averageSeconds": round(sum(elapsed_values) / len(elapsed_values)) if elapsed_values else 0,
+            "played": played,
+        }
+
+    if game_key == "spellingbee":
+        # Spelling Bee is open-ended (you accumulate words toward ranks; there is
+        # no win/lose), so the metrics are rank/score based: how often a player
+        # reaches Genius, their average share of the day's points, words, and
+        # pangrams. Every recorded score already carries these derived fields.
+        summaries = [result.get("score") or {} for result in unlocked_results]
+        percents = [int(summary.get("percent") or 0) for summary in summaries]
+        word_counts = [int(summary.get("wordCount") or 0) for summary in summaries]
+        genius = sum(1 for summary in summaries if summary.get("reachedGenius"))
+        return {
+            "played": played,
+            "geniusRate": round((genius / played) * 100) if played else 0,
+            "geniusCount": genius,
+            "averagePercent": round(sum(percents) / len(percents)) if percents else 0,
+            "bestPercent": max(percents) if percents else 0,
+            "averageWords": round(sum(word_counts) / len(word_counts), 1) if word_counts else 0,
+            "pangramsFound": sum(int(summary.get("pangramsFound") or 0) for summary in summaries),
+            "queenBeeCount": sum(1 for summary in summaries if summary.get("isQueenBee")),
+            "percentTimeline": build_spellingbee_percent_timeline(unlocked_results),
+        }
+
+    if game_key == "tiles":
+        # Tiles always clears (no fail state); the meaningful metric is the
+        # longest combo — the best run of consecutive matches on the shared daily
+        # board. Perfect solves (zero wrong moves) are tracked as a secondary.
+        combos = [
+            int((result.get("score") or {}).get("longestCombo") or 0)
+            for result in unlocked_results
+        ]
+        combos = [combo for combo in combos if combo > 0]
+        perfects = sum(
+            1 for result in unlocked_results if (result.get("score") or {}).get("perfect")
+        )
+        return {
+            "played": played,
+            "averageLongestCombo": round(sum(combos) / len(combos), 1) if combos else 0,
+            "bestLongestCombo": max(combos) if combos else 0,
+            "perfectCount": perfects,
+            "perfectRate": round((perfects / played) * 100) if played else 0,
+            "comboTimeline": build_tiles_combo_timeline(unlocked_results),
+        }
+
+    if game_key == "letterboxed":
+        # Letter Boxed has no failure state (you either solve it or don't finish),
+        # so words-used is the meaningful metric rather than a solve rate.
+        solved = [result for result in unlocked_results if result["outcome"] == "won"]
+        word_counts = [
+            int((result.get("score") or {}).get("wordCount") or 0) for result in solved
+        ]
+        word_counts = [count for count in word_counts if count > 0]
+        return {
+            "played": played,
+            "solved": len(solved),
+            "averageWords": round(sum(word_counts) / len(word_counts), 2) if word_counts else 0,
+            "bestWords": min(word_counts) if word_counts else 0,
+            "wordsTimeline": build_letterboxed_words_timeline(solved),
+        }
+
     wins = sum(1 for result in unlocked_results if result["outcome"] == "won")
     elapsed_values = [
         int(result["elapsedSeconds"])
@@ -362,6 +484,61 @@ def calculate_multigame_stats(results: list[dict[str, Any]], game_key: str = Non
         "solveRate": round((wins / played) * 100) if played else 0,
         "wins": wins,
     }
+
+
+def build_spellingbee_percent_timeline(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Family-wide average puzzle-completion % per day (daily plays, ascending)."""
+    by_date: dict[str, list[int]] = {}
+    for result in results:
+        summary = result.get("score") or {}
+        by_date.setdefault(result["date"], []).append(int(summary.get("percent") or 0))
+
+    return [
+        {
+            "date": day,
+            "averagePercent": round(sum(percents) / len(percents)),
+            "plays": len(percents),
+        }
+        for day, percents in sorted(by_date.items())
+    ]
+
+
+def build_tiles_combo_timeline(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Family-wide average longest combo per day (daily plays only, ascending)."""
+    by_date: dict[str, list[int]] = {}
+    for result in results:
+        combo = int((result.get("score") or {}).get("longestCombo") or 0)
+        if combo <= 0:
+            continue
+        by_date.setdefault(result["date"], []).append(combo)
+
+    return [
+        {
+            "date": day,
+            "averageLongestCombo": round(sum(combos) / len(combos), 1),
+            "plays": len(combos),
+        }
+        for day, combos in sorted(by_date.items())
+    ]
+
+
+def build_letterboxed_words_timeline(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Family-wide average words used per day (daily plays only, ascending date)."""
+    by_date: dict[str, list[int]] = {}
+    for result in results:
+        word_count = int((result.get("score") or {}).get("wordCount") or 0)
+        if word_count <= 0:
+            continue
+        by_date.setdefault(result["date"], []).append(word_count)
+
+    return [
+        {
+            "date": day,
+            "averageWords": round(sum(counts) / len(counts), 2),
+            "plays": len(counts),
+        }
+        for day, counts in sorted(by_date.items())
+    ]
 
 
 def empty_multigame_dashboard() -> dict[str, Any]:

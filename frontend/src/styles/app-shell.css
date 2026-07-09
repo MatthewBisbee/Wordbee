@@ -60,6 +60,18 @@
   --sudoku-conflict-text: #c8102e;
   --sudoku-grid-line: #344861;
   --sudoku-cell-border: #bec6d4;
+
+  --letterboxed-box: #9aa0a6;
+  --letterboxed-dot: #c4c4c4;
+  --letterboxed-used: #565758;
+  --letterboxed-active: #c9a227;
+
+  --spellingbee-cell: #e7e7e7;
+  --spellingbee-cell-text: #121213;
+  --spellingbee-center: #f7da21;
+  --spellingbee-center-text: #121212;
+  --spellingbee-accent: #b59f00;
+  --spellingbee-rank-line: #d3d6da;
 }
 
 .wordbee-app--dark {
@@ -114,6 +126,18 @@
   --sudoku-conflict-text: #ff99a0;
   --sudoku-grid-line: #8a94a6;
   --sudoku-cell-border: #3a3f47;
+
+  --letterboxed-box: #6b7075;
+  --letterboxed-dot: #565758;
+  --letterboxed-used: #d7dadc;
+  --letterboxed-active: #e0b93c;
+
+  --spellingbee-cell: #38383f;
+  --spellingbee-cell-text: #f8f8f8;
+  --spellingbee-center: #f7da21;
+  --spellingbee-center-text: #121212;
+  --spellingbee-accent: #e0c53c;
+  --spellingbee-rank-line: #3a3a3c;
 }
 
 .wordbee-app--high-contrast {
@@ -130,6 +154,7 @@
   --strands-spangram: #f5793a;
   --sudoku-selected: #f5793a;
   --sudoku-entered-text: #0043ce;
+  --letterboxed-active: #f5793a;
   --cal-daily-won: #f5793a;
   --cal-daily-won-text: #fff;
 }

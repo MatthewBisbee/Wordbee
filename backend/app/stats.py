@@ -132,6 +132,14 @@ def save_completed_game(
             (user_id, puzzle_date),
         )
 
+    if created:
+        cache_result_analysis(
+            result_id=result_id,
+            answer=answer,
+            guesses=normalized_guesses,
+            outcome=outcome,
+        )
+
     result = get_family_result_for_user(user_id=user_id, puzzle_date=puzzle_date)
 
     return {
@@ -192,7 +200,16 @@ def record_retro_family_result(
                 now,
             ),
         )
-        return cursor.rowcount == 1
+        created = cursor.rowcount == 1
+
+    if created:
+        cache_result_analysis(
+            result_id=f"{user_id}:{puzzle_date}",
+            answer=answer,
+            guesses=normalized_guesses,
+            outcome=outcome,
+        )
+    return created
 
 
 def save_family_daily_attempt(
@@ -363,9 +380,12 @@ def get_family_dashboard(
         ).fetchall()
         result_rows = connection.execute(
             """
-            SELECT results.*, users.display_name, users.avatar_json
+            SELECT results.*, users.display_name, users.avatar_json,
+                   analysis.analysis_json AS analysis_json
             FROM friends_family_daily_results AS results
             JOIN friends_family_users AS users ON users.id = results.user_id
+            LEFT JOIN friends_family_daily_analysis AS analysis
+              ON analysis.result_id = results.id
             WHERE users.code_id = ?
             ORDER BY results.puzzle_date ASC, results.completed_at ASC
             """,
@@ -374,10 +394,29 @@ def get_family_dashboard(
 
     results_by_user: dict[str, list[dict[str, Any]]] = {row["id"]: [] for row in user_rows}
     raw_results = []
+    # The solve analysis is deterministic and immutable, so it is cached per
+    # result. A cache hit skips the CPU-heavy recompute entirely; misses (the
+    # historical backlog on first load, or a brand-new result) are computed once
+    # and written back below so subsequent dashboard loads stay fast.
+    pending_analyses: list[tuple[str, dict[str, Any]]] = []
     for row in result_rows:
-        result = serialize_result(row, include_analysis=True)
+        result = serialize_result(row)
+        cached_analysis_json = row["analysis_json"] if "analysis_json" in row.keys() else None
+        if cached_analysis_json:
+            result["analysis"] = json.loads(cached_analysis_json)
+        else:
+            analysis = analyze_solve_path(
+                answer=row["answer"],
+                guesses=tuple(result["guesses"]),
+                outcome=row["outcome"],
+            )
+            result["analysis"] = analysis
+            pending_analyses.append((row["id"], analysis))
         results_by_user.setdefault(row["user_id"], []).append(result)
         raw_results.append(result)
+
+    if pending_analyses:
+        store_analyses(pending_analyses)
 
     can_reveal_current_day = not current_puzzle_date or any(
         result["userId"] == requesting_user_id and result["date"] == current_puzzle_date
@@ -649,6 +688,36 @@ def serialize_attempt(row: Any) -> dict[str, Any]:
         "board": board,
         "updatedAt": row["updated_at"],
     }
+
+
+def store_analyses(entries: list[tuple[str, dict[str, Any]]]) -> None:
+    """Persist newly computed solve analyses. INSERT OR IGNORE keeps concurrent
+    dashboard loads (both computing the same miss) from conflicting."""
+    if not entries:
+        return
+    now = datetime.now().astimezone().isoformat()
+    with connect() as connection:
+        connection.executemany(
+            """
+            INSERT OR IGNORE INTO friends_family_daily_analysis (result_id, analysis_json, created_at)
+            VALUES (?, ?, ?)
+            """,
+            [
+                (result_id, json.dumps(analysis, separators=(",", ":")), now)
+                for result_id, analysis in entries
+            ],
+        )
+
+
+def cache_result_analysis(*, result_id: str, answer: str, guesses: list[str], outcome: str) -> None:
+    """Compute and store one result's analysis eagerly (at completion time) so
+    the group dashboard never has to compute it on the request path."""
+    analysis = analyze_solve_path(
+        answer=answer.upper(),
+        guesses=tuple(guesses),
+        outcome=outcome,
+    )
+    store_analyses([(result_id, analysis)])
 
 
 def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, Any]:

@@ -5,7 +5,7 @@ import random
 from datetime import date, datetime
 from typing import Any
 
-from ..db import connect
+from ..db import connect_game
 from .common import PUBLISHER_BASE_URL, fetch_json, normalize_text
 
 
@@ -137,7 +137,7 @@ def public_connections_solution(puzzle: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def get_cached_connections(puzzle_date: date) -> dict[str, Any] | None:
-    with connect() as connection:
+    with connect_game("connections") as connection:
         row = connection.execute(
             """
             SELECT puzzle_date, external_id, editor, cards_json, groups_json,
@@ -162,7 +162,7 @@ def save_connections_puzzle(
     source: dict[str, Any],
 ) -> dict[str, Any]:
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("connections") as connection:
         connection.execute(
             """
             INSERT INTO daily_connections (
@@ -201,7 +201,7 @@ def save_connections_puzzle(
 
 def update_connections_cache_timestamp(puzzle_date: date) -> None:
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("connections") as connection:
         connection.execute(
             """
             UPDATE daily_connections

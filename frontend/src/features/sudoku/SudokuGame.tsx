@@ -94,11 +94,117 @@ export function SudokuGame({
   }, [grid])
   const remainingCells = useMemo(() => grid.filter((value) => value === null).length, [grid])
 
-  // Timer ticks while a loaded board is unsolved.
+  // Keep refs of latest states to safely save on unmount / visibility change
+  const gridRef = useRef(grid)
+  const notesRef = useRef(notes)
+  const selectedCellRef = useRef(selectedCell)
+  const hintsUsedRef = useRef(hintsUsed)
+  const difficultyRef = useRef(difficulty)
+  const puzzleRef = useRef(puzzle)
+  const isCompleteRef = useRef(isComplete)
+  const elapsedSecondsRef = useRef(elapsedSeconds)
+
+  useEffect(() => { gridRef.current = grid }, [grid])
+  useEffect(() => { notesRef.current = notes }, [notes])
+  useEffect(() => { selectedCellRef.current = selectedCell }, [selectedCell])
+  useEffect(() => { hintsUsedRef.current = hintsUsed }, [hintsUsed])
+  useEffect(() => { difficultyRef.current = difficulty }, [difficulty])
+  useEffect(() => { puzzleRef.current = puzzle }, [puzzle])
+  useEffect(() => { isCompleteRef.current = isComplete }, [isComplete])
+  useEffect(() => { elapsedSecondsRef.current = elapsedSeconds }, [elapsedSeconds])
+
+  const saveCurrentState = useCallback(() => {
+    const currentPuzzle = puzzleRef.current
+    if (!currentPuzzle || isCompleteRef.current) return
+    const state: SudokuAttemptState = {
+      grid: gridRef.current,
+      notes: notesRef.current,
+      selectedCell: selectedCellRef.current,
+      elapsedSeconds: elapsedSecondsRef.current,
+      hintsUsed: hintsUsedRef.current,
+      mistakes: mistakeCountRef.current,
+    }
+
+    if (accessState?.kind === 'friends-family') {
+      void saveAdditionalGameAttempt({
+        accessState,
+        clientSessionId,
+        date: currentPuzzle.date,
+        gameKey: 'sudoku',
+        requestWithSessionRecovery,
+        state,
+        variant: difficultyRef.current,
+      }).catch((error) => console.warn('Could not save Sudoku attempt', error))
+    } else {
+      saveStoredAdditionalGameValue(
+        getAdditionalGameStorageKey({
+          date: currentPuzzle.date,
+          gameKey: 'sudoku',
+          kind: 'attempt',
+          variant: difficultyRef.current,
+        }),
+        state,
+      )
+    }
+  }, [accessState, clientSessionId, requestWithSessionRecovery])
+
+  // Save current attempt state on unmount
+  useEffect(() => {
+    return () => {
+      saveCurrentState()
+    }
+  }, [saveCurrentState])
+
+  // Save current attempt state when the page is hidden
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveCurrentState()
+      }
+    }
+    window.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [saveCurrentState])
+
+  // Timer ticks while a loaded board is unsolved. Pauses when document is hidden.
   useEffect(() => {
     if (!puzzle || isComplete) return
-    const interval = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000)
-    return () => window.clearInterval(interval)
+
+    let interval: number | null = null
+
+    const startTimer = () => {
+      if (interval === null) {
+        interval = window.setInterval(() => setElapsedSeconds((seconds) => seconds + 1), 1000)
+      }
+    }
+
+    const stopTimer = () => {
+      if (interval !== null) {
+        window.clearInterval(interval)
+        interval = null
+      }
+    }
+
+    if (document.visibilityState === 'visible') {
+      startTimer()
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        startTimer()
+      } else {
+        stopTimer()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      stopTimer()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [puzzle, isComplete])
 
   const saveAttempt = useCallback(
@@ -108,7 +214,7 @@ export function SudokuGame({
         grid: nextGrid,
         notes: nextNotes,
         selectedCell: nextSelectedCell,
-        elapsedSeconds,
+        elapsedSeconds: elapsedSecondsRef.current,
         hintsUsed: nextHints,
         mistakes: mistakeCountRef.current,
       }
@@ -135,7 +241,7 @@ export function SudokuGame({
         )
       }
     },
-    [accessState, clientSessionId, difficulty, elapsedSeconds, puzzle, requestWithSessionRecovery],
+    [accessState, clientSessionId, difficulty, puzzle, requestWithSessionRecovery],
   )
 
   const loadPuzzle = useCallback(
@@ -524,6 +630,15 @@ export function SudokuGame({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [enterValue, eraseCell, isComplete, isInputBlocked, moveSelection])
 
+  const handleDifficultyChange = useCallback(
+    (nextDifficulty: SudokuDifficulty) => {
+      if (nextDifficulty === difficulty) return
+      saveCurrentState()
+      setDifficulty(nextDifficulty)
+    },
+    [difficulty, saveCurrentState],
+  )
+
   return (
     <main className="game-page game-page--sudoku" aria-label="Sudoku game">
       <section className="game-panel sudoku-panel">
@@ -533,7 +648,7 @@ export function SudokuGame({
               <button
                 aria-pressed={difficulty === option}
                 key={option}
-                onClick={() => setDifficulty(option)}
+                onClick={() => handleDifficultyChange(option)}
                 type="button"
               >
                 {capitalize(option)}

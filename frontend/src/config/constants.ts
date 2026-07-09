@@ -35,12 +35,24 @@ export const ADDITIONAL_GAME_FIRST_DATES: Record<AdditionalGameKey, string> = {
   connections: '2023-06-12',
   strands: '2024-03-04',
   sudoku: '2021-06-19',
+  letterboxed: '2019-02-01',
+  spellingbee: '2018-05-09',
+  tiles: '2023-04-24',
+  crossword: '1942-02-15',
+  mini: '2014-08-21',
+  midi: '2026-02-25',
 }
 
 export const ADDITIONAL_GAME_LABELS: Record<AdditionalGameKey, string> = {
   connections: 'Connections',
   strands: 'Strands',
   sudoku: 'Sudoku',
+  letterboxed: 'Letter Boxed',
+  spellingbee: 'Spelling Bee',
+  tiles: 'Tiles',
+  crossword: 'The Crossword',
+  mini: 'The Mini',
+  midi: 'The Midi',
 }
 
 export const SKILL_HELP_TEXT =

@@ -10,14 +10,19 @@ from typing import Any
 import requests
 
 from ..daily_answer import get_puzzle_date
-from ..db import connect
+from ..db import connect_game
 from .common import (
     SOURCE_TIMEOUT_SECONDS,
     SUDOKU_PAGE_URL,
     USER_AGENT,
     WAYBACK_AVAILABLE_URL,
+    fetch_wayback_snapshot,
     normalize_text,
+    wayback_candidate_timestamps,
 )
+
+
+SUDOKU_WAYBACK_KEY = "nytimes.com/puzzles/sudoku"
 
 
 SUDOKU_DIFFICULTIES = {"easy", "medium", "hard"}
@@ -171,7 +176,7 @@ def public_sudoku_puzzle(puzzle: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_cached_sudoku(puzzle_date: date, difficulty: str) -> dict[str, Any] | None:
-    with connect() as connection:
+    with connect_game("sudoku") as connection:
         row = connection.execute(
             """
             SELECT puzzle_date, difficulty, external_id, display_date,
@@ -200,7 +205,7 @@ def save_sudoku_puzzle(
     normalized_puzzle = normalize_sudoku_numbers(puzzle, allow_zero=True)
     normalized_solution = normalize_sudoku_numbers(solution, allow_zero=False)
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("sudoku") as connection:
         connection.execute(
             """
             INSERT INTO daily_sudoku (
@@ -240,7 +245,7 @@ def save_sudoku_puzzle(
 
 def update_sudoku_cache_timestamp(puzzle_date: date, difficulty: str) -> None:
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("sudoku") as connection:
         connection.execute(
             """
             UPDATE daily_sudoku
@@ -287,51 +292,37 @@ def fetch_sudoku_source_for_date(puzzle_date: date) -> dict[str, Any]:
     ``window.gameData`` reports the exact date we requested. Anything else falls
     through to the deterministic generator.
     """
-    source: dict[str, Any] = {"id": "wayback", "url": WAYBACK_AVAILABLE_URL, "ok": False}
+    source: dict[str, Any] = {"id": "wayback", "url": WAYBACK_AVAILABLE_URL, "ok": False, "tried": []}
 
-    try:
-        availability = requests.get(
-            WAYBACK_AVAILABLE_URL,
-            params={
-                "url": "nytimes.com/puzzles/sudoku",
-                "timestamp": f"{puzzle_date.strftime('%Y%m%d')}120000",
-            },
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            timeout=SOURCE_TIMEOUT_SECONDS,
-        )
-        availability.raise_for_status()
-        snapshot = (availability.json().get("archived_snapshots") or {}).get("closest") or {}
-        snapshot_url = snapshot.get("url")
-        if not snapshot.get("available") or not isinstance(snapshot_url, str):
-            raise ValueError("No archived Sudoku snapshot for this date")
+    # Probe several captures inside the day's puzzle window and accept the first
+    # whose archived print_date matches exactly (shared with Letter Boxed).
+    for timestamp in wayback_candidate_timestamps(SUDOKU_WAYBACK_KEY, puzzle_date, source):
+        try:
+            html = fetch_wayback_snapshot(timestamp, SUDOKU_PAGE_URL)
+            game_data = extract_sudoku_game_data(html)
+            fetched_date, puzzles = normalize_sudoku_payload(game_data)
+        except Exception as exc:
+            source["tried"].append({"timestamp": timestamp, "error": str(exc)})
+            continue
 
-        # Request the raw archived HTML (id_) so Wayback does not inject its toolbar.
-        raw_url = re.sub(r"/web/(\d+)/", r"/web/\1id_/", snapshot_url, count=1)
-        response = requests.get(
-            raw_url,
-            headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
-            timeout=SOURCE_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        game_data = extract_sudoku_game_data(response.text)
-        fetched_date, puzzles = normalize_sudoku_payload(game_data)
-    except Exception as exc:
-        source["error"] = str(exc)
-        return {"ok": False, "source": source}
+        if fetched_date != puzzle_date:
+            source["tried"].append({"timestamp": timestamp, "fetchedDate": fetched_date.isoformat()})
+            continue
 
-    if fetched_date != puzzle_date:
-        source["error"] = f"Archived snapshot was for {fetched_date.isoformat()}"
-        return {"ok": False, "source": source}
+        source["ok"] = True
+        source["timestamp"] = timestamp
+        return {
+            "ok": True,
+            "puzzle_date": fetched_date,
+            "display_date": normalize_text(game_data.get("displayDate"), max_length=80)
+            or fetched_date.isoformat(),
+            "puzzles": puzzles,
+            "source": source,
+        }
 
-    source["ok"] = True
-    return {
-        "ok": True,
-        "puzzle_date": fetched_date,
-        "display_date": normalize_text(game_data.get("displayDate"), max_length=80)
-        or fetched_date.isoformat(),
-        "puzzles": puzzles,
-        "source": source,
-    }
+    if not source.get("error"):
+        source["error"] = "No archived Sudoku snapshot matched this date"
+    return {"ok": False, "source": source}
 
 
 def extract_sudoku_game_data(raw_html: str) -> dict[str, Any]:

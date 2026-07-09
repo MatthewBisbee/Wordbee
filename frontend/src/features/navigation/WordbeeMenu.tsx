@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import connectionsLogoUrl from '../../assets/Connections_Logo.svg'
+import crosswordLogoUrl from '../../assets/TheCrossword_Logo.svg'
+import miniLogoUrl from '../../assets/TheMini_Logo.svg'
+import midiLogoUrl from '../../assets/TheMidi_Logo.svg'
+import letterboxedLogoUrl from '../../assets/LetterBoxed_Logo.svg'
+import spellingbeeLogoUrl from '../../assets/SpellingBee_Logo.svg'
 import strandsLogoUrl from '../../assets/Strands_Logo.svg'
 import sudokuLogoUrl from '../../assets/Sudoku_Logo.svg'
+import tilesLogoUrl from '../../assets/Tiles_Logo.svg'
 import wordleLogoUrl from '../../assets/Wordle_Logo.svg'
 import { ADDITIONAL_GAME_FIRST_DATES } from '../../config/constants'
 import type { AdditionalGameKey, WordbeeGameKey } from '../../types'
@@ -19,6 +25,7 @@ export function WordbeeMenu({
   onPastDateChange,
   onRandom,
   onSelectGame,
+  onTilesRandom,
   pastDate,
   selectedGame,
   showAdditionalDaily,
@@ -36,6 +43,7 @@ export function WordbeeMenu({
   onPastDateChange: (dateValue: string) => void
   onRandom: () => void
   onSelectGame: (gameKey: WordbeeGameKey) => void
+  onTilesRandom?: () => void
   pastDate: string
   selectedGame: WordbeeGameKey
   showAdditionalDaily: boolean
@@ -128,6 +136,11 @@ export function WordbeeMenu({
 
             {expandedGame === game.key && (
               <div className="wordbee-menu-game-options">
+                {game.key === 'tiles' && onTilesRandom && (
+                  <button onClick={onTilesRandom} role="menuitem" type="button">
+                    Endless random
+                  </button>
+                )}
                 {showAdditionalDaily && (
                   <button onClick={onAdditionalDaily} role="menuitem" type="button">
                     Today&apos;s {game.label}
@@ -166,4 +179,10 @@ const additionalGames: Array<{
   { key: 'connections', label: 'Connections', logoUrl: connectionsLogoUrl },
   { key: 'strands', label: 'Strands', logoUrl: strandsLogoUrl },
   { key: 'sudoku', label: 'Sudoku', logoUrl: sudokuLogoUrl },
+  { key: 'letterboxed', label: 'Letter Boxed', logoUrl: letterboxedLogoUrl },
+  { key: 'spellingbee', label: 'Spelling Bee', logoUrl: spellingbeeLogoUrl },
+  { key: 'tiles', label: 'Tiles', logoUrl: tilesLogoUrl },
+  { key: 'crossword', label: 'The Crossword', logoUrl: crosswordLogoUrl },
+  { key: 'midi', label: 'The Midi', logoUrl: midiLogoUrl },
+  { key: 'mini', label: 'The Mini', logoUrl: miniLogoUrl },
 ]

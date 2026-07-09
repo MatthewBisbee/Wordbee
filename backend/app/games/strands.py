@@ -4,7 +4,7 @@ import json
 from datetime import date, datetime
 from typing import Any
 
-from ..db import connect
+from ..db import connect_game
 from .common import PUBLISHER_BASE_URL, fetch_json, normalize_text
 
 
@@ -201,7 +201,7 @@ def public_strands_solution(puzzle: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_cached_strands(puzzle_date: date) -> dict[str, Any] | None:
-    with connect() as connection:
+    with connect_game("strands") as connection:
         row = connection.execute(
             """
             SELECT puzzle_date, external_id, editor, constructors, clue,
@@ -234,7 +234,7 @@ def save_strands_puzzle(
     source: dict[str, Any],
 ) -> dict[str, Any]:
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("strands") as connection:
         connection.execute(
             """
             INSERT INTO daily_strands (
@@ -286,7 +286,7 @@ def save_strands_puzzle(
 
 def update_strands_cache_timestamp(puzzle_date: date) -> None:
     now = datetime.now().astimezone().isoformat()
-    with connect() as connection:
+    with connect_game("strands") as connection:
         connection.execute(
             """
             UPDATE daily_strands

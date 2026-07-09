@@ -5,6 +5,12 @@ const GAMES: { key: WordbeeGameKey; label: string }[] = [
   { key: 'connections', label: 'Connections' },
   { key: 'strands', label: 'Strands' },
   { key: 'sudoku', label: 'Sudoku' },
+  { key: 'letterboxed', label: 'Letter Boxed' },
+  { key: 'spellingbee', label: 'Spelling Bee' },
+  { key: 'tiles', label: 'Tiles' },
+  { key: 'crossword', label: 'The Crossword' },
+  { key: 'mini', label: 'The Mini' },
+  { key: 'midi', label: 'The Midi' },
 ]
 
 export function StatsGameSwitcher({

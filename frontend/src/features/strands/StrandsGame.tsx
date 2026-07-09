@@ -75,6 +75,20 @@ export function StrandsGame({
   const [isComplete, setIsComplete] = useState(false)
   const startedAtRef = useRef(Date.now())
 
+  // Charging animation state for the Hint button
+  const [animateCharge, setAnimateCharge] = useState(false)
+  const prevBonusCountRef = useRef(0)
+
+  useEffect(() => {
+    // Only animate if the count increases and it's not the initial mount
+    if (foundBonusWords.length > 0 && prevBonusCountRef.current > 0 && foundBonusWords.length > prevBonusCountRef.current) {
+      setAnimateCharge(true)
+      const timer = setTimeout(() => setAnimateCharge(false), 600)
+      return () => clearTimeout(timer)
+    }
+    prevBonusCountRef.current = foundBonusWords.length
+  }, [foundBonusWords.length])
+
   // SVG drawing state
   const [cellCenters, setCellCenters] = useState<Record<string, { x: number; y: number }>>({})
   const boardRef = useRef<HTMLDivElement | null>(null)
@@ -766,12 +780,22 @@ export function StrandsGame({
                 Clear
               </button>
               <button
-                className="game-secondary-button"
+                className={`game-secondary-button strands-hint-button ${
+                  hintsAvailable > 0 ? 'strands-hint-button--active' : ''
+                } ${animateCharge ? 'strands-hint-button--charging' : ''}`}
                 disabled={isComplete || hintsAvailable <= 0}
                 onClick={() => void applyHint()}
+                style={
+                  {
+                    '--hint-progress': `${hintsAvailable > 0 ? 100 : ((foundBonusWords.length % 3) / 3) * 100}%`,
+                  } as CSSProperties
+                }
                 type="button"
               >
-                Hint{hintsAvailable > 0 ? ` (${hintsAvailable})` : ''}
+                <div className="strands-hint-fill" />
+                <span className="strands-hint-label">
+                  Hint{hintsAvailable > 0 ? ` (${hintsAvailable})` : ''}
+                </span>
               </button>
               <button
                 className="game-primary-button"

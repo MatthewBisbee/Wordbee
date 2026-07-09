@@ -33,15 +33,19 @@ import {
   sanitizeAvatarConfig,
 } from './features/avatar/avatar-config'
 import { ConnectionsGame } from './features/connections/ConnectionsGame'
+import { LetterboxedGame } from './features/letterboxed/LetterboxedGame'
 import { WordbeeMenu } from './features/navigation/WordbeeMenu'
 import { ResultsDialog } from './features/results/ResultsDialog'
 import { MultigameResultsDialog } from './features/results/MultigameResultsDialog'
 import { SettingsDialog } from './features/settings/SettingsDialog'
+import { SpellingBeeGame } from './features/spellingbee/SpellingBeeGame'
 import { FamilyStatsPage } from './features/stats/FamilyStatsPage'
 import { MultigameStatsPage } from './features/stats/MultigameStatsPage'
 import { StatsGameSwitcher } from './features/stats/StatsGameSwitcher'
 import { StrandsGame } from './features/strands/StrandsGame'
 import { SudokuGame } from './features/sudoku/SudokuGame'
+import { TilesGame } from './features/tiles/TilesGame'
+import { CrosswordGame } from './features/crossword/CrosswordGame'
 import { Keyboard } from './features/wordle/Keyboard'
 import {
   createBoard,
@@ -142,6 +146,7 @@ function App() {
   const [additionalPastDate, setAdditionalPastDate] = useState(
     () => initialLastGame?.additionalGameDate || getTodayDate(),
   )
+  const [tilesMode, setTilesMode] = useState<'daily' | 'zen'>('daily')
   const gameIdRef = useRef('')
   const clientSessionIdRef = useRef('')
   const menuAreaRef = useRef<HTMLDivElement | null>(null)
@@ -582,6 +587,7 @@ function App() {
     const today = getTodayDate()
     setAdditionalGameDate(today)
     setAdditionalPastDate(today)
+    setTilesMode('daily')
   }, [])
 
   const shakeRow = useCallback((row: number) => {
@@ -617,11 +623,13 @@ function App() {
     const today = getTodayDate()
     setAdditionalGameDate(today)
     setAdditionalPastDate(today)
+    setTilesMode('daily')
     setIsMenuOpen(false)
   }, [])
 
   const playAdditionalPast = useCallback(() => {
     setAdditionalGameDate(additionalPastDate)
+    setTilesMode('daily')
     setIsMenuOpen(false)
   }, [additionalPastDate])
 
@@ -1433,9 +1441,16 @@ function App() {
                     }
                     selectAdditionalGame(gameKey)
                   }}
+                  onTilesRandom={() => {
+                    selectAdditionalGame('tiles')
+                    setTilesMode('zen')
+                    setIsMenuOpen(false)
+                  }}
                   pastDate={pastWordDate}
                   selectedGame={activeGame}
-                  showAdditionalDaily={additionalGameDate !== todayDate}
+                  showAdditionalDaily={
+                    additionalGameDate !== todayDate || (activeGame === 'tiles' && tilesMode === 'zen')
+                  }
                   showDaily={activeGame !== 'wordle' || puzzle?.mode !== 'daily'}
                 />
               )}
@@ -1523,7 +1538,7 @@ function App() {
           />
         ) : (
           <MultigameStatsPage
-            activeGame={activeGame as 'connections' | 'strands' | 'sudoku'}
+            activeGame={activeGame as AdditionalGameKey}
             currentUserId={accessState.userId}
             accessState={accessState}
             clientSessionId={clientSessionId}
@@ -1593,6 +1608,85 @@ function App() {
         <StrandsGame
           accessState={accessState}
           clientSessionId={clientSessionId}
+          requestedDate={additionalGameDate}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+          onGameComplete={handleOtherGameComplete}
+          onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
+          onGameReset={handleAdditionalGameReset}
+          onResolvedDate={handleAdditionalResolvedDate}
+        />
+      ) : activeGame === 'letterboxed' ? (
+        <LetterboxedGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          isInputBlocked={
+            isAccessPromptOpen ||
+            isFamilyStatsOpen ||
+            isMenuOpen ||
+            isOtherGameResultsOpen ||
+            isSettingsOpen
+          }
+          requestedDate={additionalGameDate}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+          onGameComplete={handleOtherGameComplete}
+          onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
+          onGameReset={handleAdditionalGameReset}
+          onResolvedDate={handleAdditionalResolvedDate}
+        />
+      ) : activeGame === 'spellingbee' ? (
+        <SpellingBeeGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          isInputBlocked={
+            isAccessPromptOpen ||
+            isFamilyStatsOpen ||
+            isMenuOpen ||
+            isOtherGameResultsOpen ||
+            isSettingsOpen
+          }
+          requestedDate={additionalGameDate}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+          onGameComplete={handleOtherGameComplete}
+          onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
+          onGameReset={handleAdditionalGameReset}
+          onResolvedDate={handleAdditionalResolvedDate}
+        />
+      ) : activeGame === 'tiles' ? (
+        <TilesGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          isInputBlocked={
+            isAccessPromptOpen ||
+            isFamilyStatsOpen ||
+            isMenuOpen ||
+            isOtherGameResultsOpen ||
+            isSettingsOpen
+          }
+          requestedDate={additionalGameDate}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
+          isZen={tilesMode === 'zen'}
+          onToggleZen={(zen) => setTilesMode(zen ? 'zen' : 'daily')}
+          onGameComplete={handleOtherGameComplete}
+          onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
+          onGameReset={handleAdditionalGameReset}
+          onResolvedDate={handleAdditionalResolvedDate}
+        />
+      ) : activeGame === 'crossword' || activeGame === 'mini' || activeGame === 'midi' ? (
+        <CrosswordGame
+          gameKey={activeGame}
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          isInputBlocked={
+            isAccessPromptOpen ||
+            isFamilyStatsOpen ||
+            isMenuOpen ||
+            isOtherGameResultsOpen ||
+            isSettingsOpen
+          }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
           showToast={showToast}
@@ -1677,7 +1771,7 @@ function App() {
 
       {isOtherGameResultsOpen && otherGameCompletedResult && (
         <MultigameResultsDialog
-          activeGame={activeGame as 'connections' | 'strands' | 'sudoku'}
+          activeGame={activeGame as AdditionalGameKey}
           canOpenStats={accessState?.kind === 'friends-family'}
           onClose={() => setIsOtherGameResultsOpen(false)}
           onOpenStats={() => {

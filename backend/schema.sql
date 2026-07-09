@@ -95,6 +95,16 @@ CREATE TABLE IF NOT EXISTS friends_family_daily_attempts (
 CREATE INDEX IF NOT EXISTS idx_friends_family_daily_attempts_user_date
 ON friends_family_daily_attempts (user_id, puzzle_date);
 
+-- Write-once cache of the (CPU-intensive) Wordle solve analysis per completed
+-- result. Kept in its own table so the core results table stays untouched; a
+-- result is immutable once written, so a cached analysis never goes stale.
+CREATE TABLE IF NOT EXISTS friends_family_daily_analysis (
+  result_id TEXT PRIMARY KEY,
+  analysis_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (result_id) REFERENCES friends_family_daily_results (id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS word_definitions (
   word TEXT PRIMARY KEY,
   phonetic TEXT,
@@ -186,3 +196,22 @@ CREATE TABLE IF NOT EXISTS friends_family_game_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_friends_family_game_attempts_user_game_date
 ON friends_family_game_attempts (user_id, game_key, puzzle_date, puzzle_variant);
+
+-- Tracks the local archive backfill: which (game, date) puzzles have been
+-- downloaded into the per-game caches and whether they are the real puzzle
+-- (confirmed), a fallback (generated), unavailable (missing), or errored. The
+-- puzzle data itself lives in the daily_* caches (and letterboxed.sqlite); this
+-- is the index/progress ledger that makes bulk download resumable.
+CREATE TABLE IF NOT EXISTS archive_status (
+  game_key TEXT NOT NULL,
+  puzzle_date TEXT NOT NULL,
+  variant TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  note TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT NOT NULL,
+  PRIMARY KEY (game_key, puzzle_date, variant)
+);
+
+CREATE INDEX IF NOT EXISTS idx_archive_status_game_status
+ON archive_status (game_key, status);

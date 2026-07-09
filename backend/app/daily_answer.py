@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from .db import connect
+from .db import connect_game
 
 
 ANSWER_LENGTH = 5
@@ -19,7 +19,12 @@ SOURCE_TIMEOUT_SECONDS = 8
 DEV_FALLBACK_ANSWER = "MAVEN"
 FIRST_OFFICIAL_PUZZLE_DATE = date(2021, 6, 19)
 PUBLISHER_BASE_URL = "https://www.nytimes.com/svc/" + "wor" + "dle" + "/v2"
-USER_AGENT = "Wordbee/0.1 (+https://github.com/MatthewBisbee/Wordbee)"
+# A browser UA is more resilient against bot filtering on nytimes.com (and is
+# required for archive.org, which the shared games use). See games/common.py.
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
 TRUTHY_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_PUZZLE_TIMEZONE = "America/Chicago"
 LEGACY_EARLY_ROLLOVER_TIMEZONE = "America/New_York"
@@ -99,7 +104,7 @@ def validate_supported_puzzle_date(puzzle_date: date) -> None:
 
 
 def get_cached_answer(puzzle_date: date) -> dict[str, Any] | None:
-    with connect() as connection:
+    with connect_game("wordle") as connection:
         row = connection.execute(
             """
             SELECT puzzle_date, answer, answer_length, confidence, status,
@@ -158,7 +163,7 @@ def save_answer(
     now = datetime.now().astimezone().isoformat()
     normalized_sources = json.dumps(source_results, separators=(",", ":"))
 
-    with connect() as connection:
+    with connect_game("wordle") as connection:
         connection.execute(
             """
             INSERT INTO daily_answers (

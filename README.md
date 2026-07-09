@@ -1,8 +1,24 @@
 # Wordbee
 
 <p align="center">
-  <strong>Wordbee</strong> is a self-hosted private games hub for a friends-and-family group. It brings Wordle, Sudoku, Connections, Strands, Letter Boxed, and Spelling Bee together under a clean, unified React 19 interface.
+  <strong>Wordbee</strong> is a self-hosted private games hub for a friends-and-family group. It brings your favorite games together under a clean, unified React 19 interface:
 </p>
+
+<div align="center">
+
+- 🟩 **Wordle**
+- 🟨 **Connections**
+- 🔵 **Strands**
+- 🔢 **Sudoku**
+- 📦 **Letter Boxed**
+- 🐝 **Spelling Bee**
+- 🎨 **Tiles**
+- 📰 **The Crossword**
+- ⚡ **The Mini**
+- 🎼 **The Midi**
+- 🎲 **Pips** *(Soon)*
+
+</div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">

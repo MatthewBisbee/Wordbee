@@ -70,6 +70,118 @@ Wordbee hosts multiple daily and archive puzzles for a private community of frie
 - **Privacy Controls**: Current-day answers, guesses, and results remain locked in statistics and the calendar until the requesting user solves that day's puzzle for that game.
 </details>
 
+## ✨ Algorithmic Highlights
+
+Wordbee is not just a wrapper around daily puzzle feeds. Several games have
+local reconstruction, validation, or analysis layers so the deployed app can stay
+fast, private, and resilient even when publisher APIs are incomplete.
+
+### Wordle Skill/Luck Engine
+
+Every daily Wordle solve is replayed against the candidate dictionary and scored
+turn-by-turn. The stats dashboard separates two ideas that are usually blurred
+together:
+
+| Metric | What It Measures | Ignores |
+|---|---|---|
+| **Skill** | How well the guess partitions the remaining answer space on average | Whether today's answer happened to give a favorable clue |
+| **Luck** | Whether the clue pattern received was better or worse than that guess's expected spread | Whether the guess itself was strategically strong |
+
+For a guess with candidate set \(C\), clue-pattern buckets \(B_p\), and
+\(|C| = n\), the expected remaining answers are:
+
+$$
+E[\mathrm{after}] = \sum_p \frac{|B_p|}{n}|B_p|
+                  = \frac{\sum_p |B_p|^2}{n}
+$$
+
+Skill compares the guess's expected elimination to the best guess the analyzer
+found for that turn:
+
+$$
+\mathrm{skill}
+= 100 \cdot
+\frac{n - E[\mathrm{after}]}
+     {n - \mathrm{bestAfter}}
+\quad \text{clamped to } [0,100]
+$$
+
+Luck compares the actual clue bucket to the guess's expected bucket size, with
+50 as neutral:
+
+$$
+\mathrm{luck} =
+\begin{cases}
+50 + 50 \cdot
+\frac{E[\mathrm{after}] - \mathrm{after}}
+     {E[\mathrm{after}] - \mathrm{smallestBucket}},
+& \mathrm{after} \le E[\mathrm{after}] \\
+50 - 50 \cdot
+\frac{\mathrm{after} - E[\mathrm{after}]}
+     {\mathrm{largestBucket} - E[\mathrm{after}]},
+& \mathrm{after} > E[\mathrm{after}]
+\end{cases}
+$$
+
+That means a 2/6 solve can be high-luck without being high-skill, and a 4/6
+solve can still show an efficient path if the guesses consistently split the
+remaining set well.
+
+### Midi Grid Reconstructor
+
+The Midi's daily answers are subscriber-only, but Wordbee can reconstruct today's
+grid without an NYT cookie when public metadata and a clue/answer list agree.
+The key observation is that NYT Mini/Midi numbering fully constrains much of the
+geometry: clue numbers are assigned left-to-right, top-to-bottom, and an open
+cell is numbered exactly when it starts Across, Down, or both.
+
+```mermaid
+flowchart LR
+    Meta["NYT public Midi metadata<br/>width, height, date"]
+    Clues["Numbered clue list<br/>Across/Down answers"]
+    Search["Reading-order backtracking<br/>blocks, starts, crossings"]
+    Verify["Numbering + answer verification"]
+    Cache["midi.sqlite confirmed grid"]
+    Fallback["cookie-backed historical fetch"]
+
+    Meta --> Search
+    Clues --> Search
+    Search --> Verify
+    Verify -->|"unique"| Cache
+    Verify -->|"ambiguous / none / budget"| Fallback
+```
+
+The solver branches only where a cell is genuinely undecided:
+
+| Constraint | Effect During Search |
+|---|---|
+| Across/Down clue number sets | Decide whether a numbered cell must start Across, Down, or both |
+| Answer lengths | Cap possible block count and force terminal blocks after entries |
+| Crossings | Propagate letters through intersecting Across/Down entries |
+| Down prefixes | Reject partial vertical runs that cannot become any known Down answer |
+| Final numbering pass | Accept only grids whose generated clue numbers exactly match the source |
+
+Only a `unique` reconstruction is stored. If the search is ambiguous, impossible,
+or exceeds its budget, Wordbee refuses to confirm the day rather than cache a
+plausible but wrong grid.
+
+### Pips Validation
+
+Pips also keeps the answer private. The browser receives the regions and domino
+bag for live feedback, but final completion is checked server-side:
+
+$$
+\mathrm{valid} =
+\mathrm{tilesBoard}
+\land \mathrm{usesExactDominoBag}
+\land \bigwedge_{r \in \mathrm{regions}} \mathrm{satisfies}(r)
+$$
+
+The result is the same UX loop as the official game, with deterministic archive
+storage and no client-side solution leak.
+
+For deeper maintenance notes, see `docs/algorithm-notes.md`.
+
 ## 🗄️ Database & Archive Backfill Architecture
 
 Wordbee stores gameplay history and user accounts centrally, but isolates heavy game puzzle payloads into dedicated game-specific SQLite database files. This decoupled architecture keeps the main application database lightweight and fully decoupled from game-specific schemas.

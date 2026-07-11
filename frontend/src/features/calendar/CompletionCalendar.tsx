@@ -309,15 +309,11 @@ function CalendarDetailBody({
 
     return (
       <div className="calendar-detail__body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div className="calendar-detail__meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '18px', fontWeight: 800 }}>
-            {entry.outcome === 'won' ? `${detail.guessesUsed}/6` : 'X/6'}
-          </span>
-          {detail.answer && (
-            <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-tone-2)' }}>
-              Answer: <strong style={{ color: 'var(--color-tone-1)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>{String(detail.answer)}</strong>
-            </span>
-          )}
+        <div className="calendar-detail__meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 700, color: 'var(--color-tone-2)' }}>
+          <span>Hint used</span>
+          <strong style={{ color: detail.usedHint ? 'var(--color-correct)' : 'var(--color-tone-1)' }}>
+            {detail.usedHint ? 'Yes' : 'No'}
+          </strong>
         </div>
         <div className="calendar-board" aria-label="Solve board" style={{ margin: '0 auto', maxWidth: '280px', width: '100%' }}>
           {board.map((row, rowIndex) => (

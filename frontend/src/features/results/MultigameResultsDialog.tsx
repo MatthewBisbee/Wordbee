@@ -88,7 +88,7 @@ export function MultigameResultsDialog({
             <h3 id="multigame-summary-title">Statistics</h3>
             <div className="results-stat-grid">
               <StatValue label="Played" value={stats?.played ?? 1} />
-              {activeGame !== 'strands' && activeGame !== 'sudoku' && activeGame !== 'letterboxed' && activeGame !== 'spellingbee' && activeGame !== 'tiles' && !isGridCrossword(activeGame) && (
+              {activeGame !== 'strands' && activeGame !== 'sudoku' && activeGame !== 'pips' && activeGame !== 'letterboxed' && activeGame !== 'spellingbee' && activeGame !== 'tiles' && !isGridCrossword(activeGame) && (
                 <StatValue
                   label="Solve %"
                   value={stats && stats.solveRate !== undefined ? stats.solveRate : result.outcome === 'won' ? 100 : 0}
@@ -399,6 +399,25 @@ function SolveSummary({
         <div className="strands-summary-row">
           <span>Perfect solve</span>
           <strong>{score.perfect ? 'Yes' : 'No'}</strong>
+        </div>
+      </div>
+    )
+  }
+
+  if (activeGame === 'pips') {
+    return (
+      <div className="strands-summary-preview">
+        <div className="strands-summary-row">
+          <span>Difficulty</span>
+          <strong style={{ textTransform: 'capitalize' }}>{result.variant}</strong>
+        </div>
+        <div className="strands-summary-row">
+          <span>Time</span>
+          <strong>{result.elapsedSeconds ? formatElapsedTime(result.elapsedSeconds) : '--'}</strong>
+        </div>
+        <div className="strands-summary-row">
+          <span>Result</span>
+          <strong>{result.outcome === 'won' ? 'Solved' : 'Incomplete'}</strong>
         </div>
       </div>
     )

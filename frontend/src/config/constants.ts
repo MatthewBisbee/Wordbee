@@ -24,6 +24,9 @@ export const SETTINGS_STORAGE_KEY = 'wordbee.settings.v1'
 export const ACCESS_STORAGE_KEY = 'wordbee.access.v1'
 export const LEGACY_AVATAR_STORAGE_KEY = 'wordbee.avatars.v1'
 export const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
+// Dates on which the player used the Wordle repeated-letter hint. Persists the
+// "hint used" button state across reloads, independent of the daily result.
+export const HINT_USAGE_STORAGE_KEY = 'wordbee.wordle-hint-usage.v1'
 // Session-scoped so a cold app launch defaults to the daily Wordle, while an
 // in-session reload (e.g. an iOS PWA refocus) restores the active game/date.
 export const LAST_GAME_STORAGE_KEY = 'wordbee.last-game.v1'
@@ -38,6 +41,7 @@ export const ADDITIONAL_GAME_FIRST_DATES: Record<AdditionalGameKey, string> = {
   letterboxed: '2019-02-01',
   spellingbee: '2018-05-09',
   tiles: '2023-04-24',
+  pips: '2025-08-18',
   crossword: '1942-02-15',
   mini: '2014-08-21',
   midi: '2026-02-25',
@@ -50,6 +54,7 @@ export const ADDITIONAL_GAME_LABELS: Record<AdditionalGameKey, string> = {
   letterboxed: 'Letter Boxed',
   spellingbee: 'Spelling Bee',
   tiles: 'Tiles',
+  pips: 'Pips',
   crossword: 'The Crossword',
   mini: 'The Mini',
   midi: 'The Midi',

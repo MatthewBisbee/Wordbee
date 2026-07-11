@@ -1,1 +1,26 @@
-# Future systemd service file will live here.
+# Copy to /etc/systemd/system/wordbee.service.
+# Adjust User, Group, and /home/chungy/apps/wordbee if you deploy elsewhere.
+
+[Unit]
+Description=Wordbee Flask API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=chungy
+Group=www-data
+WorkingDirectory=/home/chungy/apps/wordbee
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=WORDBEE_BIND=127.0.0.1:5001
+ExecStart=/home/chungy/apps/wordbee/scripts/run-gunicorn.sh
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/home/chungy/apps/wordbee/data /home/chungy/apps/wordbee/frontend/dist
+
+[Install]
+WantedBy=multi-user.target

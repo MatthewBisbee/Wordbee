@@ -16,7 +16,7 @@
 - **The Crossword**
 - **The Midi**
 - **The Mini**
-- **Pips** *(Soon)*
+- **Pips**
 
 </div>
 
@@ -51,6 +51,7 @@ Wordbee hosts multiple daily and archive puzzles for a private community of frie
 | **Letter Boxed** | Daily / Past-Date | Faithful square-box board, tap or keyboard letter entry, live word-chaining and side-constraint rules, all-letters solve detection, words-vs-NYT solve insight, and a reveal-solution option |
 | **Spelling Bee** | Daily / Past-Date | Faithful honeycomb hive, tap or keyboard entry, letter shuffle, live NYT scoring, the Beginner→Genius rank ladder (+ Queen Bee), pangram detection, and an ever-growing found-words list that merges across devices |
 | **Tiles** | Daily / Past-Date / Endless Zen | Seeded deterministic solvable board, custom designer art reskinning palettes (including Brighton, Soho, Utrecht, etc.), custom selection/BG/font styling, and live combo tracking |
+| **Pips** | Daily / Past-Date (Easy/Medium/Hard) | Faithful irregular colour-coded region board, tap-to-place dominoes with Rotate/Undo/Clear, live constraint feedback (sum / less / greater / equal / unequal), a running timer, and server-side solution validation. Full gapless history reaches the first Pips (2025-08-18) |
 | **The Crossword** | Daily / Past-Date | Full 15×15 (Sunday 21×21) grid, tap/keyboard entry with across↔down toggle and clue-bar navigation, Check & Reveal (square/word/puzzle), an autocheck toggle, a running timer, and server-side answer validation. History reaches the first NYT crossword (1942); requested gap dates snap to the nearest published puzzle |
 | **The Midi** | Daily / Past-Date | NYT's 9×9–11×11 midi — the same grid UI as The Crossword. History reaches the first Midi (2026) |
 | **The Mini** | Daily / Past-Date | NYT's free 5×5 mini — the same grid UI as The Crossword (across↔down toggle, clue bar, Check & Reveal, autocheck, timer, server-side validation). History reaches the first Mini (2014) |
@@ -87,6 +88,7 @@ All databases are stored in the `data/` directory:
 | `letterboxed.sqlite` | Letter Boxed Cache | Letter sets, par, and local validation dictionary |
 | `spellingbee.sqlite` | Spelling Bee Cache | Honeycomb letter sets, pangrams, and acceptable words |
 | `tiles.sqlite` | Tiles Cache | Captured reskinnable SVG symbols, theme colors, and attribution |
+| `pips.sqlite` | Pips Cache | Per-difficulty domino bags, constraint regions, and solutions mapped by date |
 | `crossword.sqlite` | Crossword Cache | Grids, clue coordinates, title, author, editor, and solutions |
 | `midi.sqlite` | Midi Cache | 9x9–11x11 Midi grids, clue coordinates, author, editor, and solutions |
 | `mini.sqlite` | Mini Cache | 5x5 Mini grids, clue coordinates, author, editor, and solutions |
@@ -148,6 +150,14 @@ To achieve complete source independence, Wordbee includes CLI backfillers in the
 </details>
 
 <details>
+<summary><b>Pips (Public Dated Endpoint — No Cookie)</b></summary>
+
+- **CLI Tool**: `python3 scripts/pips_backfill.py` (diagnose a single date with `python3 scripts/pips_probe.py <date>`)
+- **Mechanism**: Pips is the simplest source of all — NYT exposes a **public, dated, cookie-free** JSON endpoint (`svc/pips/v1/<date>.json`) that returns all three difficulties (easy/medium/hard) at once, each with its board regions, domino bag, and constructor solution. History is dense and gapless from the first Pips (2025-08-18), so the backfiller simply walks every calendar day and downloads each once (~330 days).
+- **Server-Side Validation**: The solution never leaves the server. The public payload carries only the board/regions/dominoes; a completed board is validated in the backend by checking the placements tile the exact board with the exact domino bag and satisfy every region constraint (live region feedback while playing is computed client-side from the constraint definitions alone).
+</details>
+
+<details>
 <summary><b>Tiles Palette Art Capture (SVG Scraping)</b></summary>
 
 - **CLI Tool**: `python3 scripts/tiles_backfill.py`
@@ -190,7 +200,7 @@ flowchart TD
 .
 ├── backend/        # Flask API, SQLite database access, game modules, stats, and auth
 ├── data/           # Local SQLite database files (ignored by Git)
-├── docs/           # Database schema planning, API reference, and auth planning notes
+├── docs/           # Architecture, deployment, database, and algorithm notes
 ├── frontend/       # Vite + React client source code and features (Wordle, Connections, etc.)
 ├── infra/          # System configuration templates (nginx, systemd, cloudflared)
 ├── tests/          # Test execution notes and smoke-test config
@@ -201,8 +211,9 @@ flowchart TD
 <details>
 <summary>📂 Codebase Details</summary>
 
-- **Frontend Structure**: App state and routing are orchestrated in `frontend/src/App.tsx`. Game views are separated in `features/wordle/`, `features/sudoku/`, `features/connections/`, `features/strands/`, `features/letterboxed/`, `features/spellingbee/`, `features/tiles/`, and `features/crossword/`. Common layouts and settings are stored in `features/avatar/`, `features/access/`, and `features/stats/`.
-- **Backend Structure**: Shared API endpoints live in `backend/app/routes.py`. Game logic and puzzle services are modularized under `backend/app/games/` — a `registry.py` wires each game (`connections.py`, `strands.py`, `sudoku.py`, `letterboxed.py`, `spellingbee.py`, `tiles.py`, `crossword.py`, `mini.py`, `midi.py`) into the shared daily/archive/stats plumbing. Letter Boxed, Spelling Bee, Tiles, The Crossword, The Mini, and The Midi keep their raw puzzle data in dedicated databases via `letterboxed_db.py` / `spellingbee_db.py` / `tiles_db.py` / `crossword_db.py` / `mini_db.py` / `midi_db.py`. The Crossword sources today and past days from NYT's dated, subscriber-only crossword endpoints (a listing that maps each date to a puzzle id, then the puzzle's grid + clues), authenticated with the operator's `NYT_COOKIE`. The Mini and Midi (`mini.py`/`midi.py`, `mini_db.py`/`midi_db.py`, sharing grid helpers in `grid_common.py`) reuse that same grid shape and the Crossword's UI, but their **daily refresh needs no cookie**: the Mini is free, so today comes from NYT's public `v2/puzzle/mini.json` (answers included); the Midi is subscriber-only, so its geometry is reconstructed (`midi_reconstruct.py`) from a third-party daily clue list (word.tips) plus the free `v2/puzzle/midi.json` dimensions — only a *uniquely* reconstructable grid is stored, so a wrong grid is never confirmed. The `NYT_COOKIE` is used only to backfill their history (and to backstop the rare day the Midi can't be uniquely reconstructed).
+- **Frontend Structure**: App state and routing are orchestrated in `frontend/src/App.tsx`. Game views are separated in `features/wordle/`, `features/sudoku/`, `features/connections/`, `features/strands/`, `features/letterboxed/`, `features/spellingbee/`, `features/tiles/`, `features/pips/`, and `features/crossword/`. Common layouts and settings are stored in `features/avatar/`, `features/access/`, and `features/stats/`.
+- **Backend Structure**: Shared API endpoints live in `backend/app/routes.py`. Game logic and puzzle services are modularized under `backend/app/games/` — a `registry.py` wires each game (`connections.py`, `strands.py`, `sudoku.py`, `letterboxed.py`, `spellingbee.py`, `tiles.py`, `pips.py`, `crossword.py`, `mini.py`, `midi.py`) into the shared daily/archive/stats plumbing. Letter Boxed, Spelling Bee, Tiles, Pips, The Crossword, The Mini, and The Midi keep their raw puzzle data in dedicated databases via `letterboxed_db.py` / `spellingbee_db.py` / `tiles_db.py` / `pips_db.py` / `crossword_db.py` / `mini_db.py` / `midi_db.py`. The Crossword sources today and past days from NYT's dated, subscriber-only crossword endpoints (a listing that maps each date to a puzzle id, then the puzzle's grid + clues), authenticated with the operator's `NYT_COOKIE`. The Mini and Midi (`mini.py`/`midi.py`, `mini_db.py`/`midi_db.py`, sharing grid helpers in `grid_common.py`) reuse that same grid shape and the Crossword's UI, but their **daily refresh needs no cookie**: the Mini is free, so today comes from NYT's public `v2/puzzle/mini.json` (answers included); the Midi is subscriber-only, so its geometry is reconstructed (`midi_reconstruct.py`) from a third-party daily clue list (word.tips) plus the free `v2/puzzle/midi.json` dimensions — only a *uniquely* reconstructable grid is stored, so a wrong grid is never confirmed. The `NYT_COOKIE` is used only to backfill their history (and to backstop the rare day the Midi can't be uniquely reconstructed).
+- **Deep Implementation Notes**: See `docs/algorithm-notes.md` for the Midi reconstruction algorithm, Wordle skill/luck formulas, Pips validation rules, and production data preservation rules.
 </details>
 
 ---

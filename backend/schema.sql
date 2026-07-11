@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS friends_family_daily_results (
   guesses_json TEXT NOT NULL,
   board_json TEXT NOT NULL,
   play_type TEXT NOT NULL DEFAULT 'daily',
+  used_hint INTEGER NOT NULL DEFAULT 0,
   completed_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES friends_family_users (id),
   UNIQUE (user_id, puzzle_date)

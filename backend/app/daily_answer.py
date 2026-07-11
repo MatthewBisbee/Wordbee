@@ -87,6 +87,15 @@ def get_daily_answer(puzzle_date: date, force_refresh: bool = False) -> dict[str
                 source_results=source_results,
             )
 
+        try:
+            from .notifications import publish_admin_alert
+            errors = [src.get("error") for src in source_results if src.get("error")]
+            publish_admin_alert(
+                message=f"Wordbee Fetch Error: Failed to resolve Wordle answer for {puzzle_date.isoformat()}.\nSources: {len(source_results)}\nErrors: {errors}"
+            )
+        except Exception:
+            pass
+
         raise RuntimeError("Unable to load the Wordle answer for this date")
 
     return save_answer(

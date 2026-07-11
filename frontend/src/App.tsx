@@ -45,7 +45,9 @@ import { StatsGameSwitcher } from './features/stats/StatsGameSwitcher'
 import { StrandsGame } from './features/strands/StrandsGame'
 import { SudokuGame } from './features/sudoku/SudokuGame'
 import { TilesGame } from './features/tiles/TilesGame'
+import { PipsGame } from './features/pips/PipsGame'
 import { CrosswordGame } from './features/crossword/CrosswordGame'
+import { HintButton } from './features/wordle/HintButton'
 import { Keyboard } from './features/wordle/Keyboard'
 import {
   createBoard,
@@ -70,9 +72,11 @@ import {
 import { createGameId } from './lib/ids'
 import {
   getClientSessionId,
+  hasUsedHintForDate,
   loadAccessState,
   loadLastGameState,
   loadSettings,
+  markHintUsedForDate,
   saveLastGameState,
 } from './lib/storage'
 import type {
@@ -101,6 +105,16 @@ import type {
 import './styles/index.css'
 
 const initialLastGame = loadLastGameState()
+const ANNOUNCEMENT_DISMISSAL_STORAGE_PREFIX = 'wordbee.announcement.dismissed'
+
+type OperatorAnnouncement = {
+  id: string
+  date: string
+  message: string
+  signature: string
+  createdAt: string
+  expiresAt: string
+}
 
 function App() {
   const [activeGame, setActiveGame] = useState<WordbeeGameKey>(
@@ -146,7 +160,13 @@ function App() {
   const [additionalPastDate, setAdditionalPastDate] = useState(
     () => initialLastGame?.additionalGameDate || getTodayDate(),
   )
+  const [disabledGames, setDisabledGames] = useState<string[]>([])
+  const [operatorAnnouncement, setOperatorAnnouncement] = useState<OperatorAnnouncement | null>(
+    null,
+  )
   const [tilesMode, setTilesMode] = useState<'daily' | 'zen'>('daily')
+  const [usedHint, setUsedHint] = useState(false)
+  const usedHintRef = useRef(false)
   const gameIdRef = useRef('')
   const clientSessionIdRef = useRef('')
   const menuAreaRef = useRef<HTMLDivElement | null>(null)
@@ -156,6 +176,7 @@ function App() {
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
   const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
   const isAccessPromptOpen = accessState === null
+  const isOperatorAnnouncementOpen = operatorAnnouncement !== null
   if (!clientSessionIdRef.current) {
     clientSessionIdRef.current = getClientSessionId()
   }
@@ -174,6 +195,10 @@ function App() {
     : activeGame === 'wordle'
       ? puzzleHeaderLabel
       : additionalGameHeaderLabel
+  // Only daily/past plays are dated real puzzles whose hint usage we persist and
+  // log; random plays keep the state in memory for the current game only.
+  const hintPersistDate =
+    puzzle && (puzzle.mode === 'daily' || puzzle.mode === 'past') ? puzzle.date : ''
   const isStandaloneApp = getIsStandaloneApp()
   const isSolvedUntrackedPuzzle = Boolean(
     completedResult && puzzle?.mode !== 'daily' && completedResult.mode === puzzle?.mode,
@@ -758,6 +783,7 @@ function App() {
             mode: puzzle.mode,
             outcome,
             puzzleId: puzzle.puzzleId,
+            usedHint: usedHintRef.current,
           }),
         }))
 
@@ -808,6 +834,41 @@ function App() {
     },
     [submitResult],
   )
+
+  // Ask the server for the answer's anonymized repeated-letter structure and
+  // mark the hint as used for this puzzle (persisted for daily/past plays).
+  const requestHint = useCallback(async (): Promise<number[] | null> => {
+    if (!puzzle) return null
+
+    try {
+      const response = await requestJson<{ repeats?: number[]; error?: string }>('/api/hint', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: puzzle.date,
+          mode: puzzle.mode,
+          puzzleId: puzzle.puzzleId,
+        }),
+      })
+
+      if (!Array.isArray(response.repeats)) {
+        return null
+      }
+
+      usedHintRef.current = true
+      setUsedHint(true)
+      if (hintPersistDate) {
+        markHintUsedForDate(hintPersistDate)
+      }
+
+      return response.repeats.filter((count) => Number.isInteger(count) && count >= 2)
+    } catch (error) {
+      console.warn('Could not load hint', error)
+      return null
+    }
+  }, [hintPersistDate, puzzle])
 
   const revealGuess = useCallback(async () => {
     if (!puzzle) {
@@ -1056,11 +1117,30 @@ function App() {
       console.warn('Could not copy result', error)
       showToast('Copy failed')
     }
-  }, [completedResult, showToast])
+	  }, [completedResult, showToast])
+
+  const dismissOperatorAnnouncement = useCallback(() => {
+    if (!operatorAnnouncement) return
+
+    try {
+      window.localStorage.setItem(getAnnouncementDismissalKey(operatorAnnouncement), '1')
+    } catch (error) {
+      console.warn('Could not save announcement dismissal', error)
+    }
+
+    setOperatorAnnouncement(null)
+  }, [operatorAnnouncement])
 
   useEffect(() => {
     void loadDailyPuzzle()
   }, [loadDailyPuzzle])
+
+  // Restore the "hint used" button state for the active puzzle.
+  useEffect(() => {
+    const alreadyUsed = hintPersistDate ? hasUsedHintForDate(hintPersistDate) : false
+    usedHintRef.current = alreadyUsed
+    setUsedHint(alreadyUsed)
+  }, [hintPersistDate])
 
   useEffect(() => {
 	    if (!puzzle || puzzle.mode === 'random' || !friendsFamilyToken) {
@@ -1190,13 +1270,14 @@ function App() {
 
       if (
         isSettingsOpen ||
-        isAccessPromptOpen ||
-        isFamilyStatsOpen ||
-        isResultsOpen ||
-        isMenuOpen
-      ) {
-        return
-      }
+	        isAccessPromptOpen ||
+	        isFamilyStatsOpen ||
+	        isResultsOpen ||
+	        isMenuOpen ||
+        isOperatorAnnouncementOpen
+	      ) {
+	        return
+	      }
       handleKey(event.key)
     }
 
@@ -1211,6 +1292,7 @@ function App() {
     isAccessPromptOpen,
     isFamilyStatsOpen,
     isMenuOpen,
+    isOperatorAnnouncementOpen,
     isResultsOpen,
     isSettingsOpen,
   ])
@@ -1370,6 +1452,41 @@ function App() {
 	  }, [isAvatarBuilderOpen])
 
   useEffect(() => {
+    fetch('/maintenance.json')
+      .then((res) => (res.ok ? res.json() : { disabledGames: [] }))
+      .then((data) => {
+        if (Array.isArray(data.disabledGames)) {
+          setDisabledGames(data.disabledGames)
+        }
+      })
+      .catch(() => {
+        // Silently ignore if maintenance.json is missing or fails to load
+      })
+  }, [])
+
+  useEffect(() => {
+    fetch('/announcement.json', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const announcement = normalizeOperatorAnnouncement(data)
+        if (!announcement) return
+
+        try {
+          if (window.localStorage.getItem(getAnnouncementDismissalKey(announcement)) === '1') {
+            return
+          }
+        } catch (error) {
+          console.warn('Could not read announcement dismissal', error)
+        }
+
+        setOperatorAnnouncement(announcement)
+      })
+      .catch(() => {
+        // Silently ignore if announcement.json is missing or fails to load
+      })
+  }, [])
+
+  useEffect(() => {
     if (!isFamilyStatsOpen) return
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1438,6 +1555,7 @@ function App() {
                 <WordbeeMenu
                   additionalMaxPastDate={todayDate}
                   additionalPastDate={additionalPastDate}
+                  disabledGames={disabledGames}
                   maxPastDate={getDefaultPastDate()}
                   minPastDate={FIRST_OFFICIAL_PUZZLE_DATE}
                   onAdditionalDaily={playAdditionalDaily}
@@ -1477,7 +1595,7 @@ function App() {
 
         {isFamilyStatsOpen ? (
           <div className="wordbee-header-stats-switcher">
-            <StatsGameSwitcher activeGame={activeGame} onSelect={selectStatsGame} />
+            <StatsGameSwitcher activeGame={activeGame} disabledGames={disabledGames} onSelect={selectStatsGame} />
           </div>
         ) : (
           <h1
@@ -1494,6 +1612,9 @@ function App() {
         )}
 
         <div className="wordbee-header__side wordbee-header__side--right">
+          {activeGame === 'wordle' && !isFamilyStatsOpen && puzzle && status === 'playing' && (
+            <HintButton onReveal={requestHint} used={usedHint} />
+          )}
           {activeGame === 'wordle' && !isFamilyStatsOpen && completedResult && (
             <button
               className="wordbee-results-reopen-button"
@@ -1605,7 +1726,11 @@ function App() {
 
           <Keyboard
             keys={keyboardRows}
-            onKey={(key) => handleKey(key, 'onscreen')}
+            onKey={(key) => {
+              if (!isOperatorAnnouncementOpen) {
+                handleKey(key, 'onscreen')
+              }
+            }}
             states={keyboardState}
           />
         </main>
@@ -1641,8 +1766,9 @@ function App() {
             isAccessPromptOpen ||
             isFamilyStatsOpen ||
             isMenuOpen ||
-            isOtherGameResultsOpen ||
-            isSettingsOpen
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
           }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
@@ -1660,8 +1786,9 @@ function App() {
             isAccessPromptOpen ||
             isFamilyStatsOpen ||
             isMenuOpen ||
-            isOtherGameResultsOpen ||
-            isSettingsOpen
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
           }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
@@ -1679,14 +1806,35 @@ function App() {
             isAccessPromptOpen ||
             isFamilyStatsOpen ||
             isMenuOpen ||
-            isOtherGameResultsOpen ||
-            isSettingsOpen
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
           }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
           showToast={showToast}
           isZen={tilesMode === 'zen'}
           onToggleZen={(zen) => setTilesMode(zen ? 'zen' : 'daily')}
+          onGameComplete={handleOtherGameComplete}
+          onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
+          onGameReset={handleAdditionalGameReset}
+          onResolvedDate={handleAdditionalResolvedDate}
+        />
+      ) : activeGame === 'pips' ? (
+        <PipsGame
+          accessState={accessState}
+          clientSessionId={clientSessionId}
+          isInputBlocked={
+            isAccessPromptOpen ||
+            isFamilyStatsOpen ||
+            isMenuOpen ||
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
+          }
+          requestedDate={additionalGameDate}
+          requestWithSessionRecovery={requestWithSessionRecovery}
+          showToast={showToast}
           onGameComplete={handleOtherGameComplete}
           onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
           onGameReset={handleAdditionalGameReset}
@@ -1701,8 +1849,9 @@ function App() {
             isAccessPromptOpen ||
             isFamilyStatsOpen ||
             isMenuOpen ||
-            isOtherGameResultsOpen ||
-            isSettingsOpen
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
           }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
@@ -1720,8 +1869,9 @@ function App() {
             isAccessPromptOpen ||
             isFamilyStatsOpen ||
             isMenuOpen ||
-            isOtherGameResultsOpen ||
-            isSettingsOpen
+	            isOtherGameResultsOpen ||
+	            isSettingsOpen ||
+            isOperatorAnnouncementOpen
           }
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
@@ -1801,6 +1951,79 @@ function App() {
         />
       )}
 
+      {operatorAnnouncement && (
+        <OperatorAnnouncementDialog
+          announcement={operatorAnnouncement}
+          onDismiss={dismissOperatorAnnouncement}
+        />
+      )}
+
+    </div>
+  )
+}
+
+function normalizeOperatorAnnouncement(value: unknown): OperatorAnnouncement | null {
+  if (!value || typeof value !== 'object') return null
+
+  const candidate = value as Record<string, unknown>
+  if (candidate.active !== true) return null
+
+  const id = getNonEmptyString(candidate.id)
+  const date = getNonEmptyString(candidate.date)
+  const message = getNonEmptyString(candidate.message)
+  const signature = getNonEmptyString(candidate.signature)
+  const createdAt = getNonEmptyString(candidate.createdAt)
+  const expiresAt = getNonEmptyString(candidate.expiresAt)
+
+  if (!id || !date || !message || !signature || !createdAt || !expiresAt) return null
+  if (date !== getTodayDate()) return null
+
+  const now = Date.now()
+  const createdTime = Date.parse(createdAt)
+  const expiresTime = Date.parse(expiresAt)
+  if (!Number.isFinite(createdTime) || !Number.isFinite(expiresTime)) return null
+  if (now < createdTime || now >= expiresTime) return null
+
+  return {
+    id,
+    date,
+    message,
+    signature,
+    createdAt,
+    expiresAt,
+  }
+}
+
+function getNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : ''
+}
+
+function getAnnouncementDismissalKey(announcement: OperatorAnnouncement) {
+  return `${ANNOUNCEMENT_DISMISSAL_STORAGE_PREFIX}.${announcement.date}.${announcement.id}`
+}
+
+function OperatorAnnouncementDialog({
+  announcement,
+  onDismiss,
+}: {
+  announcement: OperatorAnnouncement
+  onDismiss: () => void
+}) {
+  return (
+    <div className="operator-announcement-backdrop">
+      <section
+        aria-labelledby="operator-announcement-title"
+        aria-modal="true"
+        className="operator-announcement"
+        role="dialog"
+      >
+        <h2 id="operator-announcement-title">Message</h2>
+        <p className="operator-announcement__message">{announcement.message}</p>
+        <p className="operator-announcement__signature">{announcement.signature}</p>
+        <button className="operator-announcement__button" onClick={onDismiss} type="button">
+          OK
+        </button>
+      </section>
     </div>
   )
 }

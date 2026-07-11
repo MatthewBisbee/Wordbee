@@ -403,7 +403,7 @@ def calculate_multigame_stats(results: list[dict[str, Any]], game_key: str = Non
             "played": played,
         }
 
-    if game_key in {"sudoku", "crossword", "mini", "midi"}:
+    if game_key in {"sudoku", "crossword", "mini", "midi", "pips"}:
         elapsed_values = [
             int(result["elapsedSeconds"])
             for result in unlocked_results

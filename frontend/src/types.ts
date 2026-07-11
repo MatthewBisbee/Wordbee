@@ -12,6 +12,7 @@ export type WordbeeGameKey =
   | 'letterboxed'
   | 'spellingbee'
   | 'tiles'
+  | 'pips'
   | 'crossword'
   | 'mini'
   | 'midi'
@@ -427,6 +428,47 @@ export type TilesTimelineDay = {
   date: string
   averageLongestCombo: number
   plays: number
+}
+
+export type PipsDifficulty = 'easy' | 'medium' | 'hard'
+
+export type PipsRegionType = 'sum' | 'less' | 'greater' | 'equals' | 'unequal' | 'empty'
+
+// [row, col] board coordinate.
+export type PipsIndex = [number, number]
+
+export type PipsRegion = {
+  indices: PipsIndex[]
+  type: PipsRegionType
+  target?: number
+}
+
+// A domino carries two pip values (0-6), one per half.
+export type PipsDomino = [number, number]
+
+export type PipsPuzzle = DateClampInfo & {
+  gameKey: 'pips'
+  date: string
+  difficulty: PipsDifficulty
+  displayDate: string
+  status: string
+  editor: string
+  constructors: string
+  rows: number
+  cols: number
+  dominoes: PipsDomino[]
+  regions: PipsRegion[]
+}
+
+// One placement per domino (in the puzzle's domino order): the two board cells
+// the domino covers, first cell taking pip a, second taking pip b.
+export type PipsPlacement = [PipsIndex, PipsIndex]
+
+export type PipsSolution = {
+  date: string
+  difficulty: PipsDifficulty
+  dominoes: PipsDomino[]
+  solution: PipsPlacement[]
 }
 
 export type MultigameStatsSummary = {

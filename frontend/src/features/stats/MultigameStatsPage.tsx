@@ -24,6 +24,7 @@ const gameLabels: Record<AdditionalGameKey, string> = {
   letterboxed: 'Letter Boxed',
   spellingbee: 'Spelling Bee',
   tiles: 'Tiles',
+  pips: 'Pips',
   crossword: 'The Crossword',
   mini: 'The Mini',
   midi: 'The Midi',
@@ -59,7 +60,7 @@ export function MultigameStatsPage({
   const defaultSortKey = useMemo<MultigameSortKey>(() => {
     if (activeGame === 'letterboxed') return 'averageWords'
     if (activeGame === 'spellingbee') return 'geniusRate'
-    if (activeGame === 'sudoku' || isGridCrossword(activeGame)) return 'averageSeconds'
+    if (activeGame === 'sudoku' || activeGame === 'pips' || isGridCrossword(activeGame)) return 'averageSeconds'
     if (activeGame === 'tiles') return 'averageLongestCombo'
     return 'solveRate'
   }, [activeGame])
@@ -73,7 +74,7 @@ export function MultigameStatsPage({
   // Per-game metric shape. Letter Boxed has no way to fail a day, so it tracks
   // words-used instead of a solve rate; Sudoku is the only timed game.
   const showsWinRate = activeGame === 'connections' || activeGame === 'sudoku'
-  const showsTime = activeGame === 'sudoku' || isGridCrossword(activeGame)
+  const showsTime = activeGame === 'sudoku' || activeGame === 'pips' || isGridCrossword(activeGame)
   const showsWords = activeGame === 'letterboxed'
   const showsBee = activeGame === 'spellingbee'
   const showsTiles = activeGame === 'tiles'
@@ -475,7 +476,7 @@ function getSortOptions(gameKey: AdditionalGameKey): MultigameSortOption[] {
       },
     ]
   }
-  if (isGridCrossword(gameKey)) {
+  if (isGridCrossword(gameKey) || gameKey === 'pips') {
     return [
       {
         key: 'averageSeconds',
@@ -555,7 +556,7 @@ function formatSecondaryValue(
     if (sortKey === 'played') return s.averageLongestCombo ? `×${s.averageLongestCombo.toFixed(1)} avg combo` : '--'
     return `${s.played} plays`
   }
-  if (gameKey === 'sudoku' || isGridCrossword(gameKey)) {
+  if (gameKey === 'sudoku' || gameKey === 'pips' || isGridCrossword(gameKey)) {
     if (sortKey === 'played') return s.averageSeconds ? `${formatElapsedTime(s.averageSeconds)} avg time` : '--'
     return `${s.played} plays`
   }

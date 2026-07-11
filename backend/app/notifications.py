@@ -48,6 +48,14 @@ def publish_contact_notification(
     )
 
 
+def publish_admin_alert(*, message: str) -> dict[str, Any]:
+    """Automated high-level alert for system/fetcher failures."""
+    return publish_ntfy_message(
+        message=message,
+        topic=get_ntfy_topic("WORDBEE_NTFY_ADMIN_TOPIC", NTFY_DEFAULT_ADMIN_TOPIC),
+    )
+
+
 def publish_ntfy_message(*, message: str, topic: str) -> dict[str, Any]:
     if not env_enabled("WORDBEE_NTFY_ENABLED"):
         return {"sent": False, "reason": "disabled"}

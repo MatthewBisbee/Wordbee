@@ -72,6 +72,29 @@
   --spellingbee-center-text: #121212;
   --spellingbee-accent: #b59f00;
   --spellingbee-rank-line: #d3d6da;
+
+  /* Pips — scraped from the live NYT Pips palette (light theme). */
+  --pips-board-bg: #e3ccc4;
+  --pips-space-bg: #d6bbb1;
+  --pips-domino-bg: #fbf7f2;
+  --pips-domino-dot: #3a3733;
+  --pips-domino-outline: #cbb8ae;
+  --pips-domino-divider: #e7ddd5;
+  --pips-tag-text: #ffffff;
+  --pips-satisfied: #58a052;
+  --pips-violated: #e23c44;
+  --pips-pink: #db137a;
+  --pips-pink-soft: #f93a7a4d;
+  --pips-teal: #008293;
+  --pips-teal-soft: #00a3b84d;
+  --pips-orange: #d15609;
+  --pips-orange-soft: #fd9d094d;
+  --pips-purple: #9251ca;
+  --pips-purple-soft: #8046b14d;
+  --pips-blue: #124076;
+  --pips-blue-soft: #1240764d;
+  --pips-green: #547601;
+  --pips-green-soft: #5476014d;
 }
 
 .wordbee-app--dark {
@@ -138,6 +161,31 @@
   --spellingbee-center-text: #121212;
   --spellingbee-accent: #e0c53c;
   --spellingbee-rank-line: #3a3a3c;
+
+  /* Pips — scraped NYT Pips dark-theme palette. The board/space beige darkens;
+     dominoes stay cream-white with dark pips (as in the real game); the
+     translucent region tints and status colours are theme-invariant. */
+  --pips-board-bg: #b6a097;
+  --pips-space-bg: #a98f85;
+  --pips-domino-bg: #f4efe9;
+  --pips-domino-dot: #33302e;
+  --pips-domino-outline: #d8cec6;
+  --pips-domino-divider: #d8cfc7;
+  --pips-tag-text: #ffffff;
+  --pips-satisfied: #6aaa64;
+  --pips-violated: #ec4d54;
+  --pips-pink: #db137a;
+  --pips-pink-soft: #f93a7a4d;
+  --pips-teal: #008293;
+  --pips-teal-soft: #00a3b84d;
+  --pips-orange: #d15609;
+  --pips-orange-soft: #fd9d094d;
+  --pips-purple: #9251ca;
+  --pips-purple-soft: #8046b14d;
+  --pips-blue: #2a6fb0;
+  --pips-blue-soft: #3a7fc04d;
+  --pips-green: #6a9214;
+  --pips-green-soft: #7fae1a4d;
 }
 
 .wordbee-app--high-contrast {
@@ -360,6 +408,12 @@
   padding: 0 8px;
 }
 
+.wordbee-game-menu-button:disabled {
+  filter: grayscale(1);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .wordbee-menu-game-group {
   display: grid;
   gap: 6px;
@@ -373,7 +427,6 @@
   width: 32px;
   height: 32px;
   display: block;
-  border-radius: 6px;
 }
 
 .wordbee-game-menu-button__chevron {
@@ -468,6 +521,86 @@
 
 .wordbee-icon-button:active .wordbee-inline-icon {
   transform: scale(0.9);
+}
+
+/* Repeated-letter hint button + popover. */
+.wordbee-hint {
+  position: relative;
+  display: inline-flex;
+}
+
+.wordbee-icon-button--hint:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Once the hint has been used today, fill the outlined bulb solid so the change
+   persists visibly on the button. */
+.wordbee-icon-button--hint-used .game-icon path {
+  fill: var(--color-correct);
+}
+
+.wordbee-hint-popover {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 8px);
+  right: 0;
+  width: max-content;
+  max-width: 240px;
+  padding: 12px 14px;
+  border: 1px solid var(--settings-border);
+  border-radius: 10px;
+  background: var(--result-panel-bg);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.wordbee-hint-popover__title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--color-tone-2);
+}
+
+.wordbee-hint-popover__status {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-tone-2);
+}
+
+.wordbee-hint-popover__status--error {
+  color: var(--color-present);
+}
+
+.wordbee-hint-popover__summary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-tone-1);
+}
+
+.wordbee-hint-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wordbee-hint-badge {
+  min-width: 34px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--color-correct);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.2;
 }
 
 .wordbee-game {
@@ -676,6 +809,74 @@
   font-weight: 700;
   line-height: 1;
   pointer-events: none;
+}
+
+.operator-announcement-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 55%);
+}
+
+.operator-announcement {
+  width: min(420px, 100%);
+  max-height: min(680px, calc(100vh - 40px));
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid var(--color-tone-4);
+  border-radius: 8px;
+  background: var(--color-background);
+  color: var(--color-tone-1);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 28%);
+  font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+}
+
+.operator-announcement h2 {
+  margin: 0 0 14px;
+  font-size: 24px;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.operator-announcement__message {
+  margin: 0;
+  color: var(--color-tone-1);
+  font-size: 17px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.operator-announcement__signature {
+  margin: 20px 0 0;
+  color: var(--color-tone-2);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.operator-announcement__signature::before {
+  content: "- ";
+}
+
+.operator-announcement__button {
+  width: 100%;
+  margin-top: 22px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--color-tone-1);
+  color: var(--color-tone-7);
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.operator-announcement__button:hover {
+  opacity: 0.88;
 }
 
 .wordbee-header-stats-switcher {

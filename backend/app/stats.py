@@ -68,6 +68,7 @@ def save_completed_game(
     board: list[list[str]],
     guesses: list[str],
     friends_family_identity: dict[str, str] | None = None,
+    used_hint: bool = False,
 ) -> dict[str, Any]:
     if not game_id:
         raise ValueError("Missing game id")
@@ -106,9 +107,9 @@ def save_completed_game(
             """
             INSERT OR IGNORE INTO friends_family_daily_results (
               id, user_id, puzzle_date, answer, outcome, guesses_used,
-              starter_word, guesses_json, board_json, play_type, completed_at
+              starter_word, guesses_json, board_json, play_type, used_hint, completed_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'daily', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'daily', ?, ?)
             """,
             (
                 result_id,
@@ -120,6 +121,7 @@ def save_completed_game(
                 normalized_guesses[0],
                 json.dumps(normalized_guesses, separators=(",", ":")),
                 json.dumps(normalized_board, separators=(",", ":")),
+                int(bool(used_hint)),
                 now,
             ),
         )
@@ -159,6 +161,7 @@ def record_retro_family_result(
     guesses_used: int,
     board: list[list[str]],
     guesses: list[str],
+    used_hint: bool = False,
 ) -> bool:
     """Record a retroactive (archive) daily completion for the calendar only.
 
@@ -183,9 +186,9 @@ def record_retro_family_result(
             """
             INSERT OR IGNORE INTO friends_family_daily_results (
               id, user_id, puzzle_date, answer, outcome, guesses_used,
-              starter_word, guesses_json, board_json, play_type, completed_at
+              starter_word, guesses_json, board_json, play_type, used_hint, completed_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'retro', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'retro', ?, ?)
             """,
             (
                 f"{user_id}:{puzzle_date}",
@@ -197,6 +200,7 @@ def record_retro_family_result(
                 normalized_guesses[0],
                 json.dumps(normalized_guesses, separators=(",", ":")),
                 json.dumps(normalized_board, separators=(",", ":")),
+                int(bool(used_hint)),
                 now,
             ),
         )
@@ -553,6 +557,7 @@ def get_family_calendar(
                 "answer": row["answer"],
                 "guesses": json.loads(row["guesses_json"]),
                 "board": json.loads(row["board_json"]),
+                "usedHint": bool(row["used_hint"]) if "used_hint" in row.keys() else False,
             }
         entries.append(entry)
 
@@ -736,6 +741,7 @@ def serialize_result(row: Any, *, include_analysis: bool = False) -> dict[str, A
         "guesses": guesses,
         "board": board,
         "playType": row["play_type"] if "play_type" in row.keys() else "daily",
+        "usedHint": bool(row["used_hint"]) if "used_hint" in row.keys() else False,
         "completedAt": row["completed_at"],
     }
     if "avatar_json" in row.keys():

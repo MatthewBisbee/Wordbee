@@ -1,6 +1,7 @@
 import {
   ACCESS_STORAGE_KEY,
   CLIENT_SESSION_STORAGE_KEY,
+  HINT_USAGE_STORAGE_KEY,
   LAST_GAME_STORAGE_KEY,
   LEGACY_AVATAR_STORAGE_KEY,
   SETTINGS_STORAGE_KEY,
@@ -130,5 +131,42 @@ export function getClientSessionId() {
     return sessionId
   } catch {
     return createRandomId()
+  }
+}
+
+function loadHintUsedDates(): Record<string, true> {
+  try {
+    const raw = window.localStorage.getItem(HINT_USAGE_STORAGE_KEY)
+    if (!raw) return {}
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    const dates: Record<string, true> = {}
+    for (const [date, used] of Object.entries(parsed)) {
+      if (used && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        dates[date] = true
+      }
+    }
+    return dates
+  } catch {
+    return {}
+  }
+}
+
+export function hasUsedHintForDate(date: string): boolean {
+  if (!date) return false
+  return loadHintUsedDates()[date] === true
+}
+
+export function markHintUsedForDate(date: string) {
+  if (!date) return
+
+  try {
+    const dates = loadHintUsedDates()
+    if (dates[date]) return
+
+    dates[date] = true
+    window.localStorage.setItem(HINT_USAGE_STORAGE_KEY, JSON.stringify(dates))
+  } catch {
+    // Hint-usage persistence is best-effort.
   }
 }

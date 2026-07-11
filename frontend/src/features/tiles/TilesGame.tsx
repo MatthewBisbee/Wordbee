@@ -434,7 +434,7 @@ export function TilesGame({
     setIsZen(true)
     setAlreadyCompleted(false)
     savedResultRef.current = false
-    showToast('Endless Random — this one is just for fun', 2200)
+    showToast('Endless Random', 2200)
     if (onToggleZen) onToggleZen(true)
   }, [puzzle, activatePalette, showToast, onToggleZen])
 

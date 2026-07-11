@@ -8,6 +8,7 @@ const GAMES: { key: WordbeeGameKey; label: string }[] = [
   { key: 'letterboxed', label: 'Letter Boxed' },
   { key: 'spellingbee', label: 'Spelling Bee' },
   { key: 'tiles', label: 'Tiles' },
+  { key: 'pips', label: 'Pips' },
   { key: 'crossword', label: 'The Crossword' },
   { key: 'midi', label: 'The Midi' },
   { key: 'mini', label: 'The Mini' },
@@ -15,9 +16,11 @@ const GAMES: { key: WordbeeGameKey; label: string }[] = [
 
 export function StatsGameSwitcher({
   activeGame,
+  disabledGames = [],
   onSelect,
 }: {
   activeGame: WordbeeGameKey
+  disabledGames?: string[]
   onSelect: (gameKey: WordbeeGameKey) => void
 }) {
   return (
@@ -27,7 +30,7 @@ export function StatsGameSwitcher({
         onChange={(event) => onSelect(event.target.value as WordbeeGameKey)}
         value={activeGame}
       >
-        {GAMES.map((game) => (
+        {GAMES.filter((game) => !disabledGames.includes(game.key)).map((game) => (
           <option key={game.key} value={game.key}>
             {game.label}
           </option>

@@ -57,6 +57,10 @@ def connect_game(game_key: str) -> sqlite3.Connection:
         from .games.midi_db import connect_midi
         return connect_midi()
 
+    if game_key == "pips":
+        from .games.pips_db import connect_pips
+        return connect_pips()
+
     db_filename = f"{game_key}.sqlite"
     database_path = get_database_path().parent / db_filename
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,6 +156,20 @@ def migrate_db(connection: sqlite3.Connection) -> None:
     }
     if "avatar_json" not in user_columns:
         connection.execute("ALTER TABLE friends_family_users ADD COLUMN avatar_json TEXT")
+
+    # Record whether the player used the repeated-letter hint on a given day, so
+    # the calendar can show it. Only the daily/retro Wordle result carries it.
+    daily_result_columns = {
+        row["name"]
+        for row in connection.execute(
+            "PRAGMA table_info(friends_family_daily_results)"
+        ).fetchall()
+    }
+    if daily_result_columns and "used_hint" not in daily_result_columns:
+        connection.execute(
+            "ALTER TABLE friends_family_daily_results "
+            "ADD COLUMN used_hint INTEGER NOT NULL DEFAULT 0"
+        )
 
     # Distinguish live daily completions from retroactive (archive) plays so stats
     # can count only daily plays while the calendar still records everything.

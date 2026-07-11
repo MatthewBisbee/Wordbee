@@ -48,6 +48,11 @@ from .games.mini import (
     public_mini_solution,
     validate_mini_solution,
 )
+from .games.pips import (
+    get_pips_puzzle,
+    public_pips_solution,
+    validate_pips_solution,
+)
 from .games.registry import (
     GAME_KEYS,
     get_game_first_date,
@@ -76,7 +81,13 @@ from .games.strands import (
 )
 from .games.sudoku import get_sudoku_hint, validate_sudoku_grid
 from .games.tiles import generate_board, get_tiles_palette, resolve_default_palette, simulate_moves
-from .games.wordle import is_valid_guess, load_valid_guesses, normalize_guess, score_guess
+from .games.wordle import (
+    get_answer_repeats,
+    is_valid_guess,
+    load_valid_guesses,
+    normalize_guess,
+    score_guess,
+)
 from .notifications import publish_completion_notification, publish_contact_notification
 from .stats import (
     AttemptConflictError,
@@ -396,6 +407,21 @@ def multigame_crossword_reveal():
         puzzle_date = resolve_playable_multigame_date("crossword", payload.get("date"))
         puzzle = get_crossword_puzzle(puzzle_date)
         return jsonify(public_crossword_solution(puzzle))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@api.post("/games/pips/reveal")
+def multigame_pips_reveal():
+    """The constructor's domino placements — for Reveal and completed-board reload."""
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        puzzle_date = resolve_playable_multigame_date("pips", payload.get("date"))
+        puzzle = get_pips_puzzle(puzzle_date, str(payload.get("difficulty") or "easy"))
+        return jsonify(public_pips_solution(puzzle))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:
@@ -953,6 +979,26 @@ def guess():
     return jsonify(response)
 
 
+@api.post("/hint")
+def hint():
+    """Repeated-letter hint for the current Wordle answer.
+
+    Returns only the anonymized repeat structure (e.g. [3, 2] for MAMMA) so the
+    player learns how letters repeat without learning which letters they are.
+    Hint usage is logged with the completed result via /results (usedHint).
+    """
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        answer_record = get_answer_record_for_payload(payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return jsonify({"repeats": get_answer_repeats(answer_record["answer"])})
+
+
 @api.post("/results")
 def results():
     payload = request.get_json(silent=True) or {}
@@ -972,6 +1018,8 @@ def results():
         if friends_family_identity is None:
             return jsonify({"error": "Session is active elsewhere"}), 409
 
+    used_hint = bool(payload.get("usedHint"))
+
     try:
         answer_record = get_answer_record_for_payload(payload)
         if puzzle_mode == "daily":
@@ -985,6 +1033,7 @@ def results():
                 board=payload.get("board"),
                 guesses=payload.get("guesses"),
                 friends_family_identity=friends_family_identity,
+                used_hint=used_hint,
             )
         else:
             # Past (archive) plays are recorded for the calendar but never tracked
@@ -998,6 +1047,7 @@ def results():
                     guesses_used=int(payload.get("guessesUsed") or 0),
                     board=payload.get("board"),
                     guesses=payload.get("guesses"),
+                    used_hint=used_hint,
                 )
             saved_result = get_untracked_result(
                 answer=answer_record["answer"],
@@ -1156,6 +1206,7 @@ def storable_multigame_score(game_key: str, raw_score: object) -> dict:
         "crossword": {"entries"},
         "mini": {"entries"},
         "midi": {"entries"},
+        "pips": {"placements"},
     }.get(game_key, set())
     return {key: value for key, value in score.items() if key not in fields_to_drop}
 
@@ -1200,6 +1251,15 @@ def validate_multigame_result_payload(game_key: str, puzzle_date: date, payload:
     if game_key == "midi":
         if outcome == "won" and not validate_midi_solution(puzzle_date, score.get("entries")):
             raise ValueError("Midi is not solved")
+        return
+
+    if game_key == "pips":
+        if outcome == "won" and not validate_pips_solution(
+            puzzle_date,
+            str(payload.get("variant") or "easy"),
+            score.get("placements"),
+        ):
+            raise ValueError("Pips is not solved")
         return
 
     if game_key == "connections":

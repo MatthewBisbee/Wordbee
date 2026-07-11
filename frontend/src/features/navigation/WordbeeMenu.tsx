@@ -4,6 +4,7 @@ import crosswordLogoUrl from '../../assets/TheCrossword_Logo.svg'
 import miniLogoUrl from '../../assets/TheMini_Logo.svg'
 import midiLogoUrl from '../../assets/TheMidi_Logo.svg'
 import letterboxedLogoUrl from '../../assets/LetterBoxed_Logo.svg'
+import pipsLogoUrl from '../../assets/Pips_Logo.svg'
 import spellingbeeLogoUrl from '../../assets/SpellingBee_Logo.svg'
 import strandsLogoUrl from '../../assets/Strands_Logo.svg'
 import sudokuLogoUrl from '../../assets/Sudoku_Logo.svg'
@@ -15,6 +16,7 @@ import type { AdditionalGameKey, WordbeeGameKey } from '../../types'
 export function WordbeeMenu({
   additionalMaxPastDate,
   additionalPastDate,
+  disabledGames = [],
   maxPastDate,
   minPastDate,
   onAdditionalDaily,
@@ -48,6 +50,7 @@ export function WordbeeMenu({
   selectedGame: WordbeeGameKey
   showAdditionalDaily: boolean
   showDaily: boolean
+  disabledGames?: string[]
 }) {
   // Which game's submenu is expanded. Clicking a game expands it (and switches to
   // it); clicking the already-open game collapses it. Uniform for every game.
@@ -75,6 +78,7 @@ export function WordbeeMenu({
           ]
             .filter(Boolean)
             .join(' ')}
+          disabled={disabledGames.includes('wordle')}
           onClick={() => toggleGame('wordle')}
           role="menuitem"
           type="button"
@@ -125,6 +129,7 @@ export function WordbeeMenu({
               ]
                 .filter(Boolean)
                 .join(' ')}
+              disabled={disabledGames.includes(game.key)}
               onClick={() => toggleGame(game.key)}
               role="menuitem"
               type="button"
@@ -182,6 +187,7 @@ const additionalGames: Array<{
   { key: 'letterboxed', label: 'Letter Boxed', logoUrl: letterboxedLogoUrl },
   { key: 'spellingbee', label: 'Spelling Bee', logoUrl: spellingbeeLogoUrl },
   { key: 'tiles', label: 'Tiles', logoUrl: tilesLogoUrl },
+  { key: 'pips', label: 'Pips', logoUrl: pipsLogoUrl },
   { key: 'crossword', label: 'The Crossword', logoUrl: crosswordLogoUrl },
   { key: 'midi', label: 'The Midi', logoUrl: midiLogoUrl },
   { key: 'mini', label: 'The Mini', logoUrl: miniLogoUrl },

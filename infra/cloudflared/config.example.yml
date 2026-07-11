@@ -1,1 +1,10 @@
-# Future cloudflared tunnel example configuration will live here.
+# Suggested location from the Pi reference:
+# /etc/cloudflared-matthewbisbee/config.yml
+
+tunnel: REPLACE_WITH_TUNNEL_ID_OR_NAME
+credentials-file: /home/chungy/.cloudflared-matthewbisbee/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+ingress:
+  - hostname: wordbee.matthewbisbee.com
+    service: http://localhost:80
+  - service: http_status:404

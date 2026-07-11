@@ -32,6 +32,7 @@ from .letterboxed import (
 )
 from .midi import MIDI_FIRST_DATE, get_midi_puzzle, public_midi_puzzle, warm_midi_puzzle
 from .mini import MINI_FIRST_DATE, get_mini_puzzle, public_mini_puzzle, warm_mini_puzzle
+from .pips import PIPS_FIRST_DATE, get_pips_puzzle, public_pips_puzzle, warm_pips_puzzle
 from .spellingbee import (
     get_spellingbee_puzzle,
     public_spellingbee_puzzle,
@@ -75,6 +76,11 @@ def _tiles_public(puzzle_date: date, _params: dict[str, Any], force_refresh: boo
     return public_tiles_puzzle(get_tiles_puzzle(puzzle_date, force_refresh=force_refresh))
 
 
+def _pips_public(puzzle_date: date, params: dict[str, Any], force_refresh: bool) -> dict[str, Any]:
+    difficulty = str(params.get("difficulty") or "easy")
+    return public_pips_puzzle(get_pips_puzzle(puzzle_date, difficulty, force_refresh=force_refresh))
+
+
 def _crossword_public(puzzle_date: date, _params: dict[str, Any], force_refresh: bool) -> dict[str, Any]:
     return public_crossword_puzzle(get_crossword_puzzle(puzzle_date, force_refresh=force_refresh))
 
@@ -98,6 +104,7 @@ GAMES: dict[str, GameSpec] = {
     "letterboxed": GameSpec("letterboxed", date(2019, 2, 1), _letterboxed_public, warm_letterboxed_puzzle),
     "spellingbee": GameSpec("spellingbee", date(2018, 5, 9), _spellingbee_public, warm_spellingbee_puzzle),
     "tiles": GameSpec("tiles", date(2023, 4, 24), _tiles_public, warm_tiles_puzzle),
+    "pips": GameSpec("pips", PIPS_FIRST_DATE, _pips_public, warm_pips_puzzle),
     "crossword": GameSpec("crossword", CROSSWORD_FIRST_DATE, _crossword_public, warm_crossword_puzzle),
     "mini": GameSpec("mini", MINI_FIRST_DATE, _mini_public, warm_mini_puzzle),
     "midi": GameSpec("midi", MIDI_FIRST_DATE, _midi_public, warm_midi_puzzle),

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import {
   clearStoredAdditionalGameValue,
   getAdditionalGameStorageKey,
@@ -74,6 +74,13 @@ type DragState = {
   preview: { cells: [Cell, Cell]; valid: boolean } | null
 }
 
+type RotateAnim = {
+  index: number
+  origin: string
+  fromDeg: number
+  token: number
+}
+
 const cellKey = (row: number, col: number) => `${row}:${col}`
 
 export function PipsGame({
@@ -107,6 +114,11 @@ export function PipsGame({
   const [isComplete, setIsComplete] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [drag, setDrag] = useState<DragState | null>(null)
+  // Drives the rotate-in-place animation of the just-rotated placed domino: it
+  // starts drawn in its previous orientation and eases to the new one.
+  const [rotateAnim, setRotateAnim] = useState<RotateAnim | null>(null)
+  const rotateTokenRef = useRef(0)
+  const rotateAnimTimerRef = useRef<number | null>(null)
 
   const boardRef = useRef<HTMLDivElement | null>(null)
   const anchorsRef = useRef(anchors)
@@ -167,6 +179,12 @@ export function PipsGame({
   }, [accessState, clientSessionId, requestWithSessionRecovery])
 
   useEffect(() => () => saveCurrentState(), [saveCurrentState])
+  useEffect(
+    () => () => {
+      if (rotateAnimTimerRef.current !== null) window.clearTimeout(rotateAnimTimerRef.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -443,19 +461,72 @@ export function PipsGame({
   )
 
   const rotateDomino = useCallback(
-    (dominoIndex: number) => {
+    (dominoIndex: number, pivotCell?: Cell | null) => {
       const currentPuzzle = puzzleRef.current
       if (!currentPuzzle) return
-      const nextOrientation = (orientationsRef.current[dominoIndex] + 1) % DIRECTIONS.length
+      const current = orientationsRef.current[dominoIndex]
       const anchor = anchorsRef.current[dominoIndex]
-      if (anchor) {
-        const others = computeFilled(anchorsRef.current, orientationsRef.current, currentPuzzle, dominoIndex)
-        if (!canPlace(anchor, nextOrientation, geometry.boardSet, others)) return // no room to spin here
+
+      if (!anchor) {
+        // Tray domino: cycle its orientation freely (no board to pivot on).
+        const nextOrientations = orientationsRef.current.map((value, index) =>
+          index === dominoIndex ? (current + 1) % DIRECTIONS.length : value,
+        )
+        commit(anchorsRef.current, nextOrientations)
+        return
       }
-      const nextOrientations = orientationsRef.current.map((value, index) =>
-        index === dominoIndex ? nextOrientation : value,
-      )
-      commit(anchorsRef.current, nextOrientations)
+
+      // Pivot around the half the player actually touched: that cell stays put and
+      // the other half swings to the next spot that fits (hopping over ones blocked
+      // by a wall or a neighbour). Default to the anchor half.
+      const [cellA, cellB] = placementFor(anchor, current)
+      const pivotOnB =
+        !!pivotCell && pivotCell[0] === cellB[0] && pivotCell[1] === cellB[1]
+      const pivot: Cell = pivotOnB ? cellB : cellA
+      // Direction from the pivot to the swinging half in the current placement.
+      const currentSwing = pivotOnB ? (current + 2) % DIRECTIONS.length : current
+
+      const others = computeFilled(anchorsRef.current, orientationsRef.current, currentPuzzle, dominoIndex)
+      for (let step = 1; step < DIRECTIONS.length; step += 1) {
+        const swing = (currentSwing + step) % DIRECTIONS.length
+        // Keep pip a on the anchor: when pivoting on the b-half the anchor moves to
+        // the swung cell and its orientation points back at the pivot.
+        const nextAnchor: Cell = pivotOnB
+          ? [pivot[0] + DIRECTIONS[swing][0], pivot[1] + DIRECTIONS[swing][1]]
+          : pivot
+        const nextOrientation = pivotOnB ? (swing + 2) % DIRECTIONS.length : swing
+        if (canPlace(nextAnchor, nextOrientation, geometry.boardSet, others)) {
+          // Animate the spin: rotate around the pivot half by the (shortest)
+          // quarter-turn(s) between the old and new swing directions.
+          const steps = (swing - currentSwing + DIRECTIONS.length) % DIRECTIONS.length
+          const turn = steps === 3 ? -1 : steps
+          const [na, nb] = placementFor(nextAnchor, nextOrientation)
+          const minRow = Math.min(na[0], nb[0])
+          const minCol = Math.min(na[1], nb[1])
+          const isHorizontal = na[0] === nb[0]
+          const xFrac = isHorizontal ? (pivot[1] - minCol + 0.5) / 2 : 0.5
+          const yFrac = isHorizontal ? 0.5 : (pivot[0] - minRow + 0.5) / 2
+          rotateTokenRef.current += 1
+          if (rotateAnimTimerRef.current !== null) window.clearTimeout(rotateAnimTimerRef.current)
+          setRotateAnim({
+            index: dominoIndex,
+            origin: `${xFrac * 100}% ${yFrac * 100}%`,
+            fromDeg: -turn * 90,
+            token: rotateTokenRef.current,
+          })
+          rotateAnimTimerRef.current = window.setTimeout(() => setRotateAnim(null), 260)
+
+          const nextAnchors = anchorsRef.current.map((value, index) =>
+            index === dominoIndex ? nextAnchor : value,
+          )
+          const nextOrientations = orientationsRef.current.map((value, index) =>
+            index === dominoIndex ? nextOrientation : value,
+          )
+          commit(nextAnchors, nextOrientations)
+          return
+        }
+      }
+      // Boxed in on every side — leave it as-is.
     },
     [commit, geometry.boardSet],
   )
@@ -470,7 +541,9 @@ export function PipsGame({
       if (!currentPuzzle) return
 
       if (!active.moved) {
-        rotateDomino(active.dominoIndex)
+        // Rotate, pivoting on whichever half of the domino the tap landed on.
+        const pivot = cellFromPoint(active.startX, active.startY)
+        rotateDomino(active.dominoIndex, pivot)
         return
       }
 
@@ -670,6 +743,8 @@ export function PipsGame({
                     orientation={orientations[dominoIndex]}
                     disabled={isComplete}
                     dragging={dominoIndex === drag?.dominoIndex}
+                    raised={rotateAnim?.index === dominoIndex}
+                    flip={rotateAnim?.index === dominoIndex ? rotateAnim : undefined}
                     onPointerDown={(event) => onPointerDownDomino(event, dominoIndex)}
                   />
                 ) : null,
@@ -725,6 +800,8 @@ function PlacedDomino({
   orientation,
   disabled,
   dragging,
+  raised,
+  flip,
   onPointerDown,
 }: {
   placement: PipsPlacement
@@ -732,15 +809,44 @@ function PlacedDomino({
   orientation: number
   disabled: boolean
   dragging: boolean
+  raised?: boolean
+  flip?: RotateAnim
   onPointerDown: (event: React.PointerEvent) => void
 }) {
+  const elementRef = useRef<HTMLDivElement>(null)
+
+  // FLIP the rotation: the element already renders at its NEW spot, so start it
+  // drawn in the OLD orientation (rotate back around the pivot) and ease to 0.
+  useLayoutEffect(() => {
+    const element = elementRef.current
+    if (!element) return
+    if (!flip) {
+      element.style.transition = ''
+      element.style.transform = ''
+      element.style.transformOrigin = ''
+      return
+    }
+    element.style.transition = 'none'
+    element.style.transformOrigin = flip.origin
+    element.style.transform = `rotate(${flip.fromDeg}deg)`
+    void element.getBoundingClientRect() // force the start frame before easing
+    const raf = requestAnimationFrame(() => {
+      element.style.transition = 'transform 220ms cubic-bezier(0.2, 0.7, 0.2, 1)'
+      element.style.transform = 'rotate(0deg)'
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [flip])
+
   const [[r1, c1], [r2, c2]] = placement
   const horizontal = r1 === r2
   const minRow = Math.min(r1, r2)
   const minCol = Math.min(c1, c2)
   return (
     <div
-      className={['pips-placed', dragging ? 'pips-placed--dragging' : ''].filter(Boolean).join(' ')}
+      ref={elementRef}
+      className={['pips-placed', raised ? 'pips-placed--raised' : '', dragging ? 'pips-placed--dragging' : '']
+        .filter(Boolean)
+        .join(' ')}
       style={{
         gridColumn: horizontal ? `${minCol + 1} / span 2` : `${minCol + 1}`,
         gridRow: horizontal ? `${minRow + 1}` : `${minRow + 1} / span 2`,

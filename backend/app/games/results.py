@@ -142,6 +142,97 @@ def upsert_spellingbee_result(
     )
 
 
+def upsert_letterboxed_result(
+    *,
+    user_id: str,
+    puzzle_date: str,
+    puzzle_variant: str,
+    outcome: str,
+    score: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Create or improve a Letter Boxed day's result.
+
+    Letter Boxed is replayable: a player can solve, then keep trying to beat their
+    score. Unlike other games (written once and frozen), we keep only the BEST
+    (fewest-word) solve for stats and never downgrade a solved day — a later,
+    worse attempt or a give-up leaves the earlier best in place. The ``revealed``
+    flag (showing the fewest-word solution) locks the day; it can only be set once
+    a solve exists, and once set it stays set.
+    """
+    variant = puzzle_variant or "daily"
+    result_id = f"{user_id}:letterboxed:{puzzle_date}:{variant}"
+    now = datetime.now().astimezone().isoformat()
+    play_type = "daily" if puzzle_date == get_puzzle_date().isoformat() else "retro"
+
+    with connect() as connection:
+        existing = connection.execute(
+            """
+            SELECT outcome, score_json
+            FROM friends_family_game_results
+            WHERE user_id = ? AND game_key = 'letterboxed'
+              AND puzzle_date = ? AND puzzle_variant = ?
+            """,
+            (user_id, puzzle_date, variant),
+        ).fetchone()
+
+        if existing is None:
+            final_outcome = "won" if outcome == "won" else "lost"
+            normalized = json.dumps(score, separators=(",", ":"), sort_keys=True)
+            connection.execute(
+                """
+                INSERT INTO friends_family_game_results (
+                  id, user_id, game_key, puzzle_date, puzzle_variant, outcome,
+                  elapsed_seconds, score_json, play_type, completed_at
+                )
+                VALUES (?, ?, 'letterboxed', ?, ?, ?, NULL, ?, ?, ?)
+                """,
+                (result_id, user_id, puzzle_date, variant, final_outcome, normalized, play_type, now),
+            )
+            connection.execute(
+                """
+                DELETE FROM friends_family_game_attempts
+                WHERE user_id = ? AND game_key = 'letterboxed'
+                  AND puzzle_date = ? AND puzzle_variant = ?
+                """,
+                (user_id, puzzle_date, variant),
+            )
+        else:
+            existing_score = json.loads(existing["score_json"])
+            merged = existing_score
+            final_outcome = existing["outcome"]
+            if existing["outcome"] == "won":
+                # Keep the fewest-word solve; a worse/equal solve doesn't replace it.
+                if outcome == "won":
+                    new_words = int(score.get("wordCount") or 0)
+                    old_words = int(existing_score.get("wordCount") or 0)
+                    if new_words > 0 and (old_words <= 0 or new_words < old_words):
+                        merged = dict(score)
+            elif outcome == "won":
+                # An earlier give-up is upgraded by a genuine solve.
+                merged = dict(score)
+                final_outcome = "won"
+            # Reveal is sticky: once shown it stays shown, from either side.
+            merged = dict(merged)
+            merged["revealed"] = bool(existing_score.get("revealed")) or bool(score.get("revealed"))
+            normalized = json.dumps(merged, separators=(",", ":"), sort_keys=True)
+            connection.execute(
+                """
+                UPDATE friends_family_game_results
+                SET outcome = ?, score_json = ?
+                WHERE user_id = ? AND game_key = 'letterboxed'
+                  AND puzzle_date = ? AND puzzle_variant = ?
+                """,
+                (final_outcome, normalized, user_id, puzzle_date, variant),
+            )
+
+    return get_multigame_result_for_user(
+        user_id=user_id,
+        game_key="letterboxed",
+        puzzle_date=puzzle_date,
+        puzzle_variant=variant,
+    )
+
+
 def get_multigame_result_for_user(
     *,
     user_id: str,

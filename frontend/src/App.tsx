@@ -183,6 +183,11 @@ function App() {
   const clientSessionId = clientSessionIdRef.current
   const puzzleHeaderLabel = getPuzzleHeaderLabel(puzzle)
   const todayDate = getTodayDate()
+  // Snapshot of what the daily-rollover watcher needs, refreshed every render so
+  // the (stable) watcher effect can read current values without re-subscribing.
+  const rolloverStateRef = useRef({ activeGame, puzzle, additionalGameDate })
+  rolloverStateRef.current = { activeGame, puzzle, additionalGameDate }
+  const lastSeenDateRef = useRef(todayDate)
   const activeGameName = activeGame === 'wordle' ? 'Wordle' : ADDITIONAL_GAME_LABELS[activeGame]
   // Like Wordle: no title on daily play, a date descriptor for a past archive day.
   const additionalGameHeaderLabel =
@@ -1135,6 +1140,47 @@ function App() {
     void loadDailyPuzzle()
   }, [loadDailyPuzzle])
 
+  // Refresh the daily when the local calendar date rolls over, so the app never
+  // keeps showing yesterday's puzzle after midnight while it stays open. Driven
+  // purely by a one-shot timer to just after the next local midnight (re-armed
+  // each day) — NOT by focus/visibility, so returning to the app mid-day never
+  // reloads it. A timer scheduled for a past time (app backgrounded across
+  // midnight) fires as soon as the JS loop resumes, so a next-morning return
+  // still rolls forward; a same-day return does nothing. Only date-bound *daily*
+  // play is refreshed — random/past/archive views are left untouched.
+  useEffect(() => {
+    const refreshForNewDay = () => {
+      const current = getTodayDate()
+      const previous = lastSeenDateRef.current
+      if (current === previous) return
+      lastSeenDateRef.current = current
+      const { activeGame: game, puzzle: activePuzzle, additionalGameDate: gameDate } =
+        rolloverStateRef.current
+      if (game === 'wordle') {
+        if (activePuzzle?.mode === 'daily') void loadDailyPuzzle()
+      } else if (gameDate === previous) {
+        setAdditionalGameDate(current)
+        setAdditionalPastDate(current)
+      }
+    }
+
+    let midnightTimer: number | null = null
+    const armMidnight = () => {
+      const now = new Date()
+      // A few seconds past midnight so the backend has rolled over too.
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 10)
+      midnightTimer = window.setTimeout(() => {
+        refreshForNewDay()
+        armMidnight()
+      }, Math.max(1000, nextMidnight.getTime() - now.getTime()))
+    }
+    armMidnight()
+
+    return () => {
+      if (midnightTimer !== null) window.clearTimeout(midnightTimer)
+    }
+  }, [loadDailyPuzzle])
+
   // Restore the "hint used" button state for the active puzzle.
   useEffect(() => {
     const alreadyUsed = hintPersistDate ? hasUsedHintForDate(hintPersistDate) : false
@@ -1551,6 +1597,13 @@ function App() {
                   <InlineIcon markup={menuIconMarkup} />
                 )}
               </button>
+              {isMenuOpen && (
+                <div
+                  className="wordbee-menu-scrim"
+                  aria-hidden="true"
+                  onClick={() => setIsMenuOpen(false)}
+                />
+              )}
               {isMenuOpen && (
                 <WordbeeMenu
                   additionalMaxPastDate={todayDate}

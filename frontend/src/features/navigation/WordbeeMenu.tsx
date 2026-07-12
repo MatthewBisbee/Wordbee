@@ -68,7 +68,7 @@ export function WordbeeMenu({
   }
 
   return (
-    <div className="wordbee-menu-popover" role="menu">
+    <div className="wordbee-menu-drawer" role="menu">
       <div className="wordbee-menu-game-group">
         <button
           aria-expanded={expandedGame === 'wordle'}

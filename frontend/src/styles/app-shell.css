@@ -361,25 +361,64 @@
   transform: scaleX(0.58);
 }
 
-.wordbee-menu-popover {
-  position: absolute;
-  z-index: 1200;
-  top: calc(100% - 4px);
+/* Left drawer that slides in over the play space (which stays full-size beneath
+   it). The scrim covers the play area so it can't be clicked while the drawer is
+   out, and a click there closes the drawer. The drawer scrolls when the game
+   list outgrows the height — room to grow as more games are added. The header
+   (avatar/menu button, title) stays visible and interactive above it. */
+.wordbee-menu-drawer {
+  position: fixed;
+  z-index: 1500;
+  top: var(--header-height);
   left: 0;
-  width: min(280px, calc(100vw - 20px));
+  height: calc(100dvh - var(--header-height));
+  width: min(300px, 84vw);
   display: grid;
+  align-content: start;
   gap: 6px;
   box-sizing: border-box;
-  border: 1px solid var(--settings-border);
-  border-radius: 8px;
-  padding: 8px;
+  border-right: 1px solid var(--settings-border);
+  padding: 10px 10px calc(16px + env(safe-area-inset-bottom));
   background: var(--result-panel-bg);
   color: var(--color-tone-1);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.22);
+  box-shadow: 8px 0 34px rgba(0, 0, 0, 0.28);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  animation: wordbee-drawer-in 200ms ease;
   font-family: "nyt-franklin", "Clear Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
-.wordbee-menu-popover button {
+.wordbee-menu-scrim {
+  position: fixed;
+  z-index: 1490;
+  top: var(--header-height);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.32);
+  animation: wordbee-scrim-in 200ms ease;
+}
+
+@keyframes wordbee-drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes wordbee-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.wordbee-menu-drawer button {
   min-height: 38px;
   border: 0;
   border-radius: 6px;
@@ -393,13 +432,13 @@
   text-align: left;
 }
 
-.wordbee-menu-popover button:hover,
-.wordbee-menu-popover button:focus-visible {
+.wordbee-menu-drawer button:hover,
+.wordbee-menu-drawer button:focus-visible {
   background: var(--result-link-bg);
   outline: 0;
 }
 
-.wordbee-menu-popover .wordbee-game-menu-button {
+.wordbee-menu-drawer .wordbee-game-menu-button {
   min-height: 48px;
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) 14px;

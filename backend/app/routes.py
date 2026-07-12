@@ -66,6 +66,7 @@ from .games.results import (
     get_multigame_result_for_user,
     save_multigame_attempt,
     save_multigame_result,
+    upsert_letterboxed_result,
     upsert_spellingbee_result,
 )
 from .games.spellingbee import (
@@ -669,15 +670,33 @@ def multigame_result():
 
         puzzle_date = resolve_playable_multigame_date(game_key, payload.get("date"))
         validate_multigame_result_payload(game_key, puzzle_date, payload)
-        result = save_multigame_result(
-            identity=identity,
-            game_key=game_key,
-            puzzle_date=puzzle_date.isoformat(),
-            puzzle_variant=str(payload.get("variant") or "daily"),
-            outcome=str(payload.get("outcome") or ""),
-            elapsed_seconds=normalize_elapsed_seconds(payload.get("elapsedSeconds")),
-            score=storable_multigame_score(game_key, payload.get("score")),
-        )
+        if game_key == "letterboxed":
+            # Replayable: keep the best solve and lock only on reveal (see the
+            # upsert), rather than freezing the first result like other games.
+            if identity is None:
+                result = {"created": False, "result": None}
+            else:
+                user_id = identity.get("userId")
+                if not user_id:
+                    raise ValueError("Friends and family sign-in required")
+                letterboxed_result = upsert_letterboxed_result(
+                    user_id=user_id,
+                    puzzle_date=puzzle_date.isoformat(),
+                    puzzle_variant=str(payload.get("variant") or "daily"),
+                    outcome=str(payload.get("outcome") or ""),
+                    score=storable_multigame_score(game_key, payload.get("score")),
+                )
+                result = {"created": letterboxed_result is not None, "result": letterboxed_result}
+        else:
+            result = save_multigame_result(
+                identity=identity,
+                game_key=game_key,
+                puzzle_date=puzzle_date.isoformat(),
+                puzzle_variant=str(payload.get("variant") or "daily"),
+                outcome=str(payload.get("outcome") or ""),
+                elapsed_seconds=normalize_elapsed_seconds(payload.get("elapsedSeconds")),
+                score=storable_multigame_score(game_key, payload.get("score")),
+            )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except RuntimeError as exc:

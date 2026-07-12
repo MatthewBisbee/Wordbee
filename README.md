@@ -48,10 +48,10 @@ Wordbee hosts multiple daily and archive puzzles for a private community of frie
 | **Sudoku** | Daily / Past-Date (Easy/Medium/Hard) | Single-row keypad, Notes/pencil marks, Undo, Erase, Hint, a running timer, live conflict highlighting, and auto-checked completion |
 | **Connections** | Daily / Past-Date | 16-card board, 4-card group validation, faithful NYT select/solve-bounce/mistake-shake animations, one-away feedback, and post-loss reveal |
 | **Strands** | Daily / Past-Date | Drag or tap path selection, connect-the-dots lines, spangram validation, bonus-word tracking, and an NYT-style theme-word hint |
-| **Letter Boxed** | Daily / Past-Date | Faithful square-box board, tap or keyboard letter entry, live word-chaining and side-constraint rules, all-letters solve detection, words-vs-NYT solve insight, and a reveal-solution option |
+| **Letter Boxed** | Daily / Past-Date | Faithful square-box board, tap or keyboard letter entry, live word-chaining and side-constraint rules, all-letters solve detection, replayable best-score (solve, then keep trying to beat your fewest-word run — only your best is kept), words-vs-NYT solve insight, and a reveal-solution option that locks the day |
 | **Spelling Bee** | Daily / Past-Date | Faithful honeycomb hive, tap or keyboard entry, letter shuffle, live NYT scoring, the Beginner→Genius rank ladder (+ Queen Bee), pangram detection, and an ever-growing found-words list that merges across devices |
 | **Tiles** | Daily / Past-Date / Endless Zen | Seeded deterministic solvable board, custom designer art reskinning palettes (including Brighton, Soho, Utrecht, etc.), custom selection/BG/font styling, and live combo tracking |
-| **Pips** | Daily / Past-Date (Easy/Medium/Hard) | Faithful irregular colour-coded region board, tap-to-place dominoes with Rotate/Undo/Clear, live constraint feedback (sum / less / greater / equal / unequal), a running timer, and server-side solution validation. Full gapless history reaches the first Pips (2025-08-18) |
+| **Pips** | Daily / Past-Date (Easy/Medium/Hard) | Faithful irregular colour-coded region board, drag-to-place / tap-to-rotate dominoes from a bottom tray (a placed piece settles beneath its region colour and lifts to rotate), live constraint feedback (sum / less / greater / equal / unequal), a running timer, and server-side solution validation. Full gapless history reaches the first Pips (2025-08-18) |
 | **The Crossword** | Daily / Past-Date | Full 15×15 (Sunday 21×21) grid, tap/keyboard entry with across↔down toggle and clue-bar navigation, Check & Reveal (square/word/puzzle), an autocheck toggle, a running timer, and server-side answer validation. History reaches the first NYT crossword (1942); requested gap dates snap to the nearest published puzzle |
 | **The Midi** | Daily / Past-Date | NYT's 9×9–11×11 midi — the same grid UI as The Crossword. History reaches the first Midi (2026) |
 | **The Mini** | Daily / Past-Date | NYT's free 5×5 mini — the same grid UI as The Crossword (across↔down toggle, clue bar, Check & Reveal, autocheck, timer, server-side validation). History reaches the first Mini (2014) |
@@ -417,7 +417,7 @@ Wordbee pulls board data dynamically and stores it locally in SQLite:
 - [x] **Sudoku Module** (Mistakes, cell highlighting)
 - [x] **Connections Module** (Grid matching, history)
 - [x] **Strands Module** (Word paths, spangram reveal)
-- [x] **Letter Boxed Module** (Square box board, word chaining, local dictionary, reveal solutions)
+- [x] **Letter Boxed Module** (Square box board, word chaining, local dictionary, replayable best-score, reveal solutions)
 - [x] **Spelling Bee Module** (Honeycomb hive, NYT scoring & ranks, cross-device found-words merge, local puzzle cache)
 - [x] **Tiles Module** (Seeded deterministic board generation, endless Zen mode, reskinnable SVGs, captured art palettes)
 - [x] **The Crossword Module** (Full grid, Sunday sizing, across/down toggles, clue bar, autocheck/timer, local historical archive since 1942, GitHub archive import utility)

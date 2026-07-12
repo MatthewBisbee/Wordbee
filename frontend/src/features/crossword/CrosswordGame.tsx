@@ -148,6 +148,13 @@ export function CrosswordGame({
     [clueMaps],
   )
 
+  // Reading-order ring of every clue (all Across, then all Down) — used to walk
+  // to the next/previous clue and to skip clues that are already fully filled.
+  const orderedClues = useMemo(
+    () => [...clueMaps.acrossClues, ...clueMaps.downClues],
+    [clueMaps],
+  )
+
   const activeClueIndex = clueForCell(selectedCell, direction)
   const activeClue: CrosswordClue | undefined =
     activeClueIndex !== undefined ? puzzle?.clues[activeClueIndex] : undefined
@@ -341,9 +348,10 @@ export function CrosswordGame({
   // Server-authoritative check for the current grid. Updates the wrong-cell
   // marks for the requested scope and detects a completed solve.
   const runCheck = useCallback(
-    async (scope: number[] | 'all', options: { silent?: boolean } = {}) => {
+    async (scope: number[] | 'all', options: { silent?: boolean; markWrong?: boolean } = {}) => {
       const activePuzzle = stateRef.current.puzzle
       if (!activePuzzle) return
+      const markWrong = options.markWrong ?? true
       try {
         const checkEntries = stateRef.current.entries.map((val, idx) =>
           stateRef.current.pencilCells.has(idx) ? '' : val
@@ -355,14 +363,17 @@ export function CrosswordGame({
         })
         const incorrect = new Set(res.incorrect)
         const inScope = (cell: number) => scope === 'all' || scope.includes(cell)
-        setWrongCells((previous) => {
-          const next = new Set(previous)
-          scopeCells(scope, activePuzzle.width * activePuzzle.height).forEach((cell) => next.delete(cell))
-          res.incorrect.forEach((cell) => {
-            if (inScope(cell)) next.add(cell)
+        // Only paint wrong cells red when explicitly checking (or autocheck).
+        if (markWrong) {
+          setWrongCells((previous) => {
+            const next = new Set(previous)
+            scopeCells(scope, activePuzzle.width * activePuzzle.height).forEach((cell) => next.delete(cell))
+            res.incorrect.forEach((cell) => {
+              if (inScope(cell)) next.add(cell)
+            })
+            return next
           })
-          return next
-        })
+        }
         if (res.solved) {
           void finishAsSolved(stateRef.current.entries, stateRef.current.revealsUsed > 0)
         } else if (!options.silent && res.complete) {
@@ -572,30 +583,41 @@ export function CrosswordGame({
     (clueIndex: number) => {
       const clue = puzzle?.clues[clueIndex]
       if (!clue) return
+      const source = stateRef.current.entries
       setDirection(clue.direction)
-      const firstEmpty = clue.cells.find((cell) => !entries[cell])
+      const firstEmpty = clue.cells.find((cell) => !source[cell])
       setSelectedCell(firstEmpty ?? clue.cells[0])
     },
-    [entries, puzzle],
+    [puzzle],
   )
 
-  const stepClue = useCallback(
-    (delta: number) => {
-      if (activeClueIndex === undefined) return
-      const list = direction === 'across' ? clueMaps.acrossClues : clueMaps.downClues
-      const position = list.indexOf(activeClueIndex)
-      if (position < 0) return
-      const nextPosition = position + delta
-      if (nextPosition < 0 || nextPosition >= list.length) {
-        // Roll over into the other direction's list at the appropriate end.
-        const otherList = direction === 'across' ? clueMaps.downClues : clueMaps.acrossClues
-        if (otherList.length > 0) goToClue(delta > 0 ? otherList[0] : otherList[otherList.length - 1])
-        return
+  // Move to another clue along the reading-order ring. `skipFilled` hops over
+  // clues whose cells are all filled — used by Enter/Tab and word-completion so
+  // play flows to the next unfinished clue. The clue-bar arrows pass false.
+  const stepToClue = useCallback(
+    (delta: number, skipFilled: boolean) => {
+      if (activeClueIndex === undefined || !puzzle || orderedClues.length === 0) return
+      const size = orderedClues.length
+      const start = orderedClues.indexOf(activeClueIndex)
+      if (start < 0) return
+      const source = stateRef.current.entries
+      const at = (steps: number) => orderedClues[(((start + delta * steps) % size) + size) % size]
+      if (skipFilled) {
+        for (let steps = 1; steps < size; steps += 1) {
+          const candidate = at(steps)
+          if (puzzle.clues[candidate].cells.some((cell) => !source[cell])) {
+            goToClue(candidate)
+            return
+          }
+        }
       }
-      goToClue(list[nextPosition])
+      goToClue(at(1))
     },
-    [activeClueIndex, clueMaps, direction, goToClue],
+    [activeClueIndex, goToClue, orderedClues, puzzle],
   )
+
+  const stepClue = useCallback((delta: number) => stepToClue(delta, false), [stepToClue])
+  const advanceClue = useCallback((delta: number) => stepToClue(delta, true), [stepToClue])
 
   // --- Entry ----------------------------------------------------------------
 
@@ -614,19 +636,28 @@ export function CrosswordGame({
     })
   }, [])
 
-  const advanceWithinWord = useCallback(
+  // After typing, jump to the next empty cell in the word, skipping ones already
+  // filled (e.g. from a crossing word). When the word has no empty cells left,
+  // hop to the next unfinished clue; if only earlier cells are empty, wrap back.
+  const advanceAfterType = useCallback(
     (fromCell: number) => {
       if (!activeCells.length) return
       const position = activeCells.indexOf(fromCell)
       if (position < 0) return
-      const nextEmpty = activeCells.slice(position + 1).find((cell) => !entries[cell])
+      const source = stateRef.current.entries
+      const nextEmpty = activeCells.slice(position + 1).find((cell) => !source[cell])
       if (nextEmpty !== undefined) {
         setSelectedCell(nextEmpty)
         return
       }
-      if (position + 1 < activeCells.length) setSelectedCell(activeCells[position + 1])
+      const anyEmpty = activeCells.find((cell) => !source[cell])
+      if (anyEmpty === undefined) {
+        stepToClue(1, true)
+      } else {
+        setSelectedCell(anyEmpty)
+      }
     },
-    [activeCells, entries],
+    [activeCells, stepToClue],
   )
 
   const typeLetter = useCallback(
@@ -648,8 +679,11 @@ export function CrosswordGame({
       }
       setPencilCells(nextPencilCells)
 
+      stateRef.current.entries = nextEntries
+      stateRef.current.pencilCells = nextPencilCells
+
       if (!isRebusActive) {
-        advanceWithinWord(cell)
+        advanceAfterType(cell)
       }
 
       // Detect a completed grid; otherwise autocheck the just-typed cell.
@@ -658,16 +692,17 @@ export function CrosswordGame({
         ? nextEntries.every((value, index) => isBlock(index) || (value !== '' && !nextPencilCells.has(index)))
         : false
 
-      stateRef.current.entries = nextEntries
-      stateRef.current.pencilCells = nextPencilCells
       if (filledAll) {
-        void runCheck('all')
+        // On a full grid, only detect a solve. Don't paint the wrong cells red
+        // unless the player opted into autocheck — otherwise hunting down the
+        // mistake is part of the puzzle (they can still use Check to reveal it).
+        void runCheck('all', { markWrong: stateRef.current.autocheck })
       } else if (stateRef.current.autocheck) {
         void runCheck([cell], { silent: true })
       }
       persist()
     },
-    [advanceWithinWord, canPlay, clearMark, entries, isBlock, isPencilActive, isRebusActive, pencilCells, persist, puzzle, runCheck, selectedCell],
+    [advanceAfterType, canPlay, clearMark, entries, isBlock, isPencilActive, isRebusActive, pencilCells, persist, puzzle, runCheck, selectedCell],
   )
 
   const deleteLetter = useCallback(() => {
@@ -723,7 +758,7 @@ export function CrosswordGame({
         deleteLetter()
       } else if (event.key === ' ' || event.key === 'Tab') {
         event.preventDefault()
-        if (event.key === 'Tab') stepClue(event.shiftKey ? -1 : 1)
+        if (event.key === 'Tab') advanceClue(event.shiftKey ? -1 : 1)
         else toggleDirection()
       } else if (event.key === 'ArrowLeft') {
         event.preventDefault()
@@ -748,15 +783,15 @@ export function CrosswordGame({
         event.preventDefault()
         if (isRebusActive) {
           setIsRebusActive(false)
-          advanceWithinWord(selectedCell)
+          advanceAfterType(selectedCell)
         } else {
-          stepClue(1)
+          advanceClue(1)
         }
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [canPlay, deleteLetter, direction, moveStep, stepClue, toggleDirection, typeLetter, isRebusActive, selectedCell, advanceWithinWord])
+  }, [canPlay, deleteLetter, direction, moveStep, advanceClue, toggleDirection, typeLetter, isRebusActive, selectedCell, advanceAfterType])
 
   // --- Check / reveal actions ----------------------------------------------
 
@@ -792,8 +827,15 @@ export function CrosswordGame({
       const nextPencilCells = new Set(pencilCells)
       targets.forEach((cell) => {
         if (isBlock(cell)) return
-        nextEntries[cell] = answers[cell] ?? ''
-        nextRevealed.add(cell)
+        const answer = answers[cell] ?? ''
+        // A square the player already filled in correctly keeps its normal look;
+        // only squares that actually needed the answer are coloured as revealed.
+        const alreadyCorrect =
+          !pencilCells.has(cell) &&
+          entries[cell] !== '' &&
+          entries[cell].toUpperCase() === answer.toUpperCase()
+        nextEntries[cell] = answer
+        if (!alreadyCorrect) nextRevealed.add(cell)
         nextPencilCells.delete(cell)
       })
       setEntries(nextEntries)
@@ -838,7 +880,7 @@ export function CrosswordGame({
       if (!puzzle || isComplete) return
 
       if (scope === 'incomplete') {
-        const incorrect = await runCheck('all', { silent: true })
+        const incorrect = await runCheck('all', { silent: true, markWrong: false })
         if (incorrect) {
           const nextEntries = entries.map((value, index) => incorrect.has(index) ? '' : value)
           setEntries(nextEntries)
@@ -1104,7 +1146,7 @@ export function CrosswordGame({
                     <button
                       key={key}
                       className="crossword-key crossword-key--wide crossword-key--enter"
-                      onClick={() => stepClue(1)}
+                      onClick={() => advanceClue(1)}
                       type="button"
                       aria-label="Enter"
                     >

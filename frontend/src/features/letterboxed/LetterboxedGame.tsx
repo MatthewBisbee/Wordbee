@@ -64,7 +64,11 @@ export function LetterboxedGame({
   const [puzzleError, setPuzzleError] = useState('')
   const [words, setWords] = useState<string[]>([])
   const [currentWord, setCurrentWord] = useState('')
-  const [isComplete, setIsComplete] = useState(false)
+  // Letter Boxed is replayable: `bestWords` is the fewest-word solve recorded
+  // today (null until the first solve); `replaying` is true while re-attempting
+  // after a solve; `isRevealed` locks the day once the fewest solution is shown.
+  const [bestWords, setBestWords] = useState<string[] | null>(null)
+  const [replaying, setReplaying] = useState(false)
   const [isRevealed, setIsRevealed] = useState(false)
   const [nytSolution, setNytSolution] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -92,11 +96,16 @@ export function LetterboxedGame({
     return map
   }, [points])
 
-  const canPlay = Boolean(puzzle) && !isComplete && !isInputBlocked
+  const hasSolved = bestWords !== null
+  const isPlaying = !isRevealed && (!hasSolved || replaying)
+  const canPlay = Boolean(puzzle) && isPlaying && !isInputBlocked
 
   const saveAttempt = useCallback(
     async (nextWords: string[], nextCurrentWord: string) => {
-      if (!puzzle) return
+      // Only the pre-solve attempt is persisted; once solved, replays are
+      // ephemeral (the stored result already holds the best) and the attempts
+      // endpoint rejects writes for a day that has a result anyway.
+      if (!puzzle || bestWords !== null) return
       const state: LetterboxedAttemptState = { words: nextWords, currentWord: nextCurrentWord }
 
       if (accessState?.kind === 'friends-family') {
@@ -125,7 +134,7 @@ export function LetterboxedGame({
         )
       }
     },
-    [accessState, clientSessionId, puzzle, requestWithSessionRecovery],
+    [accessState, bestWords, clientSessionId, puzzle, requestWithSessionRecovery],
   )
 
   // Takes the date explicitly (not from `puzzle` state) so its identity stays
@@ -146,9 +155,11 @@ export function LetterboxedGame({
   }, [])
 
   const saveResult = useCallback(
-    async (outcome: 'won' | 'lost', finalWords: string[], revealed: boolean) => {
+    async (outcome: 'won' | 'lost', finalWords: string[], revealed: boolean, announce: boolean) => {
       if (!puzzle) return
 
+      // First solve opens the results dialog; replays/reveal update quietly.
+      const notify = announce ? onGameComplete : onGameLoadedAndComplete
       const score = {
         words: finalWords,
         wordCount: finalWords.length,
@@ -184,7 +195,7 @@ export function LetterboxedGame({
             gameKey: 'letterboxed',
             requestWithSessionRecovery,
           })
-          onGameComplete(response.result ?? completedResult, stats)
+          notify(response.result ?? completedResult, stats)
         } catch (error) {
           console.warn('Could not save Letter Boxed result', error)
           showToast(error instanceof Error ? error.message : 'Could not save result')
@@ -207,10 +218,10 @@ export function LetterboxedGame({
             variant: 'daily',
           }),
         )
-        onGameComplete(completedResult, null)
+        notify(completedResult, null)
       }
     },
-    [accessState, clientSessionId, puzzle, requestWithSessionRecovery, showToast, onGameComplete],
+    [accessState, clientSessionId, puzzle, requestWithSessionRecovery, showToast, onGameComplete, onGameLoadedAndComplete],
   )
 
   const loadPuzzle = useCallback(async () => {
@@ -218,7 +229,8 @@ export function LetterboxedGame({
     setPuzzleError('')
     setWords([])
     setCurrentWord('')
-    setIsComplete(false)
+    setBestWords(null)
+    setReplaying(false)
     setIsRevealed(false)
     setNytSolution([])
 
@@ -233,11 +245,17 @@ export function LetterboxedGame({
 
       const hydrateCompleted = async (res: MultigameCompletionResult, stats: unknown) => {
         const solvedWords = Array.isArray(res.score?.words) ? (res.score.words as string[]) : []
-        setWords(solvedWords)
+        const solved = res.outcome === 'won' && solvedWords.length > 0
+        // A give-up (non-won) counts as revealed/locked. A solved day is locked
+        // only once the player explicitly revealed the fewest solution.
+        const revealed = Boolean(res.score?.revealed) || res.outcome !== 'won'
+        setBestWords(solved ? solvedWords : null)
+        setReplaying(false)
+        setIsRevealed(revealed)
+        setWords(solved ? solvedWords : [])
         setCurrentWord('')
-        setIsComplete(true)
-        setIsRevealed(Boolean(res.score?.revealed))
-        await revealSolution(activePuzzle.date)
+        // The fewest solution is only fetched (and shown) once the day is locked.
+        if (revealed) await revealSolution(activePuzzle.date)
         onGameLoadedAndComplete(res, stats as never)
       }
 
@@ -346,17 +364,49 @@ export function LetterboxedGame({
 
   const deleteLetter = useCallback(() => {
     if (!canPlay) return
-    // Keep the seed letter (last letter of the previous word) locked in place.
-    const minLength = words.length > 0 ? 1 : 0
-    setCurrentWord((previous) => (previous.length > minLength ? previous.slice(0, -1) : previous))
-  }, [canPlay, words.length])
+    // The seed letter (last letter of the previous word) is normally locked.
+    const seedLength = words.length > 0 ? 1 : 0
+    if (currentWord.length > seedLength) {
+      setCurrentWord(currentWord.slice(0, -1))
+      return
+    }
+    // Sitting on just the seed: step back into the previous completed word so
+    // deleting keeps working across the word boundary (that word's last letter
+    // is this seed). The word returns to the input to be edited or removed.
+    if (words.length > 0) {
+      const restored = words[words.length - 1]
+      const nextWords = words.slice(0, -1)
+      setWords(nextWords)
+      setCurrentWord(restored)
+      void saveAttempt(nextWords, restored)
+    }
+  }, [canPlay, currentWord, saveAttempt, words])
 
   const restart = useCallback(() => {
-    if (isComplete) return
+    if (!isPlaying) return
     setWords([])
     setCurrentWord('')
     void saveAttempt([], '')
-  }, [isComplete, saveAttempt])
+  }, [isPlaying, saveAttempt])
+
+  // After a solve: clear the board for another attempt (best score is kept).
+  const playAgain = useCallback(() => {
+    if (isRevealed) return
+    setReplaying(true)
+    setWords([])
+    setCurrentWord('')
+  }, [isRevealed])
+
+  // Give up on beating the score: show NYT's fewest solution and lock the day.
+  const revealFewest = useCallback(async () => {
+    if (!puzzle || bestWords === null || isRevealed) return
+    setIsRevealed(true)
+    setReplaying(false)
+    setWords(bestWords)
+    setCurrentWord('')
+    await revealSolution(puzzle.date)
+    await saveResult('won', bestWords, true, false)
+  }, [bestWords, isRevealed, puzzle, revealSolution, saveResult])
 
   const submitWord = useCallback(async () => {
     if (!puzzle || !canPlay || isSubmitting) return
@@ -397,15 +447,30 @@ export function LetterboxedGame({
       const seed = response.word.at(-1) ?? ''
       const solved = nextUsed.size === boardLetters.length
 
-      setWords(nextWords)
       setCurrentWord(solved ? '' : seed)
 
       if (solved) {
-        setIsComplete(true)
-        await revealSolution(puzzle.date)
-        await saveResult('won', nextWords, false)
-        showToast('Letter Boxed solved!', 1800)
+        const firstSolve = bestWords === null
+        const isBest = firstSolve || nextWords.length < bestWords.length
+        const nextBest = isBest ? nextWords : bestWords
+        setWords(nextBest)
+        setBestWords(nextBest)
+        setReplaying(false)
+        // Persist only a new best (the first solve always is). The fewest
+        // solution stays hidden until the player chooses to reveal it.
+        if (isBest) {
+          await saveResult('won', nextBest, false, firstSolve)
+        }
+        showToast(
+          firstSolve
+            ? `Solved in ${nextWords.length} word${nextWords.length === 1 ? '' : 's'}!`
+            : isBest
+              ? `New best — ${nextWords.length} word${nextWords.length === 1 ? '' : 's'}!`
+              : `Solved in ${nextWords.length}. Your best is ${bestWords.length}.`,
+          1900,
+        )
       } else {
+        setWords(nextWords)
         void saveAttempt(nextWords, seed)
       }
     } catch (error) {
@@ -419,8 +484,8 @@ export function LetterboxedGame({
     isSubmitting,
     currentWord,
     words,
+    bestWords,
     boardLetters.length,
-    revealSolution,
     saveResult,
     saveAttempt,
     showToast,
@@ -483,7 +548,10 @@ export function LetterboxedGame({
     }
   }, [dragAppendLetter])
 
-  const insight = puzzle ? buildInsight(words.length, puzzle.nytSolutionWordCount, puzzle.par, isRevealed) : null
+  const insight =
+    puzzle && bestWords
+      ? buildInsight(bestWords.length, puzzle.nytSolutionWordCount, puzzle.par, isRevealed)
+      : null
 
   return (
     <main className="game-page game-page--letterboxed" aria-label="Letter Boxed game">
@@ -511,7 +579,7 @@ export function LetterboxedGame({
                 .join(' ')}
               aria-live="polite"
             >
-              {currentWord || (isComplete ? 'Solved' : '')}
+              {currentWord || (isPlaying ? '' : 'Solved')}
             </div>
 
             <div className="letterboxed-board-wrapper">
@@ -597,26 +665,41 @@ export function LetterboxedGame({
               </ul>
             )}
 
-            {!isComplete ? (
-              <>
+            {isPlaying ? (
+              <div className="game-actions">
+                <button className="game-secondary-button" onClick={restart} type="button" disabled={words.length === 0 && currentWord.length === 0}>
+                  Restart
+                </button>
+                <button className="game-secondary-button" onClick={deleteLetter} type="button" disabled={currentWord.length === 0}>
+                  Delete
+                </button>
+                <button
+                  className="game-primary-button"
+                  onClick={() => void submitWord()}
+                  type="button"
+                  disabled={currentWord.length < 3 || isSubmitting}
+                >
+                  Enter
+                </button>
+              </div>
+            ) : !isRevealed && bestWords ? (
+              // Solved, not yet locked: keep the best, offer another go or reveal.
+              <div className="letterboxed-complete">
+                <strong className="letterboxed-complete__headline">
+                  Solved in {bestWords.length} word{bestWords.length === 1 ? '' : 's'}
+                </strong>
+                <p className="letterboxed-complete__sub">
+                  Play again to beat it, or reveal the fewest-word solution.
+                </p>
                 <div className="game-actions">
-                  <button className="game-secondary-button" onClick={restart} type="button" disabled={words.length === 0 && currentWord.length === 0}>
-                    Restart
+                  <button className="game-primary-button" onClick={playAgain} type="button">
+                    Play again
                   </button>
-                  <button className="game-secondary-button" onClick={deleteLetter} type="button" disabled={currentWord.length === 0}>
-                    Delete
-                  </button>
-                  <button
-                    className="game-primary-button"
-                    onClick={() => void submitWord()}
-                    type="button"
-                    disabled={currentWord.length < 3 || isSubmitting}
-                  >
-                    Enter
+                  <button className="game-secondary-button" onClick={() => void revealFewest()} type="button">
+                    Reveal solution
                   </button>
                 </div>
-
-              </>
+              </div>
             ) : (
               <div className="letterboxed-complete">
                 {insight && (

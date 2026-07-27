@@ -235,6 +235,10 @@ function SolveSummary({
           <span>Bonus words</span>
           <strong>{Array.isArray(score.bonusWords) ? score.bonusWords.length : 0}</strong>
         </div>
+        <div className="strands-summary-row">
+          <span>Hints used</span>
+          <strong>{Number(score.hintsUsed ?? 0)}</strong>
+        </div>
       </div>
     )
   }

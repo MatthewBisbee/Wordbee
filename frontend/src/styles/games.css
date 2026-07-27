@@ -371,6 +371,15 @@
   opacity: 0.6;
 }
 
+/* An order-revealed hint: a dotted trail through the circled word so it reads as
+   a suggestion, clearly distinct from the solid line of an actually-solved word.
+   Its stroke colour (the per-hint theme shade) is set inline. */
+.strands-line--hint {
+  stroke-width: 6;
+  stroke-dasharray: 0.5 12;
+  opacity: 0.85;
+}
+
 .strands-board {
   position: relative;
   z-index: 2;
@@ -412,7 +421,7 @@
 }
 
 .strands-cell--hint {
-  border-color: var(--strands-theme);
+  border-color: var(--strands-hint-color, var(--strands-theme));
   border-style: dashed;
 }
 
@@ -460,8 +469,8 @@
   left: 0;
   bottom: 0;
   width: var(--hint-progress, 0%);
-  background-color: var(--strands-theme);
-  opacity: 0.25;
+  background-color: var(--color-correct);
+  opacity: 0.28;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
   z-index: -1;
 }
@@ -472,10 +481,13 @@
   cursor: not-allowed;
 }
 
+/* A charged hint reads as a ready call-to-action: the app's green (as used by
+   the autofill toggle, used-hint bulb and past-puzzle buttons) with white text,
+   which contrasts far better than the pale theme blue did against the label. */
 .strands-hint-button--active {
-  background-color: var(--strands-theme) !important;
-  border-color: var(--strands-theme) !important;
-  color: var(--strands-cell-text) !important;
+  background-color: var(--color-correct) !important;
+  border-color: var(--color-correct) !important;
+  color: #fff !important;
   font-weight: 900;
   opacity: 1 !important;
 }
@@ -2276,6 +2288,11 @@
 .pips-cell--purple { --pips-fill: var(--pips-purple-soft); --pips-edge: var(--pips-purple); }
 .pips-cell--blue { --pips-fill: var(--pips-blue-soft); --pips-edge: var(--pips-blue); }
 .pips-cell--green { --pips-fill: var(--pips-green-soft); --pips-edge: var(--pips-green); }
+
+/* No-constraint ('empty') regions carry no colour — just the beige board
+   backing. Both vars are forced transparent (rather than left unset, which would
+   fall back to currentColor on the dashed edges). */
+.pips-cell--plain { --pips-fill: transparent; --pips-edge: transparent; }
 
 /* Live constraint feedback: solid outline when a region is satisfied, red when
    a rule is broken. */

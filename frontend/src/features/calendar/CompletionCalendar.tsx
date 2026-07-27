@@ -291,7 +291,7 @@ function CalendarDetailDialog({
   )
 }
 
-function CalendarDetailBody({
+export function CalendarDetailBody({
   entry,
   gameKey,
   historyItem,
@@ -309,12 +309,6 @@ function CalendarDetailBody({
 
     return (
       <div className="calendar-detail__body" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div className="calendar-detail__meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 700, color: 'var(--color-tone-2)' }}>
-          <span>Hint used</span>
-          <strong style={{ color: detail.usedHint ? 'var(--color-correct)' : 'var(--color-tone-1)' }}>
-            {detail.usedHint ? 'Yes' : 'No'}
-          </strong>
-        </div>
         <div className="calendar-board" aria-label="Solve board" style={{ margin: '0 auto', maxWidth: '280px', width: '100%' }}>
           {board.map((row, rowIndex) => (
             <div className="calendar-board__row" key={rowIndex} style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', marginBottom: '6px' }}>
@@ -342,6 +336,12 @@ function CalendarDetailBody({
               ))}
             </div>
           ))}
+        </div>
+        <div className="calendar-detail__meta" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', fontWeight: 700, color: 'var(--color-tone-2)' }}>
+          <span>Hint used</span>
+          <strong style={{ color: detail.usedHint ? 'var(--color-correct)' : 'var(--color-tone-1)' }}>
+            {detail.usedHint ? 'Yes' : 'No'}
+          </strong>
         </div>
         {analysis && (
           <div style={{ borderTop: '1px solid var(--settings-border)', paddingTop: '20px' }}>

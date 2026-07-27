@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="game-icon" aria-hidden="true" viewBox="18 18 64 64">
+  <g fill="var(--color-tone-1)">
+    <path d="M18 42v16a8 8 0 0 0 8 8h12v-8H26V42h12v-8H26a8 8 0 0 0-8 8Z"/>
+    <path d="M62 34v8h12v16H62v8h12a8 8 0 0 0 8-8V42a8 8 0 0 0-8-8Z"/>
+    <path d="M42 74h-4v8h4a11.94 11.94 0 0 0 8-3.08A11.94 11.94 0 0 0 58 82h4v-8h-4a4 4 0 0 1-4-4V30a4 4 0 0 1 4-4h4v-8h-4a11.94 11.94 0 0 0-8 3.08A11.94 11.94 0 0 0 42 18h-4v8h4a4 4 0 0 1 4 4v40a4 4 0 0 1-4 4Z"/>
+  </g>
+</svg>

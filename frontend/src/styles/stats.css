@@ -524,6 +524,47 @@
   background: var(--result-link-bg);
 }
 
+/* A filled green dot marks players who have a play in for today. */
+.stats-player-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--settings-border);
+  background: transparent;
+}
+
+.stats-player-dot--on {
+  border-color: var(--color-correct);
+  background: var(--color-correct);
+}
+
+/* Today's play for the selected player, mirroring the calendar day-detail. */
+.stats-today-card {
+  border: 1px solid var(--settings-border);
+  border-radius: 10px;
+  background: var(--result-panel-bg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stats-today-card--muted p {
+  margin: 6px 0 0;
+  color: var(--color-tone-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Matches the calendar detail body's first meta row (e.g. "Hint used") that sits
+   directly beneath it, so the two lines read as one consistent type scale. */
+.stats-today-card__kicker {
+  color: var(--color-tone-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .stats-section {
   display: grid;
   gap: 14px;

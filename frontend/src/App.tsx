@@ -50,6 +50,9 @@ import { CrosswordGame } from './features/crossword/CrosswordGame'
 import { HintButton } from './features/wordle/HintButton'
 import { Keyboard } from './features/wordle/Keyboard'
 import {
+  applyAutofillRow,
+  getGreenLetters,
+  patchTile,
   createBoard,
   createShareText,
   getCompletedBoard,
@@ -58,6 +61,7 @@ import {
   hydrateBoardFromResult,
   tileAriaLabel,
 } from './features/wordle/wordle-utils'
+import { AutofillToggle } from './features/wordle/AutofillToggle'
 import { isSessionConflict, formatFirstName, formatLastInitial, formatDisplayName } from './lib/access'
 import { ApiError, requestJson } from './lib/api'
 import { copyTextToClipboard } from './lib/clipboard'
@@ -70,6 +74,7 @@ import {
   getTodayDate,
 } from './lib/date'
 import { createGameId } from './lib/ids'
+import { useDeployRefresh } from './lib/useDeployRefresh'
 import {
   getClientSessionId,
   hasUsedHintForDate,
@@ -100,12 +105,15 @@ import type {
   ResultsResponse,
   Settings,
   StatsSummary,
+  TileState,
   WordbeeGameKey,
 } from './types'
 import './styles/index.css'
 
 const initialLastGame = loadLastGameState()
 const ANNOUNCEMENT_DISMISSAL_STORAGE_PREFIX = 'wordbee.announcement.dismissed'
+
+type BeginPuzzleOptions = { switchToWordle?: boolean }
 
 type OperatorAnnouncement = {
   id: string
@@ -117,6 +125,9 @@ type OperatorAnnouncement = {
 }
 
 function App() {
+  // Reload the client when a new build is deployed (see hook for details).
+  useDeployRefresh()
+
   const [activeGame, setActiveGame] = useState<WordbeeGameKey>(
     initialLastGame?.activeGame ?? 'wordle',
   )
@@ -125,7 +136,6 @@ function App() {
   const [accessState, setAccessState] = useState<AccessState | null>(loadAccessState)
   const [devicePrefersDark, setDevicePrefersDark] = useState(getDevicePrefersDark)
   const [currentRow, setCurrentRow] = useState(0)
-  const [currentColumn, setCurrentColumn] = useState(0)
   const [keyboardState, setKeyboardState] = useState<Record<string, EvaluatedState>>({})
   const [toast, setToast] = useState('')
   const [invalidRow, setInvalidRow] = useState<number | null>(null)
@@ -173,6 +183,16 @@ function App() {
   const toastTimerRef = useRef<number | null>(null)
   const resultsRevealTimerRef = useRef<number | null>(null)
   const copyFeedbackTimerRef = useRef<number | null>(null)
+  // Mirror the autofill preference in a ref so deferred callbacks (the post-reveal
+  // row advance, async daily-status hydration) read the current value.
+  const autofillEnabledRef = useRef(settings.wordleAutofill)
+  autofillEnabledRef.current = settings.wordleAutofill
+  // Latest board, readable synchronously by the autofill flip choreography (which
+  // needs the current tiles/greens without waiting for a setBoard updater).
+  const boardRef = useRef(board)
+  boardRef.current = board
+  // Invalidates the in-flight flip choreography when the active row is re-toggled.
+  const autofillFlipTokenRef = useRef(0)
   const isDarkTheme = settings.darkThemeOverride ?? devicePrefersDark
   const friendsFamilyToken = accessState?.kind === 'friends-family' ? accessState.token : ''
   const isAccessPromptOpen = accessState === null
@@ -208,12 +228,16 @@ function App() {
   const isSolvedUntrackedPuzzle = Boolean(
     completedResult && puzzle?.mode !== 'daily' && completedResult.mode === puzzle?.mode,
   )
-  // Left-anchor the descriptor so it never collides with the "See results" button.
+  // Left-anchor the descriptor so it never collides with the "See results"
+  // button. Letter Boxed has no such button (it shows results in-panel), so it
+  // never needs the left anchor.
   const anchorHeaderLeft =
     Boolean(headerDescriptor) &&
     (activeGame === 'wordle'
       ? isSolvedUntrackedPuzzle
-      : Boolean(otherGameCompletedResult))
+      : (activeGame === 'letterboxed' || activeGame === 'connections')
+        ? false
+        : Boolean(otherGameCompletedResult))
 
   const showToast = useCallback((message: string, durationMs = 1200) => {
     if (toastTimerRef.current !== null) {
@@ -245,7 +269,6 @@ function App() {
     setBoard(createBoard())
     setKeyboardState({})
     setCurrentRow(0)
-    setCurrentColumn(0)
     setInvalidRow(null)
     setWinningRow(null)
     setStatus('playing')
@@ -440,12 +463,19 @@ function App() {
     }
   }, [clientSessionId, friendsFamilyToken, requestWithSessionRecovery])
 
+  // `switchToWordle: false` marks a *background* load of the Wordle puzzle — app
+  // bootstrap, the midnight rollover, "not available yet" recovery. Those must
+  // refresh Wordle's own state without yanking the player out of whichever game
+  // they are actually on (which would undo the restored last-game state on every
+  // reload). Only explicit Wordle choices from the menu switch the view.
   const beginPuzzle = useCallback(
-    (nextPuzzle: PuzzleMetadata) => {
-      setActiveGame('wordle')
+    (nextPuzzle: PuzzleMetadata, { switchToWordle = true }: BeginPuzzleOptions = {}) => {
+      if (switchToWordle) {
+        setActiveGame('wordle')
+        setIsMenuOpen(false)
+      }
       setPuzzle(nextPuzzle)
       setPuzzleError('')
-      setIsMenuOpen(false)
       setIsFamilyDailyStatusLoading(false)
       resetGameState(nextPuzzle)
 
@@ -456,35 +486,41 @@ function App() {
     [resetGameState],
   )
 
-  const loadDailyPuzzle = useCallback(async () => {
-    try {
-      const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
-        '/api/today',
-        { cache: 'no-store' },
-      )
+  const loadDailyPuzzle = useCallback(
+    async (options: BeginPuzzleOptions = {}) => {
+      try {
+        const responseBody = await requestJson<Partial<PuzzleMetadata> & { error?: string }>(
+          '/api/today',
+          { cache: 'no-store' },
+        )
 
-      if (
-        typeof responseBody.date !== 'string' ||
-        responseBody.answerLength !== WORD_LENGTH ||
-        typeof responseBody.confidence !== 'number' ||
-        typeof responseBody.status !== 'string'
-      ) {
-        throw new Error('Unexpected daily Wordle response')
+        if (
+          typeof responseBody.date !== 'string' ||
+          responseBody.answerLength !== WORD_LENGTH ||
+          typeof responseBody.confidence !== 'number' ||
+          typeof responseBody.status !== 'string'
+        ) {
+          throw new Error('Unexpected daily Wordle response')
+        }
+
+        beginPuzzle(
+          {
+            date: responseBody.date,
+            answerLength: responseBody.answerLength,
+            confidence: responseBody.confidence,
+            mode: 'daily',
+            status: responseBody.status,
+          },
+          options,
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not load daily Wordle'
+        console.warn('Could not load daily Wordle', error)
+        setPuzzleError(message)
       }
-
-      beginPuzzle({
-        date: responseBody.date,
-        answerLength: responseBody.answerLength,
-        confidence: responseBody.confidence,
-        mode: 'daily',
-        status: responseBody.status,
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not load daily Wordle'
-      console.warn('Could not load daily Wordle', error)
-      setPuzzleError(message)
-    }
-  }, [beginPuzzle])
+    },
+    [beginPuzzle],
+  )
 
   const startRandomPuzzle = useCallback(async () => {
     try {
@@ -682,10 +718,11 @@ function App() {
 
   const addLetter = useCallback(
     (letter: string) => {
-      if (currentColumn >= WORD_LENGTH) return
-
       const row = currentRow
-      const column = currentColumn
+      // Fill the first open slot from the left, skipping any autofilled green
+      // tiles (state 'correct') that are locked in place.
+      const column = board[row].findIndex((tile) => tile.state === 'empty')
+      if (column === -1) return
 
       setBoard((previousBoard) =>
         previousBoard.map((boardRow, rowIndex) =>
@@ -716,31 +753,137 @@ function App() {
           ),
         )
       }, 120)
-
-      setCurrentColumn((columnIndex) => columnIndex + 1)
     },
-    [currentColumn, currentRow],
+    [board, currentRow],
   )
 
   const removeLetter = useCallback(() => {
-    if (currentColumn === 0) return
-
-    const nextColumn = currentColumn - 1
+    const row = currentRow
+    // Only typed letters (state 'tbd') can be deleted; autofilled greens stay put.
+    let column = -1
+    for (let tileIndex = board[row].length - 1; tileIndex >= 0; tileIndex -= 1) {
+      if (board[row][tileIndex].state === 'tbd') {
+        column = tileIndex
+        break
+      }
+    }
+    if (column === -1) return
 
     setBoard((previousBoard) =>
       previousBoard.map((boardRow, rowIndex) =>
-        rowIndex === currentRow
+        rowIndex === row
           ? boardRow.map((tile, tileIndex) =>
-              tileIndex === nextColumn
+              tileIndex === column
                 ? { letter: '', state: 'empty', animation: 'idle' }
                 : tile,
             )
           : boardRow,
       ),
     )
+  }, [board, currentRow])
 
-    setCurrentColumn(nextColumn)
-  }, [currentColumn, currentRow])
+  // Transition each changed column of the active row to its target content with
+  // the same two-phase flip the reveal uses: the current content rotates to
+  // edge-on (flip-in), the content is swapped at the invisible midpoint, then the
+  // new content rotates back to face (flip-out). Content is always present, so it
+  // never blanks or pops. Staggered left-to-right; token-guarded so a re-toggle
+  // cancels an in-flight run.
+  const flipRowTo = useCallback(
+    (targetRow: number, targets: { letter: string; state: TileState }[]) => {
+      const current = boardRef.current[targetRow]
+      const token = (autofillFlipTokenRef.current += 1)
+      const isCurrent = () => autofillFlipTokenRef.current === token
+
+      targets.forEach((target, column) => {
+        const tile = current[column]
+        if (tile.letter === target.letter && tile.state === target.state) return
+
+        const start = column * REVEAL_STEP_MS
+        // Revealing a letter: hold it as a grey tile through the first half (so
+        // the slot is never empty — a stray keystroke can't slip in — and it
+        // reads like a normal grey→colour reveal). Removing a letter: keep the
+        // current content flipping away, then swap to empty at the midpoint.
+        const firstHalf =
+          target.letter !== ''
+            ? { letter: target.letter, state: 'tbd' as TileState, animation: 'flip-in' as const }
+            : { animation: 'flip-in' as const }
+
+        window.setTimeout(() => {
+          if (!isCurrent()) return
+          setBoard((previousBoard) => patchTile(previousBoard, targetRow, column, firstHalf))
+        }, start)
+
+        window.setTimeout(() => {
+          if (!isCurrent()) return
+          setBoard((previousBoard) =>
+            patchTile(previousBoard, targetRow, column, {
+              letter: target.letter,
+              state: target.state,
+              animation: 'flip-out',
+            }),
+          )
+        }, start + FLIP_HALF_MS)
+
+        window.setTimeout(() => {
+          if (!isCurrent()) return
+          setBoard((previousBoard) => patchTile(previousBoard, targetRow, column, { animation: 'idle' }))
+        }, start + FLIP_HALF_MS * 2)
+      })
+    },
+    [],
+  )
+
+  // Flip confirmed greens into the active row (empty gaps and any stray typed
+  // letters resolve to their autofill target).
+  const flipInAutofillRow = useCallback(
+    (targetRow: number) => {
+      const greens = getGreenLetters(boardRef.current, targetRow)
+      const targets = greens.map((letter) =>
+        letter
+          ? { letter, state: 'correct' as TileState }
+          : { letter: '', state: 'empty' as TileState },
+      )
+      flipRowTo(targetRow, targets)
+    },
+    [flipRowTo],
+  )
+
+  // Reverse: flip every filled tile in the active row away, revealing empty tiles.
+  const flipOutAutofillRow = useCallback(
+    (targetRow: number) => {
+      const targets = boardRef.current[targetRow].map(() => ({
+        letter: '',
+        state: 'empty' as TileState,
+      }))
+      flipRowTo(targetRow, targets)
+    },
+    [flipRowTo],
+  )
+
+  // Flip the autofill preference and rebuild the active row to match: switching
+  // on seeds it with confirmed greens (flipping into place), switching off clears
+  // it (typed letters included). Only the in-progress row is touched; completed
+  // rows never change.
+  const toggleAutofill = useCallback(() => {
+    const nextEnabled = !settings.wordleAutofill
+    updateSetting('wordleAutofill', nextEnabled)
+
+    if (status !== 'playing' || isRevealing) return
+
+    if (nextEnabled) {
+      flipInAutofillRow(currentRow)
+    } else {
+      flipOutAutofillRow(currentRow)
+    }
+  }, [
+    currentRow,
+    flipInAutofillRow,
+    flipOutAutofillRow,
+    isRevealing,
+    settings.wordleAutofill,
+    status,
+    updateSetting,
+  ])
 
   const submitResult = useCallback(
     async ({
@@ -881,14 +1024,18 @@ function App() {
       return
     }
 
-    if (currentColumn < WORD_LENGTH) {
-      shakeRow(currentRow)
+    const row = currentRow
+    // The row is ready once every slot (typed or autofilled) holds a letter.
+    if (board[row].some((tile) => tile.letter === '')) {
+      shakeRow(row)
       showToast('Not enough letters')
       return
     }
 
-    const row = currentRow
     const guess = board[row].map((tile) => tile.letter).join('')
+    // In autofill mode the row arrives with locked green tiles (already scored
+    // 'correct'). Those shouldn't flip on reveal — only the newly typed tiles do.
+    const prefilledColumns = board[row].map((tile) => tile.state === 'correct')
 
     const isLastRow = row === MAX_GUESSES - 1
 
@@ -956,6 +1103,10 @@ function App() {
     const { didWin, scores } = guessResult
 
     scores.forEach((score, index) => {
+      // Leave already-correct autofilled tiles untouched (no flip, keyboard
+      // state unchanged) so only newly typed letters animate.
+      if (prefilledColumns[index]) return
+
       window.setTimeout(() => {
         setBoard((previousBoard) =>
           previousBoard.map((boardRow, rowIndex) =>
@@ -1045,14 +1196,20 @@ function App() {
         return
       }
 
-      setCurrentRow((row) => row + 1)
-      setCurrentColumn(0)
+      const nextRow = row + 1
+      setCurrentRow(nextRow)
+      // Carry confirmed greens into the next row when autofill is on (flipping
+      // them into place); otherwise leave it blank. The just-revealed row's
+      // scores are already applied here.
+      if (autofillEnabledRef.current) {
+        flipInAutofillRow(nextRow)
+      }
     }, REVEAL_DONE_MS)
   }, [
 	    board,
 	    clientSessionId,
-	    currentColumn,
 	    currentRow,
+	    flipInAutofillRow,
 	    friendsFamilyToken,
 	    loadDailyPuzzle,
 	    puzzle,
@@ -1136,8 +1293,10 @@ function App() {
     setOperatorAnnouncement(null)
   }, [operatorAnnouncement])
 
+  // Bootstrap Wordle's daily in the background. It must not steal the view: on a
+  // reload we may have restored a different active game (see loadLastGameState).
   useEffect(() => {
-    void loadDailyPuzzle()
+    void loadDailyPuzzle({ switchToWordle: false })
   }, [loadDailyPuzzle])
 
   // Refresh the daily when the local calendar date rolls over, so the app never
@@ -1157,7 +1316,7 @@ function App() {
       const { activeGame: game, puzzle: activePuzzle, additionalGameDate: gameDate } =
         rolloverStateRef.current
       if (game === 'wordle') {
-        if (activePuzzle?.mode === 'daily') void loadDailyPuzzle()
+        if (activePuzzle?.mode === 'daily') void loadDailyPuzzle({ switchToWordle: false })
       } else if (gameDate === previous) {
         setAdditionalGameDate(current)
         setAdditionalPastDate(current)
@@ -1224,7 +1383,6 @@ function App() {
           setBoard(hydrateBoardFromResult(serverResult))
           setKeyboardState(getKeyboardStateFromResult(serverResult))
           setCurrentRow(Math.min(serverResult.guessesUsed, MAX_GUESSES - 1))
-          setCurrentColumn(WORD_LENGTH)
           setStatus(serverResult.outcome)
           setWinningRow(serverResult.outcome === 'won' ? serverResult.guessesUsed - 1 : null)
           setCompletedResult({
@@ -1245,10 +1403,15 @@ function App() {
           responseBody.attempt.guessesUsed > 0
         ) {
           const serverAttempt = responseBody.attempt
-          setBoard(hydrateBoardFromResult(serverAttempt))
+          const activeRow = Math.min(serverAttempt.guessesUsed, MAX_GUESSES - 1)
+          const hydratedBoard = hydrateBoardFromResult(serverAttempt)
+          setBoard(
+            autofillEnabledRef.current
+              ? applyAutofillRow(hydratedBoard, activeRow)
+              : hydratedBoard,
+          )
           setKeyboardState(getKeyboardStateFromResult(serverAttempt))
-          setCurrentRow(Math.min(serverAttempt.guessesUsed, MAX_GUESSES - 1))
-          setCurrentColumn(0)
+          setCurrentRow(activeRow)
           setStatus('playing')
           setWinningRow(null)
           setCompletedResult(null)
@@ -1258,7 +1421,7 @@ function App() {
         }
       } catch (error) {
         if (error instanceof ApiError && error.message === 'Daily Wordle is not available yet') {
-          void loadDailyPuzzle()
+          void loadDailyPuzzle({ switchToWordle: false })
         }
 
         console.warn('Could not load friends and family daily status', error)
@@ -1363,8 +1526,25 @@ function App() {
     window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings))
   }, [settings])
 
+  // Persist the active game so a reload the player never asked for resumes it.
+  // Re-stamped as the app is backgrounded — that is the last moment iOS lets us
+  // say "they were still here", and the resume window is measured from it rather
+  // than from whenever they last switched games.
   useEffect(() => {
-    saveLastGameState({ activeGame, additionalGameDate })
+    const persist = () => saveLastGameState({ activeGame, additionalGameDate })
+    persist()
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persist()
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('pagehide', persist)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('pagehide', persist)
+    }
   }, [activeGame, additionalGameDate])
 
   useEffect(() => {
@@ -1666,7 +1846,14 @@ function App() {
 
         <div className="wordbee-header__side wordbee-header__side--right">
           {activeGame === 'wordle' && !isFamilyStatsOpen && puzzle && status === 'playing' && (
-            <HintButton onReveal={requestHint} used={usedHint} />
+            <>
+              <AutofillToggle
+                enabled={settings.wordleAutofill}
+                disabled={isRevealing}
+                onToggle={toggleAutofill}
+              />
+              <HintButton onReveal={requestHint} used={usedHint} />
+            </>
           )}
           {activeGame === 'wordle' && !isFamilyStatsOpen && completedResult && (
             <button
@@ -1677,15 +1864,19 @@ function App() {
               See results
             </button>
           )}
-          {activeGame !== 'wordle' && !isFamilyStatsOpen && otherGameCompletedResult && (
-            <button
-              className="wordbee-results-reopen-button"
-              type="button"
-              onClick={() => setIsOtherGameResultsOpen(true)}
-            >
-              See results
-            </button>
-          )}
+          {activeGame !== 'wordle' &&
+            activeGame !== 'letterboxed' &&
+            activeGame !== 'connections' &&
+            !isFamilyStatsOpen &&
+            otherGameCompletedResult && (
+              <button
+                className="wordbee-results-reopen-button"
+                type="button"
+                onClick={() => setIsOtherGameResultsOpen(true)}
+              >
+                See results
+              </button>
+            )}
           {!isFamilyStatsOpen && accessState?.kind === 'friends-family' && (
             <button
               className="wordbee-icon-button wordbee-icon-button--stats"
@@ -1794,7 +1985,7 @@ function App() {
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
           showToast={showToast}
-          onGameComplete={handleOtherGameComplete}
+          onGameComplete={handleOtherGameLoadedAndComplete}
           onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
           onGameReset={handleAdditionalGameReset}
           onResolvedDate={handleAdditionalResolvedDate}
@@ -1826,7 +2017,10 @@ function App() {
           requestedDate={additionalGameDate}
           requestWithSessionRecovery={requestWithSessionRecovery}
           showToast={showToast}
-          onGameComplete={handleOtherGameComplete}
+          // Letter Boxed shows its outcome in-panel (solve count, insight,
+          // fewest solution, play-again/reveal) and deliberately has no shared
+          // results dialog, so completion is recorded quietly (no auto-open).
+          onGameComplete={handleOtherGameLoadedAndComplete}
           onGameLoadedAndComplete={handleOtherGameLoadedAndComplete}
           onGameReset={handleAdditionalGameReset}
           onResolvedDate={handleAdditionalResolvedDate}
@@ -1989,20 +2183,23 @@ function App() {
         />
       )}
 
-      {isOtherGameResultsOpen && otherGameCompletedResult && (
-        <MultigameResultsDialog
-          activeGame={activeGame as AdditionalGameKey}
-          canOpenStats={accessState?.kind === 'friends-family'}
-          onClose={() => setIsOtherGameResultsOpen(false)}
-          onOpenStats={() => {
-            setIsOtherGameResultsOpen(false)
-            openFamilyStats('overview')
-          }}
-          result={otherGameCompletedResult}
-          stats={otherGameStats}
-          showToast={showToast}
-        />
-      )}
+      {isOtherGameResultsOpen &&
+        otherGameCompletedResult &&
+        activeGame !== 'letterboxed' &&
+        activeGame !== 'connections' && (
+          <MultigameResultsDialog
+            activeGame={activeGame as AdditionalGameKey}
+            canOpenStats={accessState?.kind === 'friends-family'}
+            onClose={() => setIsOtherGameResultsOpen(false)}
+            onOpenStats={() => {
+              setIsOtherGameResultsOpen(false)
+              openFamilyStats('overview')
+            }}
+            result={otherGameCompletedResult}
+            stats={otherGameStats}
+            showToast={showToast}
+          />
+        )}
 
       {operatorAnnouncement && (
         <OperatorAnnouncementDialog

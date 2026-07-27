@@ -18,6 +18,62 @@ export function createBoard() {
   )
 }
 
+// Cumulative known-green letters: for each column, the letter that has been
+// scored 'correct' in any completed row above `activeRow` (null if unknown).
+// Greens are consistent across guesses (same letter + position), so unioning
+// them is safe.
+export function getGreenLetters(board: Tile[][], activeRow: number) {
+  const width = board[activeRow]?.length ?? 0
+  const greens: (string | null)[] = Array.from({ length: width }, () => null)
+
+  for (let row = 0; row < activeRow; row += 1) {
+    board[row]?.forEach((tile, column) => {
+      if (tile.state === 'correct' && tile.letter) {
+        greens[column] = tile.letter
+      }
+    })
+  }
+
+  return greens
+}
+
+// Rebuild the active row for autofill: locked green tiles at every confirmed
+// position, empty elsewhere. Any letters previously typed into the row are
+// discarded so toggling autofill on always yields a predictable starting row.
+export function applyAutofillRow(board: Tile[][], activeRow: number) {
+  const greens = getGreenLetters(board, activeRow)
+
+  return board.map((row, rowIndex) =>
+    rowIndex === activeRow
+      ? row.map((_tile, column) =>
+          greens[column]
+            ? {
+                letter: greens[column] as string,
+                state: 'correct' as TileState,
+                animation: 'idle' as TileAnimation,
+              }
+            : {
+                letter: '',
+                state: 'empty' as TileState,
+                animation: 'idle' as TileAnimation,
+              },
+        )
+      : row,
+  )
+}
+
+// Immutably merge `changes` into a single tile — used by the staggered autofill
+// flip choreography to drive one column through its flip phases.
+export function patchTile(board: Tile[][], row: number, column: number, changes: Partial<Tile>) {
+  return board.map((boardRow, rowIndex) =>
+    rowIndex === row
+      ? boardRow.map((tile, tileIndex) =>
+          tileIndex === column ? { ...tile, ...changes } : tile,
+        )
+      : boardRow,
+  )
+}
+
 export function getCompletedBoard(board: Tile[][], activeRow: number, scores: EvaluatedState[]) {
   return board
     .slice(0, activeRow)

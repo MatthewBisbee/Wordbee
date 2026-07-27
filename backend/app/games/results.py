@@ -12,6 +12,15 @@ from .registry import GAME_KEYS, get_game_first_date
 
 MAX_GAME_HISTORY_RESULTS = 40
 
+# Spelling Bee has no terminal "finish": you keep adding words all day, and it
+# writes a result row on the very first synced word, so the usual "unlock once
+# you've played today" rule leaks (find one word -> see everyone's list). It is
+# therefore never revealed to others while the puzzle is live — only past days —
+# though you can always see your own. Every other game (Letter Boxed included)
+# only writes a result once you lock in a solve/reveal, so the standard
+# unlock-on-finish is a genuine commitment and keeps working.
+OPEN_ENDED_GAME_KEYS = {"spellingbee"}
+
 
 def save_multigame_result(
     *,
@@ -270,6 +279,7 @@ def get_multigame_dashboard(*, requesting_user_id: str) -> dict[str, Any]:
         if requesting_user is None:
             return {
                 "currentUserId": requesting_user_id,
+                "currentDate": get_puzzle_date().isoformat(),
                 "games": empty_multigame_dashboard(),
             }
 
@@ -307,7 +317,9 @@ def get_multigame_dashboard(*, requesting_user_id: str) -> dict[str, Any]:
     for result in results:
         if result["date"] == today_str and result["userId"] != requesting_user_id:
             combo = (result["gameKey"], result["date"], result["variant"])
-            if combo not in completed_combos:
+            # Open-ended games stay locked to others for the whole live day; the
+            # rest unlock once the viewer has their own play in for the combo.
+            if result["gameKey"] in OPEN_ENDED_GAME_KEYS or combo not in completed_combos:
                 result["locked"] = True
                 result["outcome"] = "locked"
                 result["elapsedSeconds"] = None
@@ -341,6 +353,7 @@ def get_multigame_dashboard(*, requesting_user_id: str) -> dict[str, Any]:
 
     return {
         "currentUserId": requesting_user_id,
+        "currentDate": today_str,
         "games": dashboard,
     }
 
@@ -400,7 +413,15 @@ def get_multigame_calendar(
             (requesting_user_id, game_key, current_puzzle_date),
         ).fetchone()
 
-    can_reveal_today = requesting_user_id == target_user_id or requester_today is not None
+    # You can always see your own current day. For open-ended word games another
+    # player's live day is never revealed (see OPEN_ENDED_GAME_KEYS); finishable
+    # games reveal it once the viewer has played today themselves.
+    if requesting_user_id == target_user_id:
+        can_reveal_today = True
+    elif game_key in OPEN_ENDED_GAME_KEYS:
+        can_reveal_today = False
+    else:
+        can_reveal_today = requester_today is not None
 
     best_by_date: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
     for row in result_rows:
@@ -490,8 +511,18 @@ def calculate_multigame_stats(results: list[dict[str, Any]], game_key: str = Non
     played = len(unlocked_results)
 
     if game_key == "strands":
+        # Strands has no fail state, so the meaningful assist metric is how many
+        # theme-word hints were used. Historical rows predate hint tracking and
+        # simply carry no hintsUsed key, which reads as 0.
+        hint_counts = [
+            int((result.get("score") or {}).get("hintsUsed") or 0)
+            for result in unlocked_results
+        ]
+        total_hints = sum(hint_counts)
         return {
             "played": played,
+            "hintsUsed": total_hints,
+            "averageHints": round(total_hints / played, 2) if played else 0,
         }
 
     if game_key in {"sudoku", "crossword", "mini", "midi", "pips"}:

@@ -399,10 +399,10 @@ export function ConnectionsGame({
         setShakingCards([])
         setPoppingDotIndex(-1)
         setMistakes(nextMistakes)
-        setSelectedCards([])
 
         if (nextMistakes >= puzzle.mistakesAllowed) {
           setIsComplete(true)
+          setSelectedCards([])
           void (async () => {
             const revealedGroups = await revealSolution()
             await saveResult('lost', revealedGroups, nextMistakes, nextSubmittedGuesses)

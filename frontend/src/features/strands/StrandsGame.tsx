@@ -29,6 +29,16 @@ type StrandsSolution = {
   spangramPath: StrandsCoord[]
 }
 
+// A live hint circles one unsolved theme word. `orderRevealed` flips true once
+// the player spends a follow-up hint to uncover that word's letter order, at
+// which point `path` is drawn as a connecting line (matching NYT Strands).
+type StrandsActiveHint = {
+  word: string
+  cells: string[]
+  path: StrandsCoord[]
+  orderRevealed: boolean
+}
+
 type StrandsAttemptState = {
   foundBonusWords: string[]
   foundPaths: Record<string, StrandsCoord[]>
@@ -36,6 +46,7 @@ type StrandsAttemptState = {
   foundThemeWords: string[]
   submittedWords: string[]
   hintsUsed: number
+  activeHints?: StrandsActiveHint[]
 }
 
 export function StrandsGame({
@@ -69,7 +80,11 @@ export function StrandsGame({
   const [submittedWords, setSubmittedWords] = useState<string[]>([])
   const [celebratingKeys, setCelebratingKeys] = useState<string[]>([])
   const [celebrateKind, setCelebrateKind] = useState<'theme' | 'spangram'>('theme')
-  const [hintCells, setHintCells] = useState<string[]>([])
+  // Each pressed hint circles one still-unsolved theme word and stays lit until
+  // that word is solved, so several hinted areas can be on the board at once.
+  // A follow-up press on a live hint reveals that word's order instead of
+  // circling a new one (see applyHint).
+  const [activeHints, setActiveHints] = useState<StrandsActiveHint[]>([])
   const [hintsUsed, setHintsUsed] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isComplete, setIsComplete] = useState(false)
@@ -112,6 +127,18 @@ export function StrandsGame({
     return cells
   }, [foundPaths, spangramKey])
 
+  // Map each hinted cell to its hint's index so multiple simultaneous hints can
+  // be drawn in slightly different shades of the theme blue.
+  const hintShadeByCell = useMemo(() => {
+    const map: Record<string, number> = {}
+    activeHints.forEach((hint, index) => {
+      hint.cells.forEach((cell) => {
+        map[cell] = index
+      })
+    })
+    return map
+  }, [activeHints])
+
   const updateCenters = useCallback(() => {
     if (!boardRef.current) return
     const buttons = boardRef.current.querySelectorAll('.strands-cell')
@@ -153,6 +180,8 @@ export function StrandsGame({
       nextBonusWords: string[],
       nextPaths: Record<string, StrandsCoord[]>,
       nextSubmittedWords: string[],
+      nextHintsUsed = hintsUsed,
+      nextActiveHints = activeHints,
     ) => {
       if (!puzzle) return
 
@@ -162,7 +191,8 @@ export function StrandsGame({
         foundSpangram: nextSpangram,
         foundThemeWords: nextThemeWords,
         submittedWords: nextSubmittedWords,
-        hintsUsed,
+        hintsUsed: nextHintsUsed,
+        activeHints: nextActiveHints,
       }
 
       if (accessState?.kind === 'friends-family') {
@@ -191,7 +221,7 @@ export function StrandsGame({
         )
       }
     },
-    [accessState, clientSessionId, hintsUsed, puzzle, requestWithSessionRecovery],
+    [accessState, clientSessionId, hintsUsed, activeHints, puzzle, requestWithSessionRecovery],
   )
 
   const saveResult = useCallback(
@@ -212,6 +242,7 @@ export function StrandsGame({
         foundSpangramWord: nextSpangram,
         foundPaths: nextPaths,
         foundThemeWords: nextThemeWords,
+        hintsUsed,
         revealed,
         submittedWords: nextSubmittedWords,
       }
@@ -269,7 +300,7 @@ export function StrandsGame({
         onGameComplete(completedResult, null)
       }
     },
-    [accessState, clientSessionId, puzzle, requestWithSessionRecovery, showToast, onGameComplete],
+    [accessState, clientSessionId, hintsUsed, puzzle, requestWithSessionRecovery, showToast, onGameComplete],
   )
 
   const loadPuzzle = useCallback(async () => {
@@ -283,7 +314,7 @@ export function StrandsGame({
     setFoundPaths({})
     setSubmittedWords([])
     setCelebratingKeys([])
-    setHintCells([])
+    setActiveHints([])
     setHintsUsed(0)
     setIsComplete(false)
     startedAtRef.current = Date.now()
@@ -358,6 +389,7 @@ export function StrandsGame({
           setFoundPaths(state.foundPaths && typeof state.foundPaths === 'object' ? state.foundPaths : {})
           setSubmittedWords(Array.isArray(state.submittedWords) ? state.submittedWords : [])
           setHintsUsed(Number(state.hintsUsed ?? 0))
+          setActiveHints(normalizeActiveHints(state.activeHints))
         }
       } else {
         const localResult = loadStoredAdditionalGameValue<MultigameCompletionResult>(
@@ -413,6 +445,7 @@ export function StrandsGame({
             )
             setSubmittedWords(Array.isArray(localAttempt.submittedWords) ? localAttempt.submittedWords : [])
             setHintsUsed(Number(localAttempt.hintsUsed ?? 0))
+            setActiveHints(normalizeActiveHints(localAttempt.activeHints))
           }
         }
       }
@@ -440,25 +473,86 @@ export function StrandsGame({
 
   const applyHint = useCallback(async () => {
     if (!puzzle || isComplete) return
+
+    // NYT-style hint progression. If a circled word's order hasn't been revealed
+    // yet, this press reveals it (draws the path line) rather than circling a
+    // new word. Only once every live hint's order is shown does a press start a
+    // fresh word. A hint clears when its word is finally solved (submitSelection).
+    const pendingIndex = activeHints.findIndex((hint) => !hint.orderRevealed)
+    if (pendingIndex !== -1) {
+      const nextActiveHints = activeHints.map((hint, index) =>
+        index === pendingIndex ? { ...hint, orderRevealed: true } : hint,
+      )
+      const nextHintsUsed = hintsUsed + 1
+      setActiveHints(nextActiveHints)
+      setHintsUsed(nextHintsUsed)
+      void saveAttempt(
+        foundThemeWords,
+        foundSpangram,
+        foundBonusWords,
+        foundPaths,
+        submittedWords,
+        nextHintsUsed,
+        nextActiveHints,
+      )
+      return
+    }
+
     try {
+      // Exclude words already solved AND already circled so a new press reveals a
+      // genuinely new theme word rather than re-circling the last one.
+      const alreadyHinted = activeHints.map((hint) => hint.word)
       const hint = await requestJson<{ word: string; path: StrandsCoord[] }>(
         '/api/games/strands/hint',
         {
-          body: JSON.stringify({ date: puzzle.date, foundThemeWords }),
+          body: JSON.stringify({
+            date: puzzle.date,
+            foundThemeWords: [...foundThemeWords, ...alreadyHinted],
+          }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         },
       )
-      if (!hint.path || hint.path.length === 0) {
+      if (!hint.path || hint.path.length === 0 || !hint.word) {
         showToast('No hint available')
         return
       }
-      setHintCells(hint.path.map(([row, column]) => coordKey(row, column)))
-      setHintsUsed((used) => used + 1)
+      const cells = hint.path.map(([row, column]) => coordKey(row, column))
+      const nextActiveHints: StrandsActiveHint[] = activeHints.some(
+        (existing) => existing.word === hint.word,
+      )
+        ? activeHints
+        : [...activeHints, { word: hint.word, cells, path: hint.path, orderRevealed: false }]
+      const nextHintsUsed = hintsUsed + 1
+
+      setActiveHints(nextActiveHints)
+      setHintsUsed(nextHintsUsed)
+
+      void saveAttempt(
+        foundThemeWords,
+        foundSpangram,
+        foundBonusWords,
+        foundPaths,
+        submittedWords,
+        nextHintsUsed,
+        nextActiveHints,
+      )
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not get a hint')
     }
-  }, [foundThemeWords, isComplete, puzzle, showToast])
+  }, [
+    activeHints,
+    foundThemeWords,
+    foundSpangram,
+    isComplete,
+    puzzle,
+    showToast,
+    hintsUsed,
+    foundBonusWords,
+    foundPaths,
+    submittedWords,
+    saveAttempt,
+  ])
 
   const handleDragOverCell = useCallback((row: number, col: number) => {
     updateSelectedPath((prev) => {
@@ -538,7 +632,7 @@ export function StrandsGame({
           const nextBonus = [...foundBonusWords, response.word]
           setFoundBonusWords(nextBonus)
           showToast('Bonus word')
-          void saveAttempt(foundThemeWords, foundSpangram, nextBonus, foundPaths, nextSubmittedWords)
+          void saveAttempt(foundThemeWords, foundSpangram, nextBonus, foundPaths, nextSubmittedWords, hintsUsed, activeHints)
         }
         setSelectedPath([])
         selectedPathRef.current = []
@@ -553,6 +647,7 @@ export function StrandsGame({
 
       let nextThemeWords = foundThemeWords
       let nextSpangram = foundSpangram
+      const nextActiveHints = activeHints.filter((hint) => hint.word !== response.word)
 
       const celebrationKeys = responsePath.map(([row, column]) => coordKey(row, column))
       if (response.kind === 'spangram') {
@@ -567,7 +662,8 @@ export function StrandsGame({
           nextThemeWords = [...foundThemeWords, response.word].sort()
           setFoundThemeWords(nextThemeWords)
         }
-        setHintCells([])
+        // Only this word's hint is resolved; any other hinted words stay lit.
+        setActiveHints(nextActiveHints)
         setCelebrateKind('theme')
         setCelebratingKeys(celebrationKeys)
         window.setTimeout(() => setCelebratingKeys([]), 700)
@@ -586,7 +682,15 @@ export function StrandsGame({
         )
         showToast('Strands solved', 1800)
       } else {
-        void saveAttempt(nextThemeWords, nextSpangram, foundBonusWords, nextPaths, nextSubmittedWords)
+        void saveAttempt(
+          nextThemeWords,
+          nextSpangram,
+          foundBonusWords,
+          nextPaths,
+          nextSubmittedWords,
+          hintsUsed,
+          nextActiveHints,
+        )
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not check word')
@@ -602,6 +706,8 @@ export function StrandsGame({
     foundThemeWords,
     foundSpangram,
     foundPaths,
+    activeHints,
+    hintsUsed,
     saveAttempt,
     saveResult,
     showToast,
@@ -705,6 +811,28 @@ export function StrandsGame({
                   )
                 })}
 
+                {/* Draw the order of any circled word the player spent a
+                    follow-up hint to reveal, as a dotted trail in the hint shade. */}
+                {activeHints.map((hint, index) => {
+                  if (!hint.orderRevealed) return null
+                  const points = hint.path
+                    .map(([r, c]) => {
+                      const center = cellCenters[coordKey(r, c)]
+                      return center ? `${center.x},${center.y}` : ''
+                    })
+                    .filter(Boolean)
+                    .join(' ')
+                  if (!points) return null
+                  return (
+                    <polyline
+                      key={`hint-${hint.word}`}
+                      points={points}
+                      className="strands-line strands-line--hint"
+                      style={{ stroke: hintShadeColor(index) }}
+                    />
+                  )
+                })}
+
                 {/* Draw current dragging/active path */}
                 {selectedPath.length > 1 && (
                   <polyline
@@ -730,13 +858,15 @@ export function StrandsGame({
                     )
                     const foundKind = foundCellKinds[key]
                     const celebrationIndex = celebratingKeys.indexOf(key)
+                    const hintIndex = hintShadeByCell[key]
+                    const isHinted = hintIndex !== undefined && !foundKind
                     return (
                       <button
                         className={[
                           'strands-cell',
                           isSelected ? 'strands-cell--selected' : '',
                           foundKind ? `strands-cell--${foundKind}` : '',
-                          hintCells.includes(key) ? 'strands-cell--hint' : '',
+                          isHinted ? 'strands-cell--hint' : '',
                           celebrationIndex >= 0
                             ? celebrateKind === 'spangram'
                               ? 'strands-cell--celebrate'
@@ -753,6 +883,7 @@ export function StrandsGame({
                         style={
                           {
                             '--strands-jump-delay': `${Math.max(0, celebrationIndex) * 45}ms`,
+                            ...(isHinted ? { '--strands-hint-color': hintShadeColor(hintIndex) } : {}),
                           } as CSSProperties
                         }
                       >
@@ -815,6 +946,35 @@ export function StrandsGame({
 
 function coordKey(row: number, column: number) {
   return `${row}:${column}`
+}
+
+// Restore persisted hints, tolerating rows saved before order-reveal existed
+// (no `path`/`orderRevealed`). `cells` were stored in path order, so the path is
+// reconstructed from them when absent; a missing `orderRevealed` reads as false.
+function normalizeActiveHints(raw: unknown): StrandsActiveHint[] {
+  if (!Array.isArray(raw)) return []
+  const hints: StrandsActiveHint[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    if (typeof record.word !== 'string' || !Array.isArray(record.cells)) continue
+    const cells = record.cells.filter((cell): cell is string => typeof cell === 'string')
+    const path =
+      Array.isArray(record.path) && record.path.length > 0
+        ? (record.path as StrandsCoord[])
+        : cells.map((cell) => cell.split(':').map(Number) as StrandsCoord)
+    hints.push({ word: record.word, cells, path, orderRevealed: Boolean(record.orderRevealed) })
+  }
+  return hints
+}
+
+// Successive on-board hints get slightly different shades of the theme blue so
+// several can be told apart at a glance. The first keeps the exact theme color;
+// later ones are progressively deepened toward a darker blue.
+function hintShadeColor(index: number): string {
+  if (index <= 0) return 'var(--strands-theme)'
+  const themeShare = Math.max(24, 100 - index * 22)
+  return `color-mix(in srgb, var(--strands-theme) ${themeShare}%, #0a4a86)`
 }
 
 function areAdjacent(first: StrandsCoord, second: StrandsCoord) {

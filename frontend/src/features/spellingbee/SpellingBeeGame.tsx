@@ -350,14 +350,17 @@ export function SpellingBeeGame({
 
     if (word.length < 4) {
       showToast(flashShake('Too short'))
+      setCurrentWord('')
       return
     }
     if (!word.includes(centerLetter)) {
       showToast(flashShake('Missing center letter'))
+      setCurrentWord('')
       return
     }
     if (foundSet.has(word)) {
       showToast(flashShake('Already found'))
+      setCurrentWord('')
       return
     }
 
@@ -373,6 +376,7 @@ export function SpellingBeeGame({
 
       if (!response.valid) {
         showToast(flashShake(REASON_MESSAGES[response.reason ?? ''] ?? 'Not in word list'))
+        setCurrentWord('')
         return
       }
 

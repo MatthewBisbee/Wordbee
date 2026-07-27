@@ -131,6 +131,7 @@ export type FamilyDailyResult = {
   board: EvaluatedState[][]
   completedAt: string
   locked?: boolean
+  usedHint?: boolean
   analysis?: SolveAnalysis
 }
 
@@ -495,6 +496,9 @@ export type MultigameStatsSummary = {
   perfectCount?: number
   perfectRate?: number
   comboTimeline?: TilesTimelineDay[]
+  // Strands only (no win/lose — tracks theme-word hint usage).
+  hintsUsed?: number
+  averageHints?: number
 }
 
 export type MultigameResult = {
@@ -505,6 +509,8 @@ export type MultigameResult = {
   gameKey: AdditionalGameKey
   date: string
   variant: string
+  // 'daily' for the live puzzle of the day, 'retro' for an archive play.
+  playType?: CalendarPlayType
   outcome: Exclude<GameStatus, 'playing'>
   elapsedSeconds: number | null
   score: Record<string, unknown>
@@ -524,6 +530,8 @@ export type MultigameStatsUser = {
 
 export type MultigameDashboard = {
   currentUserId: string
+  // The live daily puzzle date (YYYY-MM-DD) shared across the additional games.
+  currentDate: string
   games: Record<
     AdditionalGameKey,
     {
@@ -622,6 +630,7 @@ export type Settings = {
   darkThemeOverride: boolean | null
   highContrast: boolean
   onscreenKeyboardOnly: boolean
+  wordleAutofill: boolean
 }
 
 export type AvatarOption = {

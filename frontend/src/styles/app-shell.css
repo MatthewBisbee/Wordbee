@@ -562,6 +562,19 @@
   transform: scale(0.9);
 }
 
+/* Autofill toggle (sits left of the hint button). It is disabled (unclickable)
+   during the reveal animation, but stays at full opacity — dimming mid-guess is
+   visually distracting. */
+.wordbee-icon-button--autofill:disabled {
+  cursor: default;
+}
+
+/* When autofill is on, fill the icon solid green so the active state reads at a
+   glance, mirroring the used-hint treatment. */
+.wordbee-icon-button--autofill-on .game-icon path {
+  fill: var(--color-correct);
+}
+
 /* Repeated-letter hint button + popover. */
 .wordbee-hint {
   position: relative;

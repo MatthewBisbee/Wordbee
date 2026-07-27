@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import { AvatarImage } from '../avatar/avatar'
 import { createDefaultAvatarConfig, sanitizeAvatarConfig } from '../avatar/avatar-config'
-import { CompletionCalendar } from '../calendar/CompletionCalendar'
+import { CalendarDetailBody, CompletionCalendar } from '../calendar/CompletionCalendar'
 import {
   formatElapsedTime,
   loadAdditionalGameStats,
@@ -10,8 +10,10 @@ import {
 import type {
   AccessState,
   AdditionalGameKey,
+  CalendarEntry,
   LetterboxedTimelineDay,
   MultigameDashboard,
+  MultigameResult,
   MultigameStatsUser,
   SpellingBeeTimelineDay,
   TilesTimelineDay,
@@ -62,6 +64,7 @@ export function MultigameStatsPage({
     if (activeGame === 'spellingbee') return 'geniusRate'
     if (activeGame === 'sudoku' || activeGame === 'pips' || isGridCrossword(activeGame)) return 'averageSeconds'
     if (activeGame === 'tiles') return 'averageLongestCombo'
+    if (activeGame === 'strands') return 'played'
     return 'solveRate'
   }, [activeGame])
 
@@ -78,6 +81,7 @@ export function MultigameStatsPage({
   const showsWords = activeGame === 'letterboxed'
   const showsBee = activeGame === 'spellingbee'
   const showsTiles = activeGame === 'tiles'
+  const showsStrands = activeGame === 'strands'
 
   const loadStats = useCallback(async () => {
     setIsLoading(true)
@@ -112,12 +116,28 @@ export function MultigameStatsPage({
   )
   const groupStats = gameDashboard?.groupStats
   const selectedUser = users.find((user) => user.id === selectedUserId) ?? users[0]
-  // Show the current user's own tab first (Wordle does the same).
+  const currentDate = dashboard?.currentDate ?? ''
+
+  // Whether a player has a live daily play on the board for today's puzzle. A
+  // locked (spoiler-hidden) row still counts — they played, we just can't show it.
+  const hasPlayedToday = useCallback(
+    (user: MultigameStatsUser) =>
+      Boolean(currentDate) &&
+      user.history.some(
+        (result) => result.date === currentDate && (result.playType ?? 'daily') === 'daily',
+      ),
+    [currentDate],
+  )
+
+  // Show the current user's own tab first (Wordle does the same), then surface
+  // everyone who has already played today ahead of those who haven't, so the
+  // people worth comparing sit together on the left. Stable within each group.
   const orderedUsers = useMemo(() => {
     const self = users.find((user) => user.id === currentUserId)
     const others = users.filter((user) => user.id !== currentUserId)
-    return self ? [self, ...others] : users
-  }, [currentUserId, users])
+    const base = self ? [self, ...others] : users
+    return [...base.filter(hasPlayedToday), ...base.filter((user) => !hasPlayedToday(user))]
+  }, [currentUserId, users, hasPlayedToday])
 
   const leaderboardUsers = useMemo(
     () => [...users].sort((a, b) => compareMultigameUsers(a, b, activeGame, sortKey)),
@@ -213,6 +233,9 @@ export function MultigameStatsPage({
                       <Metric label="Perfect solves" value={groupStats.perfectCount ?? 0} />
                     </>
                   )}
+                  {showsStrands && (
+                    <Metric label="Avg hints" value={formatHints(groupStats.averageHints)} />
+                  )}
                 </div>
 
                 {showsWords && groupStats.wordsTimeline && (
@@ -288,18 +311,28 @@ export function MultigameStatsPage({
             {view === 'players' && selectedUser && (
               <section className="stats-section">
                 <div className="stats-player-tabs" aria-label="Players">
-                  {orderedUsers.map((user) => (
-                    <button
-                      aria-pressed={selectedUser.id === user.id}
-                      key={user.id}
-                      onClick={() => setSelectedUserId(user.id)}
-                      type="button"
-                    >
-                      {user.avatar && <AvatarImage avatar={user.avatar} displayName={user.displayName} size={24} />}
-                      <span>{user.displayName}</span>
-                    </button>
-                  ))}
+                  {orderedUsers.map((user) => {
+                    const played = hasPlayedToday(user)
+                    return (
+                      <button
+                        aria-pressed={selectedUser.id === user.id}
+                        key={user.id}
+                        onClick={() => setSelectedUserId(user.id)}
+                        title={played ? `${user.displayName} played today` : `${user.displayName} hasn't played today`}
+                        type="button"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={`stats-player-dot ${played ? 'stats-player-dot--on' : ''}`}
+                        />
+                        {user.avatar && <AvatarImage avatar={user.avatar} displayName={user.displayName} size={24} />}
+                        <span>{user.displayName}</span>
+                      </button>
+                    )
+                  })}
                 </div>
+
+                <TodayPlayCard currentDate={currentDate} gameKey={activeGame} user={selectedUser} />
 
                 <div className="stats-metric-grid">
                   <Metric label="Played" value={selectedUser.stats.played} />
@@ -333,6 +366,9 @@ export function MultigameStatsPage({
                       <Metric label="Best combo" value={selectedUser.stats.bestLongestCombo ? `×${selectedUser.stats.bestLongestCombo}` : '--'} />
                       <Metric label="Perfect solves" value={selectedUser.stats.perfectCount ?? 0} />
                     </>
+                  )}
+                  {showsStrands && (
+                    <Metric label="Avg hints" value={formatHints(selectedUser.stats.averageHints)} />
                   )}
                 </div>
 
@@ -380,12 +416,85 @@ function Metric({ label, value }: { label: string; value: number | string }) {
   )
 }
 
+// The selected player's play for today, shown directly under the player selector
+// so a viewer can compare the day without clicking into the calendar. It renders
+// the exact same detail body a calendar day-tap would, and respects the same
+// spoiler lock (another player's current-day play stays hidden until you finish).
+function TodayPlayCard({
+  user,
+  currentDate,
+  gameKey,
+}: {
+  user: MultigameStatsUser
+  currentDate: string
+  gameKey: AdditionalGameKey
+}) {
+  const todayResult = useMemo<MultigameResult | undefined>(
+    () =>
+      currentDate
+        ? user.history.find(
+            (result) => result.date === currentDate && (result.playType ?? 'daily') === 'daily',
+          )
+        : undefined,
+    [currentDate, user.history],
+  )
+
+  if (!todayResult) {
+    return (
+      <div className="stats-today-card stats-today-card--muted">
+        <span className="stats-today-card__kicker">Today's play</span>
+        <p>{user.displayName} hasn't played today's {gameLabels[gameKey]} yet.</p>
+      </div>
+    )
+  }
+
+  if (todayResult.locked) {
+    // Spelling Bee never reveals another player's live day (you could copy their
+    // words; it has no lock-in); everything else just waits until you finish today.
+    const openEnded = gameKey === 'spellingbee'
+    return (
+      <div className="stats-today-card stats-today-card--muted">
+        <span className="stats-today-card__kicker">Today's play</span>
+        <p>
+          {openEnded
+            ? `${user.displayName} has played — only past days are viewable while today's ${gameLabels[gameKey]} is live.`
+            : `${user.displayName} has played — hidden until you finish today's ${gameLabels[gameKey]}.`}
+        </p>
+      </div>
+    )
+  }
+
+  const entry: CalendarEntry = {
+    date: currentDate,
+    outcome: todayResult.outcome,
+    playType: todayResult.playType ?? 'daily',
+    detail: {
+      score: todayResult.score,
+      variant: todayResult.variant,
+      elapsedSeconds: todayResult.elapsedSeconds,
+    },
+  }
+
+  return (
+    <div className="stats-today-card">
+      <span className="stats-today-card__kicker">Today's play · {formatHistoryDate(currentDate)}</span>
+      <CalendarDetailBody entry={entry} gameKey={gameKey} historyItem={todayResult} />
+    </div>
+  )
+}
+
 function formatWords(averageWords: number | undefined) {
   return averageWords && averageWords > 0 ? averageWords.toFixed(2) : '--'
 }
 
 function formatCombo(averageCombo: number | undefined) {
   return averageCombo && averageCombo > 0 ? `×${averageCombo.toFixed(1)}` : '--'
+}
+
+// Strands hints: 0 is a genuine (great) value — a hint-free average — so it is
+// shown rather than dashed out.
+function formatHints(averageHints: number | undefined) {
+  return (averageHints ?? 0).toFixed(2)
 }
 
 // Ranks the leaderboard per game: fewest average words (Letter Boxed), highest
@@ -401,6 +510,7 @@ type MultigameSortKey =
   | 'queenBeeCount'
   | 'averageLongestCombo'
   | 'bestLongestCombo'
+  | 'averageHints'
 
 interface MultigameSortOption {
   key: MultigameSortKey
@@ -492,6 +602,22 @@ function getSortOptions(gameKey: AdditionalGameKey): MultigameSortOption[] {
       },
     ]
   }
+  if (gameKey === 'strands') {
+    return [
+      {
+        key: 'played',
+        label: 'Total plays',
+        direction: 'desc',
+        formatValue: (s) => `${s.played} play${s.played === 1 ? '' : 's'}`,
+      },
+      {
+        key: 'averageHints',
+        label: 'Avg hints',
+        direction: 'asc',
+        formatValue: (s) => `${(s.averageHints ?? 0).toFixed(2)} avg hints`,
+      },
+    ]
+  }
   if (gameKey === 'sudoku') {
     return [
       {
@@ -554,6 +680,10 @@ function formatSecondaryValue(
   }
   if (gameKey === 'tiles') {
     if (sortKey === 'played') return s.averageLongestCombo ? `×${s.averageLongestCombo.toFixed(1)} avg combo` : '--'
+    return `${s.played} plays`
+  }
+  if (gameKey === 'strands') {
+    if (sortKey === 'played') return `${(s.averageHints ?? 0).toFixed(2)} avg hints`
     return `${s.played} plays`
   }
   if (gameKey === 'sudoku' || gameKey === 'pips' || isGridCrossword(gameKey)) {
@@ -987,10 +1117,21 @@ function PercentTrendChart({
   )
 }
 
-function tickRange(min: number, max: number) {
+// Y-axis ticks capped at a readable count. A plain per-integer range overflows
+// for large-valued charts (e.g. Tiles' longest-combo averages reach the tens),
+// so step up through the 1/2/5×10ⁿ progression until at most `maxTicks` fit.
+// Small ranges (word/guess counts) still resolve to a step of 1.
+function tickRange(min: number, max: number, maxTicks = 6) {
+  const span = Math.max(1, max - min)
+  const rawStep = span / maxTicks
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const normalized = rawStep / magnitude
+  const niceMultiple = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10
+  // These axes count whole units (words, guesses, combos), so never step below 1.
+  const step = Math.max(1, niceMultiple * magnitude)
   const ticks: number[] = []
-  for (let value = min; value <= max; value += 1) {
-    ticks.push(value)
+  for (let value = Math.ceil(min / step) * step; value <= max + step / 1000; value += step) {
+    ticks.push(Number(value.toFixed(6)))
   }
   return ticks
 }

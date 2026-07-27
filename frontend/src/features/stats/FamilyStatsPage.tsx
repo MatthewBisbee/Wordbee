@@ -9,10 +9,12 @@ import {
 } from '../../config/constants'
 import { AvatarImage } from '../avatar/avatar'
 import { createDefaultAvatarConfig, sanitizeAvatarConfig } from '../avatar/avatar-config'
-import { CompletionCalendar } from '../calendar/CompletionCalendar'
+import { CalendarDetailBody, CompletionCalendar } from '../calendar/CompletionCalendar'
 import type { SessionRequest } from '../games/game-utils'
 import type {
   AvatarConfig,
+  CalendarEntry,
+  FamilyDailyResult,
   FamilyGroupStats,
   FamilyStatsDashboard,
   FamilyStatsUser,
@@ -51,6 +53,7 @@ export function FamilyStatsPage({
   const [selectedUserId, setSelectedUserId] = useState(currentUserId)
   const [view, setView] = useState<FamilyStatsView>(initialView)
   const users = dashboard?.users ?? []
+  const currentDate = dashboard?.currentDate ?? ''
   const group = dashboard?.group ?? createFallbackGroupStats(users)
   const selectedUser =
     users.find((user) => user.id === selectedUserId) ??
@@ -113,6 +116,7 @@ export function FamilyStatsPage({
             {view === 'players' && selectedUser && (
               <>
                 <StatsPlayerView
+                  currentDate={currentDate}
                   onSelectUser={setSelectedUserId}
                   selectedUser={selectedUser}
                   users={users}
@@ -226,33 +230,53 @@ function StatsOverview({
 }
 
 function StatsPlayerView({
+  currentDate,
   onSelectUser,
   selectedUser,
   users,
 }: {
+  currentDate: string
   onSelectUser: (userId: string) => void
   selectedUser: FamilyStatsUser
   users: FamilyStatsUser[]
 }) {
+  const hasPlayedToday = (user: FamilyStatsUser) =>
+    Boolean(currentDate) && user.history.some((result) => result.date === currentDate)
+
+  // Surface players with a play in for today ahead of those without, so the
+  // people worth comparing sit together on the left. Stable within each group.
+  const orderedUsers = [
+    ...users.filter(hasPlayedToday),
+    ...users.filter((user) => !hasPlayedToday(user)),
+  ]
+
   return (
     <section className="stats-section" aria-label={`${selectedUser.displayName} stats`}>
       <div className="stats-player-tabs" aria-label="Players">
-        {users.map((user) => (
-          <button
-            aria-pressed={user.id === selectedUser.id}
-            key={user.id}
-            onClick={() => onSelectUser(user.id)}
-            type="button"
-          >
-            <PlayerAvatar
-              avatar={user.avatar}
-              displayName={user.displayName}
-              size={30}
-              userId={user.id}
-            />
-            <span>{user.displayName}</span>
-          </button>
-        ))}
+        {orderedUsers.map((user) => {
+          const played = hasPlayedToday(user)
+          return (
+            <button
+              aria-pressed={user.id === selectedUser.id}
+              key={user.id}
+              onClick={() => onSelectUser(user.id)}
+              title={played ? `${user.displayName} played today` : `${user.displayName} hasn't played today`}
+              type="button"
+            >
+              <span
+                aria-hidden="true"
+                className={`stats-player-dot ${played ? 'stats-player-dot--on' : ''}`}
+              />
+              <PlayerAvatar
+                avatar={user.avatar}
+                displayName={user.displayName}
+                size={30}
+                userId={user.id}
+              />
+              <span>{user.displayName}</span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="stats-profile-heading">
@@ -270,6 +294,8 @@ function StatsPlayerView({
         </div>
         <span>{selectedUser.stats.played} daily plays</span>
       </div>
+
+      <TodayPlayCard currentDate={currentDate} user={selectedUser} />
 
       <div className="stats-metric-grid stats-metric-grid--player">
         <StatsMetric label="Wins" value={selectedUser.stats.wins} />
@@ -301,7 +327,57 @@ function StatsPlayerView({
   )
 }
 
+// The selected player's Wordle play for today, shown under the selector so a
+// viewer can compare without opening the calendar. It reuses the exact calendar
+// day-detail body and respects the same spoiler lock on another player's
+// current-day result.
+function TodayPlayCard({
+  currentDate,
+  user,
+}: {
+  currentDate: string
+  user: FamilyStatsUser
+}) {
+  const todayResult: FamilyDailyResult | undefined = currentDate
+    ? user.history.find((result) => result.date === currentDate)
+    : undefined
 
+  if (!todayResult) {
+    return (
+      <div className="stats-today-card stats-today-card--muted">
+        <span className="stats-today-card__kicker">Today's play</span>
+        <p>{user.displayName} hasn't played today's Wordle yet.</p>
+      </div>
+    )
+  }
+
+  if (todayResult.locked) {
+    return (
+      <div className="stats-today-card stats-today-card--muted">
+        <span className="stats-today-card__kicker">Today's play</span>
+        <p>{user.displayName} has played — hidden until you finish today's Wordle.</p>
+      </div>
+    )
+  }
+
+  const entry: CalendarEntry = {
+    date: currentDate,
+    outcome: todayResult.outcome,
+    playType: 'daily',
+    detail: {
+      board: todayResult.board,
+      guesses: todayResult.guesses,
+      usedHint: todayResult.usedHint,
+    },
+  }
+
+  return (
+    <div className="stats-today-card">
+      <span className="stats-today-card__kicker">Today's play · {formatHistoryDate(currentDate)}</span>
+      <CalendarDetailBody entry={entry} gameKey="wordle" historyItem={todayResult} />
+    </div>
+  )
+}
 
 function StatsMetric({
   help,

@@ -442,28 +442,13 @@ export function PipsGame({
     void loadPuzzle(difficulty)
   }, [difficulty, loadPuzzle])
 
-  // Map a client point onto a board cell (or null when off the board shape).
-  const cellFromPoint = useCallback(
-    (x: number, y: number): Cell | null => {
-      const currentPuzzle = puzzleRef.current
-      const board = boardRef.current
-      if (!currentPuzzle || !board) return null
-      const rect = board.getBoundingClientRect()
-      const stepX = (rect.width - 2 * BOARD_PADDING) / currentPuzzle.cols
-      const stepY = (rect.height - 2 * BOARD_PADDING) / currentPuzzle.rows
-      const col = Math.floor((x - rect.left - BOARD_PADDING) / stepX)
-      const row = Math.floor((y - rect.top - BOARD_PADDING) / stepY)
-      if (row < 0 || row >= currentPuzzle.rows || col < 0 || col >= currentPuzzle.cols) return null
-      if (!geometry.boardSet.has(cellKey(row, col))) return null
-      return [row, col]
-    },
-    [geometry.boardSet],
-  )
-
+  // Returns true when the domino actually rotated (or a tray piece cycled), and
+  // false when a placed piece is boxed in on every side — the caller then falls
+  // back to a 180° in-place flip.
   const rotateDomino = useCallback(
-    (dominoIndex: number, pivotCell?: Cell | null) => {
+    (dominoIndex: number, pivotCell?: Cell | null): boolean => {
       const currentPuzzle = puzzleRef.current
-      if (!currentPuzzle) return
+      if (!currentPuzzle) return false
       const current = orientationsRef.current[dominoIndex]
       const anchor = anchorsRef.current[dominoIndex]
 
@@ -473,7 +458,7 @@ export function PipsGame({
           index === dominoIndex ? (current + 1) % DIRECTIONS.length : value,
         )
         commit(anchorsRef.current, nextOrientations)
-        return
+        return true
       }
 
       // Pivot around the half the player actually touched: that cell stays put and
@@ -523,12 +508,135 @@ export function PipsGame({
             index === dominoIndex ? nextOrientation : value,
           )
           commit(nextAnchors, nextOrientations)
-          return
+          return true
         }
       }
-      // Boxed in on every side — leave it as-is.
+      // Boxed in on every side — the caller falls back to a 180° flip.
+      return false
     },
     [commit, geometry.boardSet],
+  )
+
+  // Flip a placed domino 180° in place: same two cells, swapped pip halves. This
+  // always fits (it reuses the cells it already occupies), so it's the fallback
+  // when a piece can't rotate, and the direct action for a middle-third tap.
+  const flip180 = useCallback(
+    (dominoIndex: number) => {
+      const anchor = anchorsRef.current[dominoIndex]
+      if (!anchor) return
+      const current = orientationsRef.current[dominoIndex]
+      const [, cellB] = placementFor(anchor, current)
+      const nextAnchor = cellB
+      const nextOrientation = (current + 2) % DIRECTIONS.length
+
+      // Spin 180° about the domino's centre (pip faces are point-symmetric, so
+      // the half-turn reads cleanly).
+      rotateTokenRef.current += 1
+      if (rotateAnimTimerRef.current !== null) window.clearTimeout(rotateAnimTimerRef.current)
+      setRotateAnim({
+        index: dominoIndex,
+        origin: '50% 50%',
+        fromDeg: 180,
+        token: rotateTokenRef.current,
+      })
+      rotateAnimTimerRef.current = window.setTimeout(() => setRotateAnim(null), 260)
+
+      const nextAnchors = anchorsRef.current.map((value, index) =>
+        index === dominoIndex ? nextAnchor : value,
+      )
+      const nextOrientations = orientationsRef.current.map((value, index) =>
+        index === dominoIndex ? nextOrientation : value,
+      )
+      commit(nextAnchors, nextOrientations)
+    },
+    [commit],
+  )
+
+  // Which third of a placed domino a tap fell on, along its long axis: the outer
+  // thirds pivot-rotate on that half, the middle third triggers a 180° flip.
+  const tapThird = useCallback(
+    (dominoIndex: number, tapX: number, tapY: number): 'first' | 'middle' | 'last' => {
+      const board = boardRef.current
+      const currentPuzzle = puzzleRef.current
+      const anchor = anchorsRef.current[dominoIndex]
+      if (!board || !currentPuzzle || !anchor) return 'middle'
+      const [cellA, cellB] = placementFor(anchor, orientationsRef.current[dominoIndex])
+      const rect = board.getBoundingClientRect()
+      const horizontal = cellA[0] === cellB[0]
+      let position: number
+      if (horizontal) {
+        const stepX = (rect.width - 2 * BOARD_PADDING) / currentPuzzle.cols
+        const fracCol = (tapX - rect.left - BOARD_PADDING) / stepX
+        position = (fracCol - Math.min(cellA[1], cellB[1])) / 2
+      } else {
+        const stepY = (rect.height - 2 * BOARD_PADDING) / currentPuzzle.rows
+        const fracRow = (tapY - rect.top - BOARD_PADDING) / stepY
+        position = (fracRow - Math.min(cellA[0], cellB[0])) / 2
+      }
+      if (position < 1 / 3) return 'first'
+      if (position > 2 / 3) return 'last'
+      return 'middle'
+    },
+    [],
+  )
+
+  // Forgiving placement: rather than demanding the exact released cell be a legal
+  // anchor, snap to the nearest legal placement (matched by the domino's centre,
+  // since the drag ghost is centred on the pointer). Releasing over the tray — or
+  // well away from the board — snaps nowhere, so a placed piece can still be
+  // dragged off. Shared by the live drag preview and the drop so they agree.
+  const resolveDrop = useCallback(
+    (clientX: number, clientY: number, dominoIndex: number): { anchor: Cell; cells: PipsPlacement } | null => {
+      const board = boardRef.current
+      const currentPuzzle = puzzleRef.current
+      if (!board || !currentPuzzle) return null
+
+      // The tray is the "put it back" zone — never place from a release over it.
+      const overElement = document.elementFromPoint(clientX, clientY)
+      if (overElement instanceof Element && overElement.closest('.pips-tray')) return null
+
+      const rect = board.getBoundingClientRect()
+      const stepX = (rect.width - 2 * BOARD_PADDING) / currentPuzzle.cols
+      const stepY = (rect.height - 2 * BOARD_PADDING) / currentPuzzle.rows
+      const pointerCol = (clientX - rect.left - BOARD_PADDING) / stepX
+      const pointerRow = (clientY - rect.top - BOARD_PADDING) / stepY
+      // Ignore releases well clear of the board silhouette (return-to-tray).
+      const margin = 1.5
+      if (
+        pointerCol < -margin ||
+        pointerCol > currentPuzzle.cols + margin ||
+        pointerRow < -margin ||
+        pointerRow > currentPuzzle.rows + margin
+      ) {
+        return null
+      }
+
+      const orientation = orientationsRef.current[dominoIndex]
+      const others = computeFilled(anchorsRef.current, orientationsRef.current, currentPuzzle, dominoIndex)
+
+      let best: Cell | null = null
+      let bestCells: PipsPlacement | null = null
+      let bestDistance = Infinity
+      geometry.boardSet.forEach((key) => {
+        const [rowText, colText] = key.split(':')
+        const anchor: Cell = [Number(rowText), Number(colText)]
+        if (!canPlace(anchor, orientation, geometry.boardSet, others)) return
+        const cells = placementFor(anchor, orientation)
+        const [[r1, c1], [r2, c2]] = cells
+        const centerRow = (r1 + r2) / 2 + 0.5
+        const centerCol = (c1 + c2) / 2 + 0.5
+        const distance = (pointerRow - centerRow) ** 2 + (pointerCol - centerCol) ** 2
+        if (distance < bestDistance) {
+          bestDistance = distance
+          best = anchor
+          bestCells = cells
+        }
+      })
+
+      if (!best || !bestCells) return null
+      return { anchor: best, cells: bestCells }
+    },
+    [geometry.boardSet],
   )
 
   const endDrag = useCallback(
@@ -541,25 +649,42 @@ export function PipsGame({
       if (!currentPuzzle) return
 
       if (!active.moved) {
-        // Rotate, pivoting on whichever half of the domino the tap landed on.
-        const pivot = cellFromPoint(active.startX, active.startY)
-        rotateDomino(active.dominoIndex, pivot)
+        const dominoIndex = active.dominoIndex
+        const anchor = anchorsRef.current[dominoIndex]
+        if (!anchor) {
+          // Tray domino: cycle its orientation (no board half to pivot on).
+          rotateDomino(dominoIndex, null)
+          return
+        }
+        // A middle-third tap always flips 180°; an outer-third tap pivot-rotates
+        // on that half, falling back to a 180° flip if the piece is boxed in.
+        const third = tapThird(dominoIndex, active.startX, active.startY)
+        if (third === 'middle') {
+          flip180(dominoIndex)
+          return
+        }
+        const [cellA, cellB] = placementFor(anchor, orientationsRef.current[dominoIndex])
+        const horizontal = cellA[0] === cellB[0]
+        const minRow = Math.min(cellA[0], cellB[0])
+        const minCol = Math.min(cellA[1], cellB[1])
+        const firstCell: Cell = [minRow, minCol]
+        const lastCell: Cell = horizontal ? [minRow, minCol + 1] : [minRow + 1, minCol]
+        if (!rotateDomino(dominoIndex, third === 'first' ? firstCell : lastCell)) {
+          flip180(dominoIndex)
+        }
         return
       }
 
-      const target = cellFromPoint(clientX, clientY)
-      const orientation = orientationsRef.current[active.dominoIndex]
-      if (target) {
-        const others = computeFilled(anchorsRef.current, orientationsRef.current, currentPuzzle, active.dominoIndex)
-        if (canPlace(target, orientation, geometry.boardSet, others)) {
-          const nextAnchors = anchorsRef.current.map((anchor, index) =>
-            index === active.dominoIndex ? target : anchor,
-          )
-          commit(nextAnchors, orientationsRef.current)
-          return
-        }
+      const drop = resolveDrop(clientX, clientY, active.dominoIndex)
+      if (drop) {
+        const nextAnchors = anchorsRef.current.map((anchor, index) =>
+          index === active.dominoIndex ? drop.anchor : anchor,
+        )
+        commit(nextAnchors, orientationsRef.current)
+        return
       }
-      // Invalid drop: send a placed domino back to the tray; a tray domino stays.
+      // No nearby legal spot (or released over the tray): send a placed domino
+      // back to the tray; a tray domino stays put.
       if (active.fromAnchor) {
         const nextAnchors = anchorsRef.current.map((anchor, index) =>
           index === active.dominoIndex ? null : anchor,
@@ -567,7 +692,7 @@ export function PipsGame({
         commit(nextAnchors, orientationsRef.current)
       }
     },
-    [cellFromPoint, commit, geometry.boardSet, rotateDomino],
+    [commit, flip180, resolveDrop, rotateDomino, tapThird],
   )
 
   const onPointerDownDomino = useCallback(
@@ -604,16 +729,10 @@ export function PipsGame({
       const moved = active.moved || distance > DRAG_THRESHOLD
       let preview: DragState['preview'] = null
       if (moved) {
-        const target = cellFromPoint(event.clientX, event.clientY)
-        const currentPuzzle = puzzleRef.current
-        if (target && currentPuzzle) {
-          const orientation = orientationsRef.current[active.dominoIndex]
-          const others = computeFilled(anchorsRef.current, orientationsRef.current, currentPuzzle, active.dominoIndex)
-          preview = {
-            cells: placementFor(target, orientation),
-            valid: canPlace(target, orientation, geometry.boardSet, others),
-          }
-        }
+        // Preview where the piece will actually snap on release (nearest legal
+        // placement), so the highlight matches the forgiving drop.
+        const drop = resolveDrop(event.clientX, event.clientY, active.dominoIndex)
+        if (drop) preview = { cells: drop.cells, valid: true }
       }
       const nextState: DragState = { ...active, x: event.clientX, y: event.clientY, moved, preview }
       dragRef.current = nextState
@@ -632,7 +751,7 @@ export function PipsGame({
       document.removeEventListener('pointerup', onUp)
       document.removeEventListener('pointercancel', onCancel)
     }
-  }, [drag, cellFromPoint, endDrag, geometry.boardSet])
+  }, [drag, endDrag, resolveDrop])
 
   const handleDifficultyChange = useCallback(
     (next: PipsDifficulty) => {
@@ -711,7 +830,9 @@ export function PipsGame({
                     key={cell.key}
                     className={[
                       'pips-cell',
-                      `pips-cell--${REGION_COLORS[cell.regionIndex % REGION_COLORS.length]}`,
+                      cell.colored
+                        ? `pips-cell--${REGION_COLORS[cell.regionIndex % REGION_COLORS.length]}`
+                        : 'pips-cell--plain',
                       `pips-cell--${status}`,
                       cell.classes,
                       preview,
@@ -901,6 +1022,8 @@ type CellRender = {
   label: string | null
   chipCorner: string
   classes: string
+  // Regions with no constraint ('empty') are drawn uncoloured — just the board.
+  colored: boolean
 }
 
 function buildGeometry(puzzle: PipsPuzzle | null) {
@@ -963,6 +1086,7 @@ function buildGeometry(puzzle: PipsPuzzle | null) {
         label: isChipHost ? regionLabel(region) : null,
         chipCorner: isChipHost ? chipCornerFor(row, col, onBoard) : 'tl',
         classes: classList.join(' '),
+        colored: region.type !== 'empty',
       })
     })
   })

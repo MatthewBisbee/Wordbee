@@ -27,9 +27,16 @@ export const CLIENT_SESSION_STORAGE_KEY = 'wordbee.client-session.v1'
 // Dates on which the player used the Wordle repeated-letter hint. Persists the
 // "hint used" button state across reloads, independent of the daily result.
 export const HINT_USAGE_STORAGE_KEY = 'wordbee.wordle-hint-usage.v1'
-// Session-scoped so a cold app launch defaults to the daily Wordle, while an
-// in-session reload (e.g. an iOS PWA refocus) restores the active game/date.
+// Written to sessionStorage (same document session) and localStorage (survives
+// the process being torn down). A cold app launch still defaults to the daily
+// Wordle; a reload the player did not ask for — an iOS PWA whose web view was
+// purged while backgrounded, a deploy refresh — restores the active game/date.
 export const LAST_GAME_STORAGE_KEY = 'wordbee.last-game.v1'
+// How long after the last interaction the localStorage copy still counts as
+// "the player was in the middle of this". iOS gives us no way to tell an OS
+// purge from a deliberate force-quit, so recency is the proxy: come back soon
+// and you land where you left off, come back much later and you get Wordle.
+export const LAST_GAME_RESUME_GRACE_MS = 30 * 60 * 1000
 export const FIRST_OFFICIAL_PUZZLE_DATE = '2021-06-19'
 
 // Mirrors backend GAME_FIRST_DATES so the past-date picker can gray out
@@ -104,4 +111,5 @@ export const defaultSettings: Settings = {
   darkThemeOverride: null,
   highContrast: false,
   onscreenKeyboardOnly: false,
+  wordleAutofill: false,
 }

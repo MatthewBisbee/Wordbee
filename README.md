@@ -410,25 +410,6 @@ Wordbee pulls board data dynamically and stores it locally in SQLite:
 
 ---
 
-## 🗺️ Roadmap & Progress
-
-- [x] **Wordbee Game Picker Shell**
-- [x] **Wordle Integration** (Daily, Endless, Archive)
-- [x] **Sudoku Module** (Mistakes, cell highlighting)
-- [x] **Connections Module** (Grid matching, history)
-- [x] **Strands Module** (Word paths, spangram reveal)
-- [x] **Letter Boxed Module** (Square box board, word chaining, local dictionary, replayable best-score, reveal solutions)
-- [x] **Spelling Bee Module** (Honeycomb hive, NYT scoring & ranks, cross-device found-words merge, local puzzle cache)
-- [x] **Tiles Module** (Seeded deterministic board generation, endless Zen mode, reskinnable SVGs, captured art palettes)
-- [x] **The Crossword Module** (Full grid, Sunday sizing, across/down toggles, clue bar, autocheck/timer, local historical archive since 1942, GitHub archive import utility)
-- [x] **The Mini & The Midi Modules** (Cookie-free daily refresh grids, subscriber-only archive backfiller, Midi geometry backtracking reconstruction solver)
-- [x] **Friends & Family Account Profiles**
-- [x] **Detailed Solve Stats & Accolades** (cached solve analysis for fast dashboards)
-- [x] **Raspberry Pi Reverse Proxy & Cloudflare Scaffolding**
-- [ ] **Mobile iOS App Wrapper Polish**
-
----
-
 ## 📄 License
 
 Wordbee is open-source software licensed under the [MIT License](LICENSE).

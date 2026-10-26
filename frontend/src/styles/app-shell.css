@@ -219,6 +219,25 @@
   flex: 0 0 var(--header-height);
 }
 
+/* In iOS Home Screen mode, WebKit recognizes an opaque, viewport-pinned
+   header as an existing top bar and can suppress its soft scroll-edge blur.
+   Reserve exactly the header's former flex space: no extra vertical padding,
+   smaller boards, or per-game offsets. Keep drawers above game controls. */
+@supports (-webkit-touch-callout: none) {
+  .wordbee-app--standalone {
+    padding-top: var(--header-height);
+  }
+
+  .wordbee-app--standalone .wordbee-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1500;
+    background: var(--color-background);
+  }
+}
+
 .wordbee-title {
   position: absolute;
   width: 1px;

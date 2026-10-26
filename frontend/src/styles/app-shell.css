@@ -910,8 +910,47 @@
   line-height: 1.2;
 }
 
-.operator-announcement__signature::before {
-  content: "- ";
+.operator-announcement__signature-image {
+  display: block;
+  width: 176px;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  color: var(--color-tone-1);
+}
+
+.operator-announcement__signature-image path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .operator-announcement__signature-image path {
+    stroke-dasharray: 1 1.01;
+    animation: operator-signature-draw 1.5s cubic-bezier(0.65, 0, 0.35, 1) both;
+  }
+
+  .operator-announcement__signature-image path:nth-child(2) {
+    animation-duration: 0.5s;
+    animation-delay: 1.3s;
+  }
+
+  .operator-announcement__signature-image path:nth-child(3) {
+    animation-duration: 1.8s;
+    animation-delay: 1.3s;
+  }
+}
+
+@keyframes operator-signature-draw {
+  from {
+    stroke-dashoffset: 1.005;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .operator-announcement__button {

@@ -4,6 +4,7 @@ import menuIconMarkup from './assets/icons/icon-menu.svg?raw'
 import settingsIconMarkup from './assets/icons/icon-settings.svg?raw'
 import statsIconMarkup from './assets/icons/icon-stats.svg?raw'
 import { InlineIcon } from './components/InlineIcon'
+import { MatthewSignature } from './components/MatthewSignature'
 import {
   ACCESS_STORAGE_KEY,
   ADDITIONAL_GAME_LABELS,
@@ -2269,7 +2270,13 @@ function OperatorAnnouncementDialog({
       >
         <h2 id="operator-announcement-title">Message</h2>
         <p className="operator-announcement__message">{announcement.message}</p>
-        <p className="operator-announcement__signature">{announcement.signature}</p>
+        <p className="operator-announcement__signature">
+          {announcement.signature === 'Matthew' ? (
+            <MatthewSignature />
+          ) : (
+            <>- {announcement.signature}</>
+          )}
+        </p>
         <button className="operator-announcement__button" onClick={onDismiss} type="button">
           OK
         </button>
